@@ -63,14 +63,19 @@ func app() int {
 	var ttyCommand *ttyCommandRequest
 	if opts.legacy {
 		plan, err = commandArguments(opts.args)
-	} else if opts.broker {
+	} else if opts.broker || !opts.legacyShell {
 		useTTY, warning := opts.requestTTY(terminal.IsTerminal(os.Stdin))
 		if warning {
 			log.Info(msgNoTTY)
 		}
-		text := strings.Join(opts.args[1:], " ")
+		// Without a command, run the login shell through the same adapters, as
+		// sshd does: a TTY session, or a no-TTY session for -T/-n/piped stdin.
+		text, shell := shellbroker.LoginShell, true
+		if opts.broker {
+			text, shell = strings.Join(opts.args[1:], " "), false
+		}
 		if useTTY {
-			ttyCommand = &ttyCommandRequest{text: text, term: os.Getenv("TERM"), stdinNull: opts.stdinNull}
+			ttyCommand = &ttyCommandRequest{text: text, term: os.Getenv("TERM"), stdinNull: opts.stdinNull, shell: shell}
 			// Validate before authentication; current terminal size is captured
 			// later, after potentially lengthy interactive login.
 			_, err = shellbroker.NewTTYConfigured(text, shellbroker.TTYSettings{TERM: &ttyCommand.term})
@@ -97,7 +102,7 @@ func app() int {
 		if opts.stdinNull {
 			stdin = nil
 		}
-		err = connectWithPolicy(ctx, opts.policy, source, escape, plan, brokerPlan, ttyCommand, stdin)
+		err = connectWithPolicy(ctx, opts.policy, source, escape, plan, brokerPlan, ttyCommand, stdin, !opts.broker && !opts.legacy)
 	}
 	if err != nil {
 		if errors.Is(err, errEscape) {
@@ -123,10 +128,12 @@ func app() int {
 }
 
 func connect(ctx context.Context, bridge sessionSource, escape rune, plan *command.Plan, brokerPlan *shellbroker.Plan, ttyCommand *ttyCommandRequest, stdin io.Reader) error {
-	return connectWithPolicy(ctx, connpolicy.Default(), bridge, escape, plan, brokerPlan, ttyCommand, stdin)
+	return connectWithPolicy(ctx, connpolicy.Default(), bridge, escape, plan, brokerPlan, ttyCommand, stdin, false)
 }
 
-func connectWithPolicy(ctx context.Context, policy connpolicy.Policy, bridge sessionSource, escape rune, plan *command.Plan, brokerPlan *shellbroker.Plan, ttyCommand *ttyCommandRequest, stdin io.Reader) error {
+// loginShell marks adapter sessions running shellbroker.LoginShell. Like ssh(1)
+// starting a shell, they print no adapter notice at the default log level.
+func connectWithPolicy(ctx context.Context, policy connpolicy.Policy, bridge sessionSource, escape rune, plan *command.Plan, brokerPlan *shellbroker.Plan, ttyCommand *ttyCommandRequest, stdin io.Reader, loginShell bool) error {
 	log := diag.From(ctx)
 	peerContext := ctx
 	if brokerPlan != nil || ttyCommand != nil {
@@ -147,15 +154,23 @@ func connectWithPolicy(ctx context.Context, policy connpolicy.Policy, bridge ses
 		return runLegacyFileCommand(ctx, bridge.Failures(), ch, plan, os.Stdout)
 	}
 	if brokerPlan != nil {
-		log.Info(msgBroker)
-		log.Debug(msgSessionMode, diag.State("adapter", "broker-no-tty"))
+		if loginShell {
+			log.Debug(msgSessionLogin, diag.State("adapter", "broker-no-tty"))
+		} else {
+			log.Info(msgBroker)
+			log.Debug(msgSessionMode, diag.State("adapter", "broker-no-tty"))
+		}
 		return runShellFileCommand(ctx, bridge.Failures(), ch, brokerPlan, stdin, os.Stdout, os.Stderr)
 	}
 	if ttyCommand != nil {
-		log.Info(msgTTYCommand)
-		log.Debug(msgSessionMode, diag.State("adapter", "broker-tty"))
+		if loginShell {
+			log.Debug(msgSessionLogin, diag.State("adapter", "broker-tty"))
+		} else {
+			log.Info(msgTTYCommand)
+			log.Debug(msgSessionMode, diag.State("adapter", "broker-tty"))
+		}
 		return runTTYSession(ctx, bridge.Failures(), p, ch, *ttyCommand, stdin, os.Stdin, os.Stdout, os.Stderr, escape)
 	}
-	log.Debug(msgSessionShell)
+	log.Debug(msgSessionShell, diag.State("adapter", "legacy-shell"))
 	return runInteractiveSession(ctx, bridge.Failures(), p, ch, os.Stdin, os.Stdout, os.Stderr, escape)
 }
