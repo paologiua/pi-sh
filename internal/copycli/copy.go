@@ -84,17 +84,38 @@ func New(args []string) (*Plan, error) {
 	if p.Upload {
 		p.Device = p.Target.Device
 	}
+	// Reject unsupported ~user remote paths before any login.
+	remote := p.Sources
+	if p.Upload {
+		remote = []Operand{p.Target}
+	}
+	for _, operand := range remote {
+		if _, err := remotePath(operand.Path); err != nil {
+			return nil, err
+		}
+	}
 	return p, nil
 }
 
+// Run copies each operand in order and stops at the first failing operand.
+// Remote download operands are globs like scp's SFTP mode; local operands and
+// the remote upload target are literal (a local shell expands local globs).
+// Remote paths get scp's "~" and "~/" handling.
 func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.FileMode) error {
+	target := p.Target.Path
+	if p.Upload {
+		var err error
+		if target, err = remotePath(target); err != nil {
+			return err
+		}
+	}
 	if len(p.Sources) > 1 {
 		var info os.FileInfo
 		var err error
 		if p.Upload {
-			info, err = client.Stat(p.Target.Path)
+			info, err = client.Stat(target)
 		} else {
-			info, err = os.Stat(p.Target.Path)
+			info, err = os.Stat(target)
 		}
 		if err != nil || !info.IsDir() {
 			return errors.New("multiple sources require an existing destination directory")
@@ -105,17 +126,16 @@ func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.Fil
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if p.Recursive {
-			if err := console.CopyTree(ctx, p.Upload, source.Path, p.Target.Path); err != nil {
-				return err
-			}
-			continue
+		var err error
+		switch {
+		case !p.Upload:
+			err = p.download(ctx, client, &console, source.Path)
+		case p.Recursive:
+			err = console.CopyTree(ctx, true, source.Path, target)
+		default:
+			err = console.CopyFile(true, source.Path, target)
 		}
-		name := "get"
-		if p.Upload {
-			name = "put"
-		}
-		if _, err := console.Execute(ctx, []string{name, "--", source.Path, p.Target.Path}); err != nil {
+		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
