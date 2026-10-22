@@ -4,10 +4,10 @@ import (
 	"errors"
 	"io"
 	"runtime"
-	"runtime/debug"
 	"sort"
 	"strings"
 
+	"pi-sh/internal/sshconfig"
 	"pi-sh/internal/terminal"
 )
 
@@ -16,7 +16,7 @@ import (
 var capabilityQueries = map[string][]string{
 	"pi-sh-auth":      {"browser-companion", "direct-login"},
 	"pi-sh-command":   {"experimental-command-no-tty", "experimental-command-tty", "interactive-shell", "legacy-command-pty"},
-	"pi-sh-config":    {"EscapeChar", "Host", "HostName", "Include", "RequestTTY", "StdinNull"},
+	"pi-sh-config":    {"EscapeChar", "Host", "HostName", "Include", "Match", "RequestTTY", "StdinNull", "Tag"},
 	"pi-sh-escape":    {"disconnect", "help", "literal-prefix"},
 	"pi-sh-transport": {"connect-webrtc"},
 }
@@ -44,12 +44,9 @@ func queryCapabilities(query string) ([]string, error) {
 
 // Build metadata is read from the executable only. Never print build settings,
 // VCS paths, environment variables or other configuration alongside the version.
+// The release token is shared with Match version.
 func clientVersion() string {
-	version := "devel"
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		version = versionToken(info.Main.Version)
-	}
-	return "pi-sh_" + version + " " + versionToken(runtime.Version()) + " " + runtime.GOOS + "/" + runtime.GOARCH + " (unofficial)\n"
+	return sshconfig.Release() + " " + versionToken(runtime.Version()) + " " + runtime.GOOS + "/" + runtime.GOARCH + " (unofficial)\n"
 }
 
 func versionToken(value string) string {

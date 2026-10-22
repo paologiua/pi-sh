@@ -1,8 +1,10 @@
-// Package sshconfig implements the supported, non-executing SSH configuration
-// subset. It never discovers default files, executes commands or resolves DNS.
+// Package sshconfig implements the supported SSH configuration subset. It
+// never discovers default files or resolves DNS. Like OpenSSH, it runs a local
+// shell command only for a Match exec criterion in an explicitly selected file.
 package sshconfig
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"strings"
@@ -16,35 +18,78 @@ const (
 // Load reads the explicitly selected regular file and its Include directives.
 // No default root file is discovered; paths and OS errors stay out of diagnostics.
 func Load(path, host string) (map[string]string, error) {
-	return LoadWithOverrides(path, host, nil)
+	return LoadContext(path, Context{Host: host})
 }
 
 // LoadWithOverrides seeds already-obtained CLI values before interpreting file
 // directives, including HostName-dependent Include tokens. The input is copied.
 func LoadWithOverrides(path, host string, overrides map[string]string) (map[string]string, error) {
-	p := newParser(host)
-	p.includes = true
-	for key, value := range overrides {
+	return LoadContext(path, Context{Host: host, Overrides: overrides})
+}
+
+// LoadContext evaluates the file for one invocation. If a non-negated
+// "Match final" was seen, the files are read again as OpenSSH's final pass:
+// earlier values are kept (first value wins), HostName is fixed to the
+// effective target, and "final"/"canonical" criteria then match.
+func LoadContext(path string, ctx Context) (map[string]string, error) {
+	return evaluate(ctx, func(p *parser) error {
+		p.includes = true
+		return p.file(path, true, false, 0)
+	})
+}
+
+func evaluate(ctx Context, read func(*parser) error) (map[string]string, error) {
+	p := newParser(ctx)
+	for key, value := range ctx.Overrides {
+		// ssh -P accepts an empty tag; -o Tag= is rejected before this point.
+		if key == "tag" && value == "" {
+			p.values[key] = value
+			continue
+		}
 		if err := Validate(key, value); err != nil {
 			return nil, err
 		}
 		p.values[key] = value
 	}
-	if err := p.file(path, true, false, 0); err != nil {
+	if err := read(p); err != nil {
 		return nil, err
 	}
-	return p.values, nil
+	if !p.wantFinal {
+		return p.values, nil
+	}
+	host, err := p.currentHost()
+	if err != nil {
+		return nil, err
+	}
+	final := newParser(ctx)
+	final.env, final.home, final.final = p.env, p.home, true
+	final.values = p.values
+	// Callers expand the stored HostName again; escape it so it stays literal.
+	final.values["hostname"] = strings.ReplaceAll(host, "%", "%%")
+	if err := read(final); err != nil {
+		return nil, err
+	}
+	return final.values, nil
 }
 
 // Parse selects the first value from all matching blocks. Every line is checked,
 // including inactive blocks and overridden values, so unsupported semantics
 // cannot be hidden in a file that appears to have been successfully accepted.
 func Parse(r io.Reader, host string) (map[string]string, error) {
-	p := newParser(host)
-	if err := p.parse(r, true, false, 0); err != nil {
-		return nil, err
+	return ParseContext(r, Context{Host: host})
+}
+
+// ParseContext is Parse with Match context. The bounded input is buffered so a
+// Match final pass can read it again; Include is not available.
+func ParseContext(r io.Reader, ctx Context) (map[string]string, error) {
+	data, err := io.ReadAll(io.LimitReader(r, MaxBytes+1))
+	if err != nil {
+		return nil, errors.New("configuration read failed or line exceeds size limit")
 	}
-	return p.values, nil
+	if len(data) > MaxBytes {
+		return nil, errors.New("configuration exceeds aggregate size limit")
+	}
+	return evaluate(ctx, func(p *parser) error { return p.parse(bytes.NewReader(data), true, false, 0) })
 }
 
 // Fields supports keyword whitespace/= separators, double-quoted arguments and
@@ -125,6 +170,8 @@ func Validate(key, value string) error {
 	case "hostname":
 		_, err := Hostname(value, "placeholder")
 		return err
+	case "tag":
+		// Any single nonempty argument, including "none", is a literal tag.
 	default:
 		return errors.New("unsupported SSH configuration directive")
 	}

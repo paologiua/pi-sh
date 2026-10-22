@@ -7,6 +7,13 @@ import (
 
 // Destination applies explicit HostName aliases and the pipe-only SFTP policy.
 func Destination(original, config string, overrides []string) (string, error) {
+	return DestinationWithServer(original, config, overrides, "")
+}
+
+// DestinationWithServer is Destination for an explicit remote server path.
+// Match sessiontype/command see what OpenSSH sftp would request: the "sftp"
+// subsystem by default, or an exec of a server path (sftp -s /path).
+func DestinationWithServer(original, config string, overrides []string, server string) (string, error) {
 	if _, err := sshconfig.Hostname("%h", original); err != nil {
 		return "", err
 	}
@@ -27,7 +34,11 @@ func Destination(original, config string, overrides []string) (string, error) {
 		}
 	}
 	if config != "none" {
-		file, err := sshconfig.LoadWithOverrides(config, original, values)
+		session := sshconfig.Context{Host: original, Overrides: values, SessionType: sshconfig.SessionSubsystem, Command: "sftp"}
+		if server != "" {
+			session.SessionType, session.Command = sshconfig.SessionExec, server
+		}
+		file, err := sshconfig.LoadContext(config, session)
 		if err != nil {
 			return "", err
 		}

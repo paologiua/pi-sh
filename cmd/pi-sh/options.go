@@ -18,6 +18,8 @@ type options struct {
 	tty                                   string
 	args                                  []string
 	configFile, hostname                  string
+	tag                                   string
+	tagSet                                bool
 	inspection, query                     string
 }
 
@@ -76,9 +78,9 @@ func parseOptions(args []string) (options, error) {
 				} else {
 					o.tty = "yes"
 				}
-			case 'e', 'o', 'F', 'Q':
+			case 'e', 'o', 'F', 'P', 'Q':
 				value := a[j+1:]
-				if value == "" {
+				if j+1 == len(a) {
 					i++
 					if i == len(args) {
 						return o, fmt.Errorf("option -%c requires an argument", c)
@@ -92,6 +94,12 @@ func parseOptions(args []string) (options, error) {
 				case 'e':
 					o.escape = value
 					seen["escapechar"] = true
+				case 'P':
+					// ssh -P is first-obtained like -o Tag and may be empty.
+					if !seen["tag"] {
+						o.tag, o.tagSet = value, true
+						seen["tag"] = true
+					}
 				case 'F':
 					if value == "" {
 						return o, errors.New("configuration path must not be empty")
@@ -130,11 +138,20 @@ func parseOptions(args []string) (options, error) {
 		if seen["hostname"] {
 			initial["hostname"] = o.hostname
 		}
-		values, err := sshconfig.LoadWithOverrides(o.configFile, o.args[0], initial)
+		if o.tagSet {
+			initial["tag"] = o.tag
+		}
+		// Match command/sessiontype see the words ssh would join for exec.
+		values, err := sshconfig.LoadContext(o.configFile, sshconfig.Context{
+			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "),
+		})
 		if err != nil {
 			return o, err
 		}
 		for key, value := range values {
+			if seen[key] {
+				continue // CLI value seeded above, already validated and applied
+			}
 			if err := o.apply(key, value, seen); err != nil {
 				return o, err
 			}
@@ -224,6 +241,8 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			o.tty = value
 		case "hostname":
 			o.hostname = value
+		case "tag":
+			o.tag, o.tagSet = value, true
 		}
 		seen[key] = true
 	}
@@ -278,6 +297,13 @@ func (o options) writeConfig(w io.Writer) error {
 	if tty == "yes" {
 		tty = "true"
 	}
-	_, err := fmt.Fprintf(w, "escapechar %s\nstdinnull %s\nrequesttty %s\n", label, stdin, tty)
-	return err
+	if _, err := fmt.Fprintf(w, "escapechar %s\nstdinnull %s\nrequesttty %s\n", label, stdin, tty); err != nil {
+		return err
+	}
+	if o.tagSet {
+		if _, err := fmt.Fprintf(w, "tag %s\n", o.tag); err != nil {
+			return err
+		}
+	}
+	return nil
 }

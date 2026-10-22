@@ -52,7 +52,7 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
 	}
-	target, err := sftpcli.Destination(plan.Device, *config, overrides)
+	target, err := sftpcli.DestinationWithServer(plan.Device, *config, overrides, *server)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
