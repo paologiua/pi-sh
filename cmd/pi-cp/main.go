@@ -29,6 +29,7 @@ func app() int {
 	recursive := f.Bool("r", false, "copy directory trees, following source symbolic links")
 	server := f.String("sftp-server", "", "existing absolute remote sftp-server path")
 	config := f.String("F", "none", "explicit configuration file, or none")
+	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
@@ -52,20 +53,20 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
 	}
-	target, err := sftpcli.Destination(plan.Device, *config, overrides)
+	target, policy, err := sftpcli.Resolve(plan.Device, *config, overrides, map[string]string{"port": *port})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
-	source, err := connectsession.Authenticate(ctx, target, *direct, os.Stderr, "pi-cp")
+	source, err := connectsession.AuthenticateWithPolicy(ctx, target, *direct, policy, os.Stderr, "pi-cp")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 255
 	}
 	defer source.Close()
-	carrier, err := connectsession.Dial(ctx, source)
+	carrier, err := connectsession.DialWithPolicy(ctx, source, policy)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 255
