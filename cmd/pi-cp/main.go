@@ -11,8 +11,8 @@ import (
 
 	"pi-sh/internal/cliargs"
 	"pi-sh/internal/connectsession"
-	"pi-sh/internal/diag"
 	"pi-sh/internal/copycli"
+	"pi-sh/internal/diag"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
 )
