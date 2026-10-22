@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"pi-sh/internal/localio"
+	"pi-sh/internal/terminal"
 	"pi-sh/internal/transport"
 )
 
@@ -28,6 +29,57 @@ func input(ctx context.Context, ch textSender, r io.Reader, escape rune, diagnos
 type inputActions struct {
 	diagnostic io.Writer
 	suspend    func(context.Context) error
+	// interrupt makes the pending stdin Read return localio.ErrInterrupted.
+	// With suspend, it lets an external SIGTSTP use the same handoff as ~^Z.
+	interrupt func() bool
+}
+
+// suspendingReader performs external suspension requests at the read boundary,
+// where no Read is pending. It never returns ErrInterrupted to its caller.
+type suspendingReader struct {
+	ctx     context.Context
+	reader  io.Reader
+	suspend func(context.Context) error
+}
+
+func (r suspendingReader) Read(p []byte) (int, error) {
+	for {
+		n, err := r.reader.Read(p)
+		if !errors.Is(err, localio.ErrInterrupted) {
+			return n, err
+		}
+		if err := r.suspend(r.ctx); err != nil {
+			if cause := r.ctx.Err(); cause != nil {
+				return 0, cause
+			}
+			return 0, err
+		}
+	}
+}
+
+// watchExternalSuspend routes SIGTSTP to the input boundary while this loop
+// can perform the handoff. Outside that window the default stop action applies.
+func watchExternalSuspend(ctx context.Context, actions inputActions) func() {
+	if actions.suspend == nil || actions.interrupt == nil || !terminal.CanSuspend() {
+		return func() {}
+	}
+	signals, stop := terminal.WatchSuspendSignals()
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		for {
+			select {
+			case <-signals:
+				actions.interrupt()
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return func() { stop(); close(done); <-finished }
 }
 
 func writeEscapeDiagnostic(ctx context.Context, writer io.Writer, message string) error {
@@ -57,6 +109,10 @@ func inputWithActions(ctx context.Context, ch textSender, r io.Reader, escape ru
 			result = localCleanupResult(result, streams.Close())
 		}()
 		r = streams.Stdin
+	}
+	if actions.suspend != nil && actions.interrupt != nil {
+		defer watchExternalSuspend(ctx, actions)()
+		r = suspendingReader{ctx: ctx, reader: r, suspend: actions.suspend}
 	}
 	reader := bufio.NewReader(r)
 	// Coalesce only characters already available locally. One message per rune

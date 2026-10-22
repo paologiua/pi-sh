@@ -89,11 +89,15 @@ func suspendFileFD(t *testing.T, f *os.File) int {
 
 func TestSuspendTTYSessionOverWebRTC(t *testing.T) {
 	for _, mode := range []string{"tty", "interactive"} {
-		t.Run(mode, func(t *testing.T) { testSuspendSession(t, mode) })
+		// escape types ~^Z; signal sends an external SIGTSTP, as kill -TSTP or
+		// a job-control shell would, which must use the same local handoff.
+		for _, trigger := range []string{"escape", "signal"} {
+			t.Run(mode+"-"+trigger, func(t *testing.T) { testSuspendSession(t, mode, trigger) })
+		}
 	}
 }
 
-func testSuspendSession(t *testing.T, mode string) {
+func testSuspendSession(t *testing.T, mode, trigger string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 	master, local, err := pty.Open()
@@ -163,7 +167,11 @@ func testSuspendSession(t *testing.T, mode string) {
 	case <-ctx.Done():
 		t.Fatal("remote command never ready", observed.text())
 	}
-	if _, err := parentIO.Stdout.Write([]byte("~\x1a")); err != nil {
+	if trigger == "signal" {
+		if err := cmd.Process.Signal(syscall.SIGTSTP); err != nil {
+			t.Fatal(err)
+		}
+	} else if _, err := parentIO.Stdout.Write([]byte("~\x1a")); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -250,7 +258,8 @@ func testSuspendSession(t *testing.T, mode string) {
 		t.Fatal("CLI lost shell's updated descriptor baseline", flags, err)
 	}
 	text := strings.ReplaceAll(observed.text(), "\r\n", "\n")
-	if !strings.Contains(text, "seen:x\n31 97\n") || !strings.Contains(text, "[suspend pi-sh]") {
+	// Like OpenSSH, only the typed escape prints a local suspension notice.
+	if !strings.Contains(text, "seen:x\n31 97\n") || strings.Contains(text, "[suspend pi-sh]") != (trigger == "escape") {
 		t.Fatal("resume output", text)
 	}
 }
