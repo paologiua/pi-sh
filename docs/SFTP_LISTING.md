@@ -112,8 +112,11 @@ On this Mac, files created under `$TMPDIR` and given an old atime are read by an
 external process within about two seconds: without any read by the test, 132/200
 and then 130/200 files had atime reset to the current time. A
 `.metadata_never_index` marker did not change the rate, so Spotlight is unlikely.
-The active Trend Micro Endpoint Security system extension is the probable reader;
-the exact process was not identified (that needs privileged `fs_usage`). Such a
+The effect also occurs in `/private/tmp` and the home directory (65–95/100), and
+persists with the ChatGPT/Codex app fully quit (no Codex process running), so
+Codex is excluded. The active Trend Micro Endpoint Security system extension is
+the probable reader; the exact process was not identified (that needs privileged
+`fs_usage`). Such a
 read after the copy sets atime, and before the snapshot, explains an isolated
 regular-file atime mismatch without a pi-sh defect.
 
