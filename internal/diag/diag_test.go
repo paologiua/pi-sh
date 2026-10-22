@@ -291,3 +291,34 @@ func TestNoDynamicMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Regression for the native -v run of 2026-10-22: structural redaction must
+// not mangle fixed phase messages or locally built version strings, while
+// typed fields keep rejecting free text and opaque tokens.
+func TestNoFalsePositiveRedaction(t *testing.T) {
+	var out bytes.Buffer
+	l, err := Open(Config{Program: "pi-sh", Level: Debug3, Stderr: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Debug("session: starting interactive shell")
+	l.Debug("session: remote command finished", Count("exit_status", 23))
+	l.Debug("unofficial client", Version("version", "pi-sh_v0.0.0-20261022173218-2f40b725627d+dirty"), Version("go", "go1.27.3"), State("os", "linux"))
+	want := "debug1: session: starting interactive shell\r\n" +
+		"debug1: session: remote command finished exit_status=23\r\n" +
+		"debug1: unofficial client version=pi-sh_v0.0.0-20261022173218-2f40b725627d+dirty go=go1.27.3 os=linux\r\n"
+	if out.String() != want {
+		t.Fatalf("got %q\nwant %q", out.String(), want)
+	}
+	out.Reset()
+	// The phase exemption covers only the prefix; the remainder and error
+	// text are still fully sanitized.
+	l.Log(Debug1, Message("session: password=hunter2 owner@example.com"))
+	l.Failure(Fatal, errors.New("session: cookie-value-abc0123456789abcdef0123456789"))
+	l.Debug("x", Version("version", "has space"), State("state", "0123456789abcdef0123456789abcdef"), Version("v", strings.Repeat("a", 161)))
+	for _, leak := range []string{"hunter2", "owner@example.com", "cookie-value-abc0123456789", "has space", "0123456789abcdef0123456789abcdef", strings.Repeat("a", 161)} {
+		if strings.Contains(out.String(), leak) {
+			t.Errorf("%q leaked:\n%s", leak, out.String())
+		}
+	}
+}
