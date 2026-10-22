@@ -1,0 +1,56 @@
+name: Local checks and portable builds
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+      - run: node --test internal/browserauth/companion_test.mjs
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - run: go test -C third_party/sftp ./...
+      - run: go vet ./...
+      - if: runner.os == 'Linux'
+        run: go test -race ./...
+      - if: runner.os == 'Linux'
+        run: go test -C third_party/sftp -race ./...
+      - if: runner.os == 'Linux'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - run: go run ./cmd/platform-check
+  cross-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - {os: linux, arch: '386'}
+          - {os: linux, arch: amd64}
+          - {os: linux, arch: arm64}
+          - {os: darwin, arch: amd64}
+          - {os: darwin, arch: arm64}
+          - {os: windows, arch: amd64}
+          - {os: windows, arch: arm64}
+    env:
+      CGO_ENABLED: '0'
+      GOOS: ${{ matrix.target.os }}
+      GOARCH: ${{ matrix.target.arch }}
+      GO386: softfloat
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: |
+          mkdir -p "$RUNNER_TEMP/test-binaries"
+          go test -c -o "$RUNNER_TEMP/test-binaries/" ./...
+          go test -C third_party/sftp -c -o "$RUNNER_TEMP/test-binaries/sftp-extension.test" .

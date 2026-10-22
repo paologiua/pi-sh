@@ -1,0 +1,188 @@
+# SFTP-backed pi-cp and pi-sftp — 2026-10-20
+
+The suite now includes experimental `cmd/pi-cp` and `cmd/pi-sftp`. They use the
+existing shell broker's binary stdin/stdout to run an **already installed**
+OpenSSH-compatible sftp-server. They do not use an SSH connection or a native
+Connect subsystem channel. The agent stays unchanged; no helper is installed.
+
+## Status and remote footprint
+
+Local tests pass against an in-memory server and an actual local OpenSSH
+sftp-server. A separate integration test joins the real Bash broker, a local PTY
+and that OpenSSH server. Binary writes/reads, EOF, status and filenames with
+quotes/Unicode are checked. The owner ran the direct-login read-only batch
+(`pwd`, `ls`, `quit`) on the Pi and reported exit **0** on 2026-10-20. This verifies
+the existing-server search and Connect-to-SFTP metadata path for that binary.
+The later private-creation/umask startup also passed an owner-run read-only
+pwd/quit batch with exit 0. No new-file permissions were tested on the Pi.
+Copy contents,
+mutations and interruption of SFTP remain unverified on the Pi.
+No Pi transfer-write path has been approved or used; all transfer tests write
+only temporary local files or an in-memory filesystem.
+
+Server selection checks, in order, these existing paths:
+
+1. `/usr/lib/openssh/sftp-server`
+2. `/usr/libexec/openssh/sftp-server`
+3. `/usr/libexec/sftp-server`
+
+Missing executables cause failure (server status 127), never installation or SSH
+fallback. `pi-sftp -s /absolute/existing/server` and
+`pi-cp --sftp-server /absolute/existing/server` override the search. The executable
+path is bounded, validated and shell-quoted; it is not a general command string.
+The server receives `-e` so its diagnostics use the broker's independent stderr,
+which is discarded rather than copied into file data or local diagnostics.
+The broker uses its existing Bash/cat/setsid/stty facilities, memory and anonymous
+pipes. Filename and file data are SFTP packets, never shell interpolation.
+
+`pi-sftp --read-only` adds the OpenSSH server's `-R` flag. A local actual-server
+test confirms metadata works and a create request fails without creating a file.
+An incompatible server fails; read-only mode is never silently downgraded.
+
+## Commands and syntax
+
+```sh
+go build -o bin/pi-sftp ./cmd/pi-sftp
+go build -o bin/pi-cp ./cmd/pi-cp
+./bin/pi-sftp --direct-login --read-only raspberrypi
+```
+
+Choose `--direct-login` or `--browser` explicitly. Both share pi-sh's existing
+authentication and authorization logic; direct credentials are prompted only on
+the controlling terminal and remain process-local. `-F file|none` and repeatable
+`-o` support the explicit config subset and HostName aliases. RequestTTY yes/force
+and StdinNull yes are rejected before login because this protocol requires its
+private no-TTY input stream. EscapeChar has no active escape filter in this mode.
+Top-level options precede operands. Registered short options taking arguments
+accept attached and separate forms: `-Fnone`, `-oHostName=Pi`, `-b-`,
+`-s/existing/server`. `--` ends options and following names stay literal. A value
+beginning with `-` is consumed as a value; in `-b=commands`, the filename is
+`=commands`, matching OpenSSH getopt rather than Go flag's usual equals syntax.
+Project long options keep their existing `--name`/`--name=value` forms.
+Registered short switches may be clustered, for example pi-sftp `-fb-` for flush
+and stdin batch; a value-taking option consumes the rest of its cluster or the
+next argument. Unsupported options, user@host/URI/port syntax and general SSH
+options remain rejected; this does not enable their behavior.
+
+pi-sftp supports `pwd`, `cd`, `ls`, `get`, `put`, `mkdir`, `rmdir`, `rm`, `rename`,
+`chmod` (000–777), `symlink`, `readlink`, `lpwd`, `lcd`, help and quit/exit/bye.
+Paths are literal: no glob, tilde/environment expansion or local shell escape.
+Single/double quotes and backslash quoting preserve spaces/quote characters.
+Commands reject unsupported flags; `--` permits a leading-dash literal operand.
+`get -f`/`put -f` request file flush; top-level `-f` requests it for all transfers.
+See [SFTP_FLUSH.md](SFTP_FLUSH.md) for capability negotiation, advisory errors and
+the exact tested behavior. A successful copy status alone is not flush proof.
+Remote/local symlink traversal components are preserved rather than lexically
+cleaning away `link/..`. Automatic local basenames reject parent/root and native
+path/volume components. Control characters in displayed names are quoted.
+
+`get`/`put` accept one source and optional destination; an existing destination
+directory receives the source basename. Only regular files are transferred.
+Both clients use a 32 KiB copy buffer and plain Reader/Writer interfaces, bypassing
+pkg/sftp's optional ReaderFrom/WriterTo fast paths. A rejected final short WRITE
+was observed to disappear in its sequential ReaderFrom when source EOF occurred
+with data; the shared copy now propagates that write failure. Regressions cover
+complete refusal and a retained 1024-byte prefix, with packet sizes 1024/32768
+and source sizes crossing their boundaries. This is local error-path evidence,
+not a native disk-full or Pi partial-write test.
+Creation/truncation is explicit; failed transfers can leave partial files and
+existing targets can already have been truncated. Resume (`-a`, reget/reput) is
+implemented for literal regular files; see [rules and evidence](SFTP_RESUME.md).
+No atomic replacement,
+recursion, progress, rate limiting or fsync guarantee
+is claimed. `ls` currently prints one name per line; it is not OpenSSH's column/
+long listing. Directory enumeration currently accumulates the directory in memory.
+
+`-p` now requests ordinary permission bits and access/modification times for
+regular-file copies in both clients. See SFTP_METADATA.md for reference behavior,
+advisory failures, combined upload handle metadata and remaining directory/local
+timestamp path races.
+
+Default creation permissions are tested against the local OpenSSH CLI. New
+downloads use source permission bits, filtered by the local process umask.
+Existing download/upload targets retain their modes. Before starting its server,
+the in-memory command emits a bounded numeric original-umask prefix on its binary
+stdout and sets **only that child process's umask to 077**. The prefix is validated
+and consumed before SFTP negotiation; missing/invalid metadata fails setup.
+No persistent setting or file changes. New uploads use exclusive creation,
+verify private permissions and apply source permissions filtered by the original
+umask using handle chmod **before any file contents are sent**. Failure leaves an
+empty private partial file. Directory creation starts private and applies
+0777 filtered by the original umask. Tests compare source modes 600/640/700/777,
+umasks 022/077, new directories and existing targets against local OpenSSH.
+An actual server rejecting fsetstat proves failed uploads stay empty and private.
+The process-local mask avoids a fork of pkg/sftp, whose public OPEN API has no
+creation-attribute parameter. These are selected default-mode fixtures; ACLs,
+special bits, ownership, timestamps and full filesystem parity remain open.
+
+`-b file` or `-b -` runs batch commands; the first error stops the batch unless
+prefixed with `-`. Prefix `@` suppresses the command echo. Interactive errors
+allow the next command. Unlike OpenSSH batch authentication, a fresh direct login
+still requires controlling-terminal prompts; unattended BatchMode is absent.
+Input lines are bounded to 1 MiB, with one queued line. An embedding caller must
+own cancellation of any blocked local command reader/output writer.
+
+pi-cp accepts literal `device:path`/`alias:path` remote operands and local paths.
+Use `./file:with-colon` to disambiguate a local colon. Windows absolute drive paths
+are recognized as local; runtime filesystem support remains platform-specific.
+Copies can upload local regular files or download remote regular files from one
+device. Multiple sources require an existing destination directory, checked
+before file mutation. Remote-to-remote, mixed devices, local-only copies, URIs,
+`user@`, legacy `-O`, recursion, preservation, glob/tilde and all unlisted options
+fail explicitly. It uses SFTP by default, not the legacy SCP wire protocol.
+
+## Architecture, failure and bounds
+
+- `internal/connectsession`: shared memory-only direct/browser auth, verified
+  signaling requests and one native broker shell. A connection runs one server;
+  many SFTP operations share that process. It cannot be reused for another broker.
+- `internal/commandrun`: the same completion/auth-loss/cancellation arbitration
+  used by pi-sh; cleanup-only grace remains bounded before peer close.
+- `internal/sftpclient`: owned binary pipes, v3 negotiation, EOF and command status
+  verification, explicit close/cancel and server-path selection.
+- `internal/sftpcli` and `internal/copycli`: literal operands and file operations.
+
+Negotiation is bounded to 30 seconds after authentication/connection setup.
+Cancellation closes owned protocol pipes and reaches the broker's acknowledged
+cleanup. Normal close sends protocol stdin EOF and requires server/broker status;
+a server that does not exit is cancelled after three seconds, with a further
+four-second wait bound. Missing cleanup/failed status cannot become success.
+Server-controlled error text and malformed packet content are not echoed:
+diagnostics retain only fixed classes or numeric SFTP status. CLI setup failures
+return 255; file/batch failures return 1; cancellation returns 255. Complete exit
+and interruption parity with OpenSSH remains unverified.
+
+The pinned pure-Go pkg/sftp v1.13.11 uses SFTP v3, checked 1024-byte transfer
+requests and four concurrent requests per file here. Its receiver rejects packets
+over 256 KiB before allocating their bodies. No crypto verification is disabled:
+HTTPS/DTLS trust remains Connect's existing path. The library's SSH client API is
+not used; only NewClientPipe is used. Linux/386 without CGO remains mandatory;
+physical iSH and native Linux/Windows runtime are still unverified.
+
+References: [pkg/sftp API](https://pkg.go.dev/github.com/pkg/sftp@v1.13.11),
+[OpenSSH sftp-server](https://man.openbsd.org/sftp-server.8),
+[OpenSSH sftp](https://man.openbsd.org/sftp.1),
+[OpenSSH scp](https://man.openbsd.org/scp.1). No upstream implementation is copied.
+Dependency licences and original notices are in DEPENDENCIES.md and
+THIRD_PARTY_NOTICES.md; original-code licensing and publication gates remain open.
+
+## Native read-only check
+
+```sh
+printf 'pwd\nls\nquit\n' | ./bin/pi-sftp --direct-login --read-only -b - raspberrypi
+echo $?
+```
+
+This requests metadata only and runs the server in read-only mode. It does not
+authorize a Pi upload, mutation or transfer-write test. Record only success/failure
+and status, without listing output, account data or authenticated captures.
+The owner reported status 0 for the original binary and later for a rebuilt
+pwd/quit read-only batch with the process-local umask preamble. No file-content,
+preservation or remote mutation evidence follows from those metadata checks.
+
+## Recursive SCP increment
+
+`pi-cp -r` supersedes the earlier recursion limitation for literal SCP trees only.
+See [SCP_RECURSION.md](SCP_RECURSION.md) for 48 local OpenSSH comparisons, link
+following, directory metadata, memory limitations and native verification gaps.
+SFTP console recursion remains unimplemented.

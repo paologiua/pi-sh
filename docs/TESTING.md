@@ -1,0 +1,769 @@
+# Tests and verification — 2026-10-21
+
+The SFTP integration now roundtrips1MiB of all-byte data through the actual local
+Bash broker/PTY and existing OpenSSH server, both directly and over local Pion
+WebRTC peers. Focused runs pass in approximately23/24 seconds. The old20-second
+fixture lifetime was too short; the1MiB cases alone use90 seconds, with guaranteed
+pipe release after fatal harness assertions. This is local evidence, not a
+reproduction or fix of the stalled native upload. The transfer probe separately
+reports fixed subphases and sentinel-based broker categories without error text.
+
+pi-sh now parses the supported options after the first destination until the
+first command word or an explicit --, matching thirteen additional offline
+OpenSSH_10.2p1 comparisons. Cross-boundary short-flag/directive precedence,
+clusters/attached operands, post-host -F aliases, custom modes and immediate -V/-Q
+are covered. Command arguments after their first word remain literal, including
+later -- or option-like tokens. Unsupported options before command start fail
+before authentication. CLI_OPTIONS.md and LOCAL_INSPECTION.md describe the boundary.
+
+The complete final local race suite and vet pass, with all seven CGO-disabled
+build/test-compilation targets including Linux/386 softfloat; pi-sh is rebuilt.
+The separately prepared transfer-probe remains approved for local testing only:
+owner permission for the exact native scratch root in NATIVE_TRANSFER_PLAN.md
+is still pending. No file or directory has been created on the Pi.
+
+A developer transfer-probe is prepared but has NOT run on the Pi. Default plan
+mode is offline; execution requires the owner's explicit approval of the exact
+scratch root in NATIVE_TRANSFER_PLAN.md. It uses the production copy/SFTP backends
+for synthetic empty/64KiB/1MiB roundtrips, ordinary modes, selected preservation,
+resume, advertised flush, a small recursive tree and a missing-source failure.
+Cleanup inventories a fixed allowlist, refuses unknown entries/symlinks before
+any deletion, removes leaves first and verifies root absence. Lost transport
+reports cleanup unconfirmed rather than replaying transfers or claiming success.
+
+The full local race suite, vet, module verification and seven CGO-disabled
+build/test-compilation targets pass, including Linux/386 softfloat. The complete
+probe passes against an existing local OpenSSH server over stdio. Existing-root,
+unknown-entry, symlink, cancellation and lost-transport tests retain failure and
+protect unrelated data. None of these results establish native content transfer,
+full production-CLI parsing or iSH runtime. Approval of native temporary writes
+is pending; no remote root or content was created.
+
+The recurring TTY early-command-close failure is now reproduced and corrected
+locally. Per-rune input created65,536 messages for a64KiB paste; a stalled peer
+PTY writer exhausted its4096-frame queue before it could send TX23. Fixed-marker
+probes showed queue overflow, emitted-but-unsent TX and EOF without parsed TX.
+The parser's refusal was correct. Input now batches only available UTF-8 in4KiB
+messages and flushes before a blocking read or local action. No queue limit,
+remote script, status rule or acknowledgment changes. TTY_COMPLETION.md records
+the deterministic frame-budget regression and native evidence boundary.
+
+Two hundred concurrent instrumented runs then delivered all results with no
+overflows. The clean final source passes120 positive and120 no-status stress
+cases, full Go race suite, nested SFTP tests, vet/module verification and seven
+CGO-disabled builds/test compilations including Linux/386 softfloat. All native
+binaries are rebuilt and temporary diagnostics/probes are removed. This supersedes
+the failed full-suite gate below; the old native close error, native coalesced
+paste, timestamp stress anomaly and broader compatibility/runtime work remain
+open. Goal is not complete.
+
+Incremental remote directories are implemented for recursive pi-cp downloads and
+pi-sftp ls -f. A local pkg/sftp v1.13.11 snapshot retains all65 upstream files
+unchanged and adds one checked iterator plus parser tests; hashes, original
+notices and fork duties are documented. Ten-thousand-entry lazy/close/error
+fixtures, raw-wire failures, local OpenSSH ordering, recursive comparisons and
+1,844,993 fuzz executions provide local evidence. Sorted ls remains unbounded;
+no new native Pi proof or write was attempted. See SFTP_LISTING.md.
+
+The fresh security scan found reachable Go1.27.2 x509 advisory6809. Minimum Go is
+now1.27.3, with x/crypto0.57.0 and x/net0.60.0. All native binaries are rebuilt.
+The final scan finds zero reachable/imported-package findings and one unimported
+openpgp module finding without a fix. License hashes are unchanged; provenance
+and module verification pass. CI now includes the nested module and source scan.
+
+All seven CGO-disabled builds and both-module test compilation pass, including
+Linux/386 softfloat. Transfer/parser tests and root vet pass. Nested vet's two
+unchanged upstream ReadFrom-signature warnings are recorded; other analyzers pass
+with stdmethods disabled for that nested module only. The full final race run
+FAILED cmd/pi-sh early-command-close; thirty isolated repetitions subsequently
+passed, which does not resolve the failure. TTY_COMPLETION.md records next work.
+A test-side directory-atime observer was corrected before enumeration; an isolated
+regular-file timestamp discrepancy remains unclassified despite eight full
+recursive-matrix repetitions and the final passing transfer package run.
+Earlier successful full-suite entries below are historical and do not supersede
+these current unresolved regression gates. Goal remains incomplete.
+
+Native command-TTY Ctrl-C/INT handler, empty-line Ctrl-D/EOF and Ctrl-Z/TSTP
+handler checks now each return the expected marker and normal exit23. These do
+not prove default signal termination or stopped-job/local suspension behavior.
+No Pi file or persistent setting was changed. REAL_DEVICE_TESTS.md records the
+exact scope separately from local OpenSSH comparisons.
+
+Native command-TTY resize now has evidence after the owner's fresh sign-in:
+initial29x91 became35x111 through the actual CLI/Connect path, input remained
+usable and the command exited23. Bash reported its WINCH trap after an empty
+input line; immediate notification timing remains unverified. No Pi file was
+written. See REAL_DEVICE_TESTS.md. This supersedes the pending resize/access
+notes below; other native TTY/lifecycle checks remain open.
+
+Literal `pi-cp -r` trees are now implemented in both directions. Forty-eight
+paired local OpenSSH_10.2p1 copies compare suffix/destination rules, binary/empty
+contents, source links, ordinary directory modes and preserved timestamps.
+Additional error/cycle/cancellation/raw-path/private-mask tests pass. SCP_RECURSION.md
+records first-error stopping, whole-directory remote-listing memory, path races,
+special-bit differences and pending native/other-platform evidence. SFTP console
+recursion remains unimplemented. No Pi content write was performed or authorized.
+
+Final validation for this increment passes: full Go race suite (including the
+previously pending offline-inspection integration), vet, all seven CGO-disabled
+builds and every test-package compilation including Linux/386 softfloat. All
+three native clients are rebuilt. The earlier approval-review usage gate allowed
+the new normal request; it was not bypassed. The native resize retry then stopped
+at Connect's renewed recent-sign-in requirement before a remote command ran.
+The owner subsequently renewed normal browser access and the resize test passed
+as recorded above; independent local development continues. See REAL_DEVICE_TESTS.md for separated native evidence.
+
+
+Offline -V and -Q queries are now implemented. Version uses stderr and build
+metadata; namespaced pi-sh capability queries use stdout and describe compiled
+implementation, never SSH algorithms or device/runtime verification. Ten actual
+OpenSSH offline comparisons and subprocess/config/redaction/write-failure tests
+pass. Seven CGO-disabled builds and all test-package compilations also pass,
+including Linux/386 softfloat; vet passes and all native clients are rebuilt.
+The native binary reports its devel/Go/target/unofficial version and lists query
+names correctly. See LOCAL_INSPECTION.md. The native resize attempt was not executed because
+automatic approval review hit its usage limit. That pending process/network/PTY regression was subsequently completed in the
+recursive-copy increment above.
+
+A reproducible TTY completion race is fixed: a transport send error could
+cancel the reader despite received TX23/EOF. The CLI now permits a bounded one-second
+result drain only for carrier-send failures, retaining strict status/EOF validation
+and auth/cancel/output failure behavior. The reduced actual Pion/PTY case passes20
+race repetitions; negative/reference/drain cases pass five runs. A native Pi Bash
+one-byte read with2048 supplied bytes returns23 in the final binary. This does not
+retrospectively identify the earlier uninstrumented native error. See TTY_COMPLETION.md.
+Final validation for this correction passes: full Go race suite, vet, seven
+CGO-disabled builds and all test-package compilations, including Linux/386
+softfloat. All three native clients are rebuilt; no temporary diagnostic remains.
+
+The staged command TTY now has native Pi evidence through the browser companion:
+forced -tt/-n gives TTY fds, size0x0 and exit23; a Mac PTY sends TERM=xterm,
+91x29 and one input line with exit23, including PENDIN enabled and a final
+uninstrumented binary. Native GNU stty exposed two corrected dialect gaps:
+pendin has no CLI option, and reprint is named rprnt. A fresh carrier-native
+state patch preserves the PENDIN bit; unknown formats/platforms fail closed.
+The companion uses fresh shell-page CSRF metadata after reauthentication.
+Final post-correction validation passes: full Go race suite, four Node companion
+regressions, vet/module verification, seven CGO-disabled builds and every test
+package compilation including Linux/386 softfloat. Native clients are rebuilt;
+Linux-only kernel tests were compiled rather than run on this Mac.
+One earlier post-input WebRTC/status255 episode remains unclassified despite
+later successful TX23/EOF and final normal runs. Native teardown, other control
+paths/direct lifetime and broader platform checks remain open. See REAL_DEVICE_TESTS.md.
+
+Three nested interactive job-control comparisons now pass against
+OpenSSH_10.2p1 with both staged carriers: foreground Ctrl-Z/fg, background
+TTIN/read resumption with echo disabled and TTOU/output resumption. Focused tests
+pass three race runs. A competing stopped-job TERM/fg sequence also reproduced
+its timing-sensitive exit1 directly in Bash without the adapter; it is documented
+as a caveat rather than a client status fix. See TTY_JOB_CONTROL.md. Native,
+arbitrary nested-job and detached-group cleanup evidence remains open.
+
+Nonempty canonical Ctrl-D now has two same-interpreter OpenSSH_10.2p1
+comparisons: flushing abc without a newline retains a subsequent next line;
+two Ctrl-D records let read report EOF while retaining abc. Both legacy and
+modern staged carriers match status23 and output. Two actual CLI/Pion/PTY cases
+exercise the same inputs and check exact local restoration. This is local Mac
+evidence only; native Pi/Linux/iSH terminal semantics remain unverified.
+
+The local ~^Z escape now has macOS/Linux restore/stop/CONT/reacquire support.
+Real macOS child-process tests through the TTY and interactive Pion/PTY coordinators observe
+stopped state, restored flags/modes, shell changes while paused, forced resize,
+remote fixture output, TTY status23, interactive disconnect and preservation of
+the changed baseline.
+Focused suspension tests pass three race runs. Cancellation, failed stop and
+concurrent Close do not reacquire raw modes after ownership ends. Windows,
+native Pi/Linux and physical iSH runtime remain unverified. See [ESCAPES.md](ESCAPES.md) for semantics and limits.
+
+Validation: the final full `go test -race ./...` passes, including both
+suspension modes and the new canonical EOF comparisons/coordinator cases.
+Seven CGO-disabled package builds and all test-package compilations pass;
+the final CLI and shellbroker test sources also compile for all seven targets.
+Vet passes and native binaries are rebuilt. Earlier checkpoint notes below retain the history
+of gaps resolved by this increment; Pi/Linux/Windows/iSH runtime gaps remain.
+
+## 2026-10-21 production TTY controller correction
+
+Four same-interpreter OpenSSH comparisons now require caught/default TSTP parity.
+The actual staged source runs 18 cases on each of two carriers. Four HUP/TERM
+ownership tests confirm sampled processes stop before PTY close while an external
+sentinel remains alive; two whole-group STOP/CONT cases observe stopped states
+before retaining input/status 23 after CONT. CLI Pion/PTY now has 13 cases with
+both default and caught Ctrl-Z. Focused source/cleanup/reference/CLI tests pass
+three repeated race runs. TTY_JOB_CONTROL.md explains the original red cases,
+the obsolete-shell exec inheritance and the foreground-group correction.
+The full final `go test -race ./...` passes on the corrected production source.
+Vet, module verification and Node companion tests pass. CGO-disabled package
+builds and all test-package compilations pass for macOS amd64/arm64, Linux
+amd64/arm64/386 softfloat and Windows amd64/arm64; all three native clients are
+rebuilt. Native Pi, Linux/Windows and physical iSH runtime remain unverified.
+
+The latest descriptor-query correction replaces File.Fd with SyscallConn.Control
+in terminal detection, mode capture and terminal ownership, including both pi-sh
+TTY selection checks. A real pollable-PTY regression first observed flags6 ->2
+for capture and session Open, then passed ten repeated race runs after the fix.
+Detection/capture/session now preserve the caller's original nonblocking bit.
+Selected pi-sh input/escape/session unit race tests also pass. The terminal and localio package race suites pass; all seven CGO-disabled build
+and test-compilation targets, vet and module verification pass, and native clients
+are rebuilt. The full post-correction networking/process race integration suite now also
+passes. An initial attempt was not executed because automatic approval review
+hit a usage limit; the subsequent normally approved rerun completed successfully.
+This closes that validation gate only, not the remaining native/suspension/iSH work.
+
+## 2026-10-21 job-control characterization
+
+At the earlier checkpoint, four same-interpreter comparisons separated two
+matching cases from two caught-TSTP failures. A modern-carrier extension then
+exposed Ctrl-Z status loss. The controller correction above supersedes that
+negative characterization with parity tests. Temporary probes and ineffective
+source edits were removed. See TTY_JOB_CONTROL.md for current limits.
+
+After the local I/O/help integration, the full race suite, vet, module verification
+and Node companion regression pass. CGO-disabled builds and all test-package
+compilations pass for macOS amd64/arm64, Linux amd64/arm64/386 softfloat and
+Windows amd64/arm64. All three native clients are rebuilt. These are local and
+compile-only results; Pi, native Linux/Windows and physical iSH gaps remain.
+
+## 2026-10-21 local escape help
+
+Seven actual local OpenSSH help-consumption observations pass. Production
+one-byte-reader tests cover help/custom/control/disabled/quoted/midline cases,
+help immediately followed by disconnect, and refused/short diagnostic writes.
+The actual TTY coordinator checks stderr help separately from remote stdout and
+remote status 23; interactive aliasing checks ~?~. plus terminal restoration.
+Focused help/reference/TTY/interactive tests passed three repeated race runs.
+See ESCAPES.md for remaining unimplemented actions and output differences.
+
+## 2026-10-21 cancellable local file streams
+
+The full local race suite passes after integrating grouped Unix file operations.
+Focused descriptor, actual Pion/PTY TTY/interactive, legacy-command, binary-command
+record-fixture and uncertain-commit cleanup tests cover cancellation under idle
+input and output backpressure, joined workers, binary prefixes and file reuse.
+The input regression first failed after reading an incomplete UTF-8 rune; a
+separate regression first allowed a queued escape to mask known cancellation.
+Both now pass. [LOCAL_IO.md](LOCAL_IO.md) identifies the exact production and
+synthetic fixtures and separates Unix guarantees from Windows/generic-reader
+and regular-filesystem latency limits. No new native Pi evidence is claimed.
+
+## 2026-10-21 portable command terminal modes
+
+Mode capture now precedes local raw mode and translates macOS/Linux termios into
+the fixed ttymode vocabulary, then the existing staged adapter applies validated
+stty arguments before TR/command startup. Seven new paired OpenSSH 10.2p1 cases
+cover echo-off, EOF7, interrupt29/trap, raw Ctrl-D data, output processing off,
+disabled interrupt and baud19200. The eighth actual Pion/PTY coordinator case
+uses changed local modes and checks byte4/LF-only output/19200 plus exact local
+restoration. Focused new/previous coordinator, capture, validation, quoting and
+mode cases passed three repeated race runs.
+
+The actual production dialect helper checks all256 control values against local
+kernel state with no unrelated mode changes. It failed for literal caret on BSD
+stty (bare caret ->0, hex text ->48), then passed after carrier-local gfmt1 field
+adaptation; GNU accepts the original numeric value. Thirteen source-staging
+cases check metacharacters/high bytes/disabled values. Test-only local OpenSSH
+-q suppresses its close notice rather than deleting application output.
+
+Full `go test -race ./...`, vet and seven-target CGO-disabled package build/test
+compilation pass after integration. The later Darwin speed-width normalization
+test additionally prevents uint64 rates truncating into valid uint32 rates;
+focused terminal/ttymode regressions pass after that correction. Linux speed-code
+fixtures compile but have not executed on this Mac. All native clients are
+rebuilt; no Linux/Windows/physical iSH runtime or Pi evidence is claimed.
+See TTY_MODES.md for the inventory, stricter remote stty failures and remaining
+runtime/hardware/suspension/borrowed-I/O limits. No Pi access, new dependency,
+publication, provider contact or push occurred.
+
+## 2026-10-21 TTY CLI integration
+
+The experimental-command CLI now selects the staged adapter for effective
+RequestTTY yes/force. Configured TERM and initial dimensions are applied before
+TR/command startup; resize delivery starts only after TR. Request-policy tests
+cover auto/no/yes/force with terminal/pipe and StdinNull combinations. Legacy
+TTY incompatibility remains a pre-auth error.
+
+`TestTTYCommandSessionOverWebRTC` tests the actual coordinator, staged source and
+local terminal with Pion peers, a remote shell PTY, a local input PTY and output
+pipe. Seven cases cover quoted TERM, initial91x29, subsequent111x35, Unicode,
+forced pipe/zero dimensions, -n without reading or synthesized EOF, local ~.,
+authorization failure, transport loss and ordinary exit130. Every case checks
+exact terminal restoration. The adapter separately tests quoted/UTF-8 TERM,
+zero/nonzero dimensions and invalid settings. These new integration/settings
+and exit/signal tests passed five consecutive race runs on this Mac.
+
+Full `go test -race ./...` passed after integration. This includes no-TTY
+binary/duplex/EOF/backpressure/cancellation and transfer regressions, not just
+the new TTY tests. Vet, module verification and Node companion tests also pass.
+CGO-disabled package builds and every test-package compilation pass for macOS
+amd64/arm64, Linux amd64/arm64/386 softfloat and Windows amd64/arm64. All three
+native client binaries are rebuilt. An offline -G/-tt/-n smoke prints force/yes;
+an invalid TERM is rejected with255 before any authentication or network setup.
+No new native Pi or Linux/Windows/iSH runtime is claimed;
+full terminal-mode negotiation, stopped jobs/suspension and borrowed blocking-I/O
+lifecycle remain open. No remote write, software change or new dependency.
+
+Review also exposed that commandrun invoked an adapter despite a known cancelled
+context/queued auth failure. `TestKnownSessionFailureNeverStartsAdapter` failed
+before the preflight fix (starts1/context canceled) and passed100 repeated race
+runs afterward, checking no invocation and preserved causes for both conditions.
+This is a shared lifecycle fix for command and transfer coordinators, not proof
+of zero latency for detecting actual service revocation.
+
+## 2026-10-21 actual staged TTY adapter
+
+`TestStagedTTY*` exercises the existing production NewTTY.Run implementation,
+including actual in-memory upload, readiness and result parsing, over a local
+Bash PTY. It does not substitute ttyJobsScript for the embedded source. Seven
+paired functional cases use local OpenSSH_10.2p1 / LibreSSL 3.3.6; additional
+cases cover normal versus signal exit, Ctrl-C/trapped INT, first bytes, early
+Unicode input without a command prompt, an exactly 128 KiB command, completion
+with a background child, and exhausted-input cancellation without synthesized
+VEOF or claimed cleanup. See TTY_COMMANDS.md for the precise evidence limits.
+
+All new tests passed three consecutive race runs on macOS arm64 with Go 1.27.2
+and PI_SH_TEST_BASH=/private/tmp/bash-5.3/bash. Full `go test -race ./...`,
+`go vet ./...`, `go mod verify` and the Node companion test passed. The initial
+sandboxed tests failed because local loopback binds/process inspection were
+prohibited; the same tests passed with local test permissions. No failed
+sandbox run is counted as evidence of a TTY or Connect defect.
+
+CGO-disabled package builds pass for macOS amd64/arm64, Linux amd64/arm64/386
+softfloat and Windows amd64/arm64. Every test package also compiles for
+Linux/386 softfloat. Cross-target execution and physical iSH remain unverified.
+No production CLI behavior, Pi session, remote write,
+publication, provider contact or push occurred in this increment. TTY CLI
+selection/terminal/TERM/resize/lifecycle integration remains open.
+
+## 2026-10-20 Bash foreground-worker TTY candidate
+
+Fifteen paired PTY/OpenSSH cases pass five repeated race runs: seven terminal
+cases plus ordinary 0/130/143, self INT/TERM/KILL, terminal Ctrl-C and a caught
+INT exiting 42. Two further cases deliver HUP/TERM directly to the local
+supervisor; exact termination signals and ps/TIOCGPGRP snapshots prove captured
+owned processes are gone or reap-pending zombies before PTY close, including a
+command/descendant ignoring HUP/TERM. Both also pass five repeated race runs.
+Temporary debug instrumentation was removed. The fixture's failed-candidate
+safeguard terminates only captured owned groups and cannot satisfy its oracle.
+
+This is a test-only Bash/cat/stty composition, not command -t support or a native
+agent teardown result. The original POSIX negative comparisons are retained.
+See TTY_COMMANDS.md for rejected approaches, startup/descriptor constraints and
+the production staging/control/lifecycle work still needed.
+
+After the final HUP/TERM cases, full `go test -race ./...` and `go vet ./...`
+passed. CGO-disabled package builds and every test-package compilation passed
+again for darwin amd64/arm64, linux amd64/arm64/386 softfloat and windows
+amd64/arm64. No production runtime/CLI code or binaries changed in this increment;
+the new fixtures executed on macOS only, with explicit reference-tool/Bash skips
+on environments lacking those tools. No Pi access, file write or service change.
+
+## 2026-10-20 command TTY investigation
+
+Nine paired real-PTY/OpenSSH candidate cases passed five repeated race runs;
+seven confirm selected TTY/input/output/resize/normal-exit behavior and two
+deliberately assert the candidate's SIGINT-vs-exit mismatch. A separate real
+OpenSSH -tt exhausted-stdin reference passed three repeated race runs, observing
+no synthesized canonical EOF during 200 ms after readiness. Passing negative
+evidence is not TTY-feature support. See TTY_COMMANDS.md.
+
+The full local `go test -race ./...` and `go vet ./...` passed. CGO-disabled
+builds and every test-package compilation passed for macOS amd64/arm64, Linux
+amd64/arm64/386 softfloat and Windows amd64/arm64. New fixtures execute only on
+Unix with available local SSH tools; absent/permitted-account reference skips
+must remain visible. They were executed on macOS here, not Linux/Windows/iSH.
+No production CLI implementation, native Pi session or runtime binary changed.
+
+## 2026-10-20 regular-file metadata
+
+Full `go test -race ./...` and `go vet ./...` passed after adding -p to both
+transfer clients and get/put/reget/reput options. 48 paired local OpenSSH
+sftp/server comparisons check data, mode and pre-read atime/mtime on new/existing
+targets, with global/command and resume/flush flags. Eight paired local scp -D
+comparisons verify the pi-cp policy. A real server refusing SETSTAT/FSETSTAT
+confirms advisory metadata status behavior; a refused READ skips preservation.
+Wire/memory tests check subsequent metadata after a failed upload, data-failure
+retention, redacted warnings and OS atime snapshots. Memory-server chmod/times
+are not used as evidence of applied filesystem metadata.
+
+CGO-disabled builds and every test-package compilation passed for darwin
+amd64/arm64, linux amd64/arm64/386 softfloat and windows amd64/arm64. Local client
+and probe binaries were rebuilt. No native Linux/Windows/iSH runtime or remote
+metadata/content-write proof follows. SFTP_METADATA.md records path-based remote
+timestamps and missing attribute-presence flags as remaining implementation gaps.
+
+Separately, the owner reported rebuilt direct-login read-only pwd/quit status 0
+on the Pi, now including the process-local umask-prefix startup. That metadata
+check is not a content transfer, file-creation-permission or preservation test.
+
+## 2026-10-20 SFTP resume
+
+Full `go test -race ./...` and `go vet ./...` passed after adding global/command
+-a and reget/reput. Resume tests passed 48 memory scenarios, 48 paired actual
+local OpenSSH client/server comparisons, four empty-source cases, two failed-WRITE
+cleanup cases and one short-READ/failure case. Comparisons check status class
+and bytes, not complete diagnostic text or numeric Connect-failure exit parity.
+All fixtures use memory or automatically removed local temporary directories.
+No Pi transfer/write test was performed.
+
+CGO-disabled builds and every test-package compilation passed again for darwin
+amd64/arm64, linux amd64/arm64/386 softfloat and windows amd64/arm64. Local client
+and login-probe binaries were rebuilt. Native Linux/Windows and physical iSH
+remain untested. SFTP_RESUME.md records scope and integrity limitations.
+
+## 2026-10-20 safe HTTPS failure categories
+
+Seven synthetic cases failed with the original generic diagnostic, then passed
+with exact allowlisted categories for DNS/timeout/certificate/connection/other
+transport and response-read/size failures. Requests contain synthetic secret
+callback values to check redaction. Full `go test -race ./...` and `go vet ./...`
+passed; CGO-disabled package builds passed for darwin amd64/arm64, linux
+amd64/arm64/386 softfloat and windows amd64/arm64. All four local client/probe
+binaries were rebuilt. Test-package cross-compilation was not repeated for this
+increment; prior runs are recorded below. No new runtime platform claim follows.
+
+Credential-free preflight first reproduced the owner's generic HTTPS diagnostic;
+the classified rerun showed DNS, and the final rebuilt probe reached
+password_required with status 0. This is intermittent development-environment
+evidence, not a confirmed diagnosis of the owner's attempt or authenticated SFTP
+verification. No credentials, remote commands or Pi writes were used.
+
+## Automated local tests
+
+Run `go test ./...`, `go test -race ./...`, and `go vet ./...`.
+The final suite covers:
+
+The 2026-10-20 CLI-option increment also passes the full local race suite, vet
+and Node companion regression. The initial sandboxed run could not bind local
+TCP/UDP listeners; rerunning with local-network permission passed all packages.
+`TestOptionsOpenSSHDifferential` compares the supported configuration fields
+against ten offline `ssh -G -F none` invocations. This test does not connect to a
+server or load user/system SSH config. CLI validation and unreadable-input tests
+verify refusal and null-stdin semantics. See [CLI_OPTIONS.md](CLI_OPTIONS.md).
+
+CGO-disabled builds and every test package compilation passed after this increment
+for macOS amd64/arm64, Linux amd64/arm64/386 softfloat, and Windows amd64/arm64.
+The binaries for other targets were not executed. Physical iSH is still untested.
+Native binary smoke checks verified that `-G -Fnone -nTe! -oEscapeChar=none`
+prints the expected settings and returns 0 without authentication; an explicit
+command `-tt` request returns 255 before any login prompt or network setup.
+
+| Package | Actual checks |
+| --- | --- |
+| internal/sshconfig | Explicit files, Host/negation/byte wildcards, first values, grammar/CRLF, one-pass tokens, bounds/read failures and error redaction |
+| internal/platform | TCP/UDP loopback, goroutine/timer, cancellation |
+| internal/transport | Real local ICE/DTLS/SCTP peers, bidirectional text/binary/empty/large messages, ordering, fingerprint rejection, close, cancellation and bounds |
+| internal/terminal | Real Unix PTYs: raw control bytes, size changes, exact restoration, cancellation and concurrent cleanup; portable rejection tests |
+| internal/browserauth | Real loopback HTTP: exact origin/capability boundary, preflight, configuration and offer/answer exchange, destination/body limits, error redaction and missing-browser timeout |
+| internal/shellbroker | Real Bash PTYs: all byte values, independent streams, EOF, early close, no controlling TTY, duplex/blocked input/slow consumer; 14 local OpenSSH stream/status differential cases; framing validation |
+| internal/command | All frame splits, startup bounds, invalid/truncated/trailing status, cancellation; actual local shell PTY command statuses/quoting/known byte output/null stdin and missing-supervisor failure |
+| cmd/pi-sh | Unicode/control input including one-byte short reads, bracketed paste and configurable/disabled local escapes, invalid UTF-8 rejection, send failures; real Unix PTY input/restoration; actual termination signals; session end reasons and cancellation race regression |
+| cmd/protocol-probe | Bounded/cancellable signaling input and error redaction |
+
+These automated network tests use local peers/listeners only. They do not contact
+Connect or require account credentials. Browser-companion HTTP tests use dummy
+session descriptions, not captured service fixtures. Callback injection is used
+only for explicit queue-overflow testing and is not called a wire test.
+
+`node --test internal/browserauth/companion_test.mjs` executes the embedded
+companion's actual control flow with a minimal Devices-page/DOM contract and a
+synthetic HTTP 200 reauthentication response. It verifies the fixed failure code
+and that no configuration/connection is submitted. This regression failed before
+the fix and passed afterward. Node is a development-only test runtime; CI installs
+Node 26. Go tests independently verify safe recovery text and redaction of unknown
+codes/extra fields.
+
+## Authorized real-device tests
+
+[REAL_DEVICE_TESTS.md](REAL_DEVICE_TESTS.md) records actual native Go access to the
+unchanged Pi through official Connect infrastructure. The developer probe verified
+a TTY, CONNECT_TTY, two interactive round trips, resize to 100x32 and remote close.
+The actual CLI verified markers, 80x24 initial size, Ctrl-C interrupt/recovery,
+Unicode, operation after a periodic authorization check and local ~. disconnect.
+The final companion implementation also stayed usable beyond its initial 90s
+watchdog window, then terminated correctly when its browser page was reloaded
+and authorization heartbeats ceased.
+
+History persistence was disabled inside diagnostic shells. No test data, helper,
+package, service, configuration or persistent file was installed or modified.
+No raw authenticated/session captures are fixtures. These tests are distinct
+from the earlier ordinary official-browser shell check.
+
+Additional native checks on 2026-10-20 verified Ctrl-D logout, single-line wrapped
+`~.` forwarding, Unicode/multiline paste, `-e none` preserving an embedded literal
+tilde/dot line, live CLI resize to 111x37, and local SIGTERM exit 255. Injected paste
+bytes do not establish all OS clipboard variants. See the separate dated section
+in REAL_DEVICE_TESTS.md.
+
+## Experimental command checks — 2026-10-20
+
+`internal/command` tests run actual local shell PTYs and reject missing supervisor
+status; framing tests split every byte and reject malformed/trailing completion.
+`cmd/pi-sh.TestCommandOverLocalWebRTCAndPTY` joins real local Pion peers to a local
+shell PTY and executes the actual coordinator. Cancellation and authorization
+failure tests check that no command status is invented. This is simulated command
+stream integration, not an independent Connect HTTP/auth simulator.
+
+The legacy adapter had three authorised native sessions that returned command statuses 23, 7 and 0. The
+status-7 case exactly matched known 24-byte output via a local in-memory pipe,
+including Unicode, NUL, 0xff, CR/LF and merged stderr. No arbitrary output/stdin,
+remote signals, background jobs, or interactive-shell exit status is inferred.
+
+## Portable builds and CI
+
+Local Go 1.27.2 on macOS arm64 compiled packages and every test package with
+CGO_ENABLED=0 for:
+
+- macOS amd64 and arm64;
+- Linux amd64, arm64, and 386 (both sse2 and softfloat);
+- Windows amd64 and arm64.
+
+The native CLI and developer probe are included. Test binaries for other targets
+were compiled, not executed. Native Linux/Windows and physical iSH runtime remain
+unverified. The workflow runs unit/integration tests on Linux, macOS and Windows,
+race tests on Linux, and portable build/test compilation, including Linux/386
+softfloat. The workflow itself has not run on GitHub because no repository has
+been published by this task.
+
+The official Go archive used for local development was checksum-verified before
+extraction. SHA-256 of go1.27.2.darwin-arm64.tar.gz:
+`76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5`.
+
+## Dependency and vulnerability checks
+
+`go mod verify` and `go vet ./...` passed. Imported package/test-module root licences
+and original notices are recorded in DEPENDENCIES.md and THIRD_PARTY_NOTICES.md.
+This inventory is not a file-by-file release licence audit.
+
+The initial Pion dependency graph selected x/net v0.50.0, where govulncheck found
+reachable [GO-2026-5942](https://pkg.go.dev/vuln/GO-2026-5942). Updated to fixed v0.56.0,
+with x/crypto v0.53.0. Terminal support selected x/term v0.47.0 and x/sys v0.49.0.
+The scan against the native CLI/companion reported zero reachable vulnerabilities
+and nine module-level findings not shown as reachable. This is not a blanket
+security guarantee and must be rechecked for release and other platform builds.
+
+```sh
+go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+```
+
+## Explicit configuration-file tests — 2026-10-20
+
+Twelve valid and six invalid synthetic-file comparisons with local OpenSSH_10.2p1
+verify Host selection, CLI/file precedence, HostName tokens and syntax. The earlier
+ten CLI comparisons remain; all 127 non-NUL ASCII escape bytes have dump
+comparisons. Regressions failed before correcting pattern case, attached comments
+and space/backslash/DEL rendering. These offline `ssh -G` tests use no Pi, account
+SSH config or SSH server. Additional module tests cover bounded reads, regular
+files, redacted errors, inactive-directive refusal and unchanged commands. See
+CONFIGURATION.md for incomplete directives and Connect-specific target semantics.
+
+The later Include increment adds 18 offline OpenSSH comparisons for pattern/file
+order, nested/caller/inactive Host scope, quoted/dot/class paths, effective and
+original-host tokens, CLI HostName precedence, one-pass environment values,
+tilde/home-relative paths and nested relative Includes. The existing ~/.ssh is
+only traversed for a relative-path reference; if absent, that case explicitly
+skips rather than creating it. All sources remain temporary local files.
+Module fixtures exercise aggregate byte/file/depth/entry/match budgets, identity
+cycles/hard links, symlink/.. traversal, FIFO refusal, override-map ownership and
+redacted errors. Expanded HostName allocation has a separate 4096-byte bound.
+pi-cp/pi-sftp frontend tests now load an included incompatible policy and reject
+it before login. Native aliases/Includes remain unverified; this does not extend
+the prior Pi shell/SFTP evidence.
+
+After Include integration, the full local race suite and vet pass again, as do
+CGO-disabled builds and every test-package compilation for macOS amd64/arm64,
+Linux amd64/arm64/386 softfloat and Windows amd64/arm64. Native binaries for all
+three clients are rebuilt. The offline pi-sh -G smoke resolves a synthetic alias
+from an included temporary file; all smoke files are removed. Other target
+binaries were not executed and no Pi session/write was performed.
+
+The full local race suite, vet and Node test pass after explicit-file integration.
+CGO-disabled builds and test-package compilation pass for macOS amd64/arm64,
+Linux amd64/arm64/386 softfloat and Windows amd64/arm64. The rebuilt native binary
+prints a synthetic alias's expected effective target/settings; CLI -T overrides
+file RequestTTY force. Without that override, command mode returns 255 before a
+login prompt or network setup. The local synthetic smoke config was removed.
+
+## Broker cancellation and local signals — 2026-10-20
+
+Real local Bash PTYs verify that the owned command leader is reaped and its known
+descendant is not running before the still-open carrier closes, plus five early
+worker cancellations. The first offers 1 MiB stdin to a nonreading child while draining
+128 KiB output, then cancels, exercising a blocked input worker too.
+Synthetic fixtures check launch/readiness cancellation,
+local writer failure, acknowledged/closed/silent aborts, and coordinator auth-loss
+and cancellation arbitration. A real Pion pair and a synthetic broker peer test
+the actual connect/coordinator cleanup path. These are not Connect service or
+native agent fixtures. A temporary loopback OpenSSH_10.2p1 server additionally
+verifies actual INT/TERM/HUP/QUIT of the local SSH client return 255, with open
+stdin and remote INT/TERM traps. All fourteen prior stream/status fixtures remain.
+
+Race detection exposed a test-buffer bypass via bytes.Buffer's promoted ReadFrom;
+composition fixes that before accepting the signal test. The corrected focused
+tests pass under race. No live authentication/session material is retained, and
+the owner subsequently verified the direct -nT Ctrl-C/status255 path. Native auth revocation, network loss and independent process inspection remain pending.
+
+After this increment the complete local race suite, vet and Node companion test
+pass. CGO-disabled builds and every test-package compilation pass for macOS
+amd64/arm64, Linux amd64/arm64/386 softfloat and Windows amd64/arm64. Those other
+target binaries were not executed. The native bin/pi-sh was rebuilt.
+
+## SFTP and copy tests — 2026-10-20
+
+The shared commandrun coordinator remains covered through pi-sh's cancellation/
+auth arbitration tests. connectsession has a real Pion dial/readiness/single-use
+cancelled-start test, alongside the existing TLS authentication/signaling suite.
+SFTP pipe tests use an in-memory server for all-byte file round trips, clean EOF,
+idempotent close, cancellation, oversized malformed packets and error redaction.
+Console/copy tests cover regular binary files, multiple-source directory preflight,
+spaces/quotes/Unicode/colon operands, aliases, batch stop/ignore/quiet, directory/
+link/file operations and refusal of unsupported flags. Windows file fixtures use
+valid local Windows names; no native Windows runtime result is claimed here.
+
+Actual local OpenSSH sftp-server tests check a quote-sensitive executable path,
+get/put preserving link/.. traversal, chmod 600 and server-enforced -R create
+rejection. A separate actual Bash/PTY/broker/SFTP test transfers exact 8192-byte
+all-byte data, renames/removes the local test file and verifies clean final status.
+All files are in t.TempDir or memory; no Pi transfer write occurs.
+Default-mode tests compare actual OpenSSH CLI creation for source modes
+600/640/700/777 under server umasks022/077, check existing-target modes and new
+directory modes, and use server -P fsetstat to verify failed uploads remain empty
+and private. Setup prefix tests reject malformed/oversized masks without consuming
+SFTP bytes. Private creation uses only a process-local mask, never configuration.
+
+The full local race suite, vet, Node companion, module verification and seven-target
+CGO-disabled build/test compilation pass after integration. Native binaries for
+pi-sh/pi-cp/pi-sftp are built. govulncheck reports zero reachable vulnerabilities,
+three imported-package and six module findings not shown reachable. The owner
+reported native direct read-only metadata status0 for the initial binary. The
+later mask setup, file-content transfers and physical iSH remain pending.
+
+## Transfer option and forwarding candidate checks — 2026-10-20
+
+The later flush increment adds 14 OpenSSH CLI comparisons (global/command -f)
+against a local test-only in-memory server with absent/failed/dropped/malformed
+fsync behavior and write failures. Matching Go-client fixtures verify status,
+data, redaction and failure propagation. Actual local OpenSSH server debug data
+(memory only) verify writes, fsync and CLOSE order, and no fsync when -P fsync
+removes the advertisement. Fault fixtures verify sync/close arbitration, including
+advisory sync failures that cannot erase copy errors. See SFTP_FLUSH.md.
+
+Twenty no-flush upload regressions check complete write refusal and a retained
+1024-byte prefix followed by refusal, across 1024/32768 packet and buffer limits.
+They protect both frontends' shared copy against a pinned ReaderFrom final-short-
+read WRITE-error loss observed before the plain-interface copy fix. All test data
+remain local temporary files or memory. This is not Pi disk-full/flush evidence.
+
+After flush/error-propagation integration the full local race suite and vet pass.
+CGO-disabled builds and every test-package compilation pass for macOS
+amd64/arm64, Linux amd64/arm64/386 softfloat and Windows amd64/arm64. All three
+native binaries are rebuilt; pi-sftp -fb- reaches the expected incompatible-TTY
+policy refusal before login. Cross-target binaries were not executed; no new Pi
+session or transfer write was performed.
+
+Transfer-option tests now exercise both frontend entry points up to configuration
+rejection before login, plus cliargs attached/separate values, '--', operand
+boundaries and unsupported flags. An actual local OpenSSH sftp process verifies
+-b-, -Fnone, -oBatchMode=yes and the literal filename '=commands' in -b=commands.
+No SSH/network authentication is used by that reference (-D runs a local server).
+
+Forwarding candidate tests use IPv4 loopback only: Go CloseWrite proves the
+EOF-driven response fixture, Bash /dev/tcp plus two cats proves missing socket EOF
+with a reader still alive, and an optional existing-local-nc test measures its
+actual binary/EOF/response behavior. On this Mac all three run/pass with modern
+Bash and system nc. Missing/no-default-half-close nc is an explicit skip; no Pi
+utility or forwarding support is inferred. See FORWARDING.md for the measured
+blocker and remaining capability evidence.
+
+After this increment, the full local race suite and vet pass again. CGO-disabled
+package builds and every test-package compilation pass for macOS amd64/arm64,
+Linux amd64/arm64/386 softfloat and Windows amd64/arm64. Cross-target binaries
+were not run; the Bash/nc TCP fixtures above ran on this Mac only.
+
+## Required remaining verification
+
+No independent Connect HTTP/authentication-service simulator, full SSH differential
+suite, native agent-status tests, complete binary-stream stress coverage, native transfer and forwarding tests,
+forced relay, authorization revocation, ICE renewal, native Windows console or
+physical iSH tests exist yet. Remote transfer-write tests require an explicitly
+approved location and cleanup. Do not put live credentials into CI.
+
+## Shell-only broker tests — 2026-10-20
+
+On this Mac the full `go test -race ./...` suite passed with
+`PI_SH_TEST_BASH=/private/tmp/bash-5.3/bash`. macOS system Bash 3.2 does not satisfy
+the remote broker requirement; modern Bash tests skip with an explicit reason
+when unavailable. Linux CI uses existing Bash. The local setsid helper is compiled
+from the test package only and never shipped or executed on the Pi.
+
+`TestOpenSSHDifferentialCommandBehavior` starts a temporary SSH server on IPv4 loopback with
+ephemeral keys, password login disabled and strict pinned-host verification. It
+uses no account SSH configuration or Pi SSH transport. The measured reference
+was OpenSSH_10.2p1, LibreSSL 3.3.6. Fourteen fixtures compare bytes/status: all-byte
+stdio, EOF, no controlling terminal, normal exits including 143/255 and self
+TERM/INT/KILL. Missing local sshd/account support is an explicit skip, not a pass.
+This is a selected execution differential suite, not full OpenSSH equivalence.
+
+Native broker evidence and the larger duplex fixture are recorded in
+REAL_DEVICE_TESTS.md. The 2048-small-fragment transport regression failed before
+the queue fix; the byte-budget/accounting regression also passes under `-race`.
+The native rerun after reconnection/normal reauthentication passed exact 64 KiB
+stdin/stdout and 128 KiB stderr with self-SIGKILL status 255 and no failure diagnostic.
+
+GNU Bash 5.3 was built only under the Mac's temporary directory from the official
+GNU archive. Its SHA-256 matched the independently obtained Homebrew formula:
+`0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba`.
+No signature verification is claimed. Bash source is not copied into pi-sh.
+
+After the shell-broker/transport updates, CGO-disabled package builds and test
+compilation passed again for macOS amd64/arm64, Linux amd64/arm64/386 softfloat,
+and Windows amd64/arm64. `go vet ./...` and the Node companion regression passed.
+These cross-target binaries were not executed.
+
+## Direct HTTPS login investigation — 2026-10-20
+
+`internal/webauth` adds local TLS fixtures using synthetic password/OTP, in-memory
+cookies, server-derived CSRF and callback navigation. Regressions cover unknown
+MFA routes, changed/ambiguous forms, empty device IDs, credential redirect replay,
+exact origins, public-suffix cookies, HTTP200 false success and URL redaction.
+The package passes with the race detector. Live default `login-probe` reached
+password_required without submitting credentials; this is not a completed login.
+The operator-run password/OTP attempt and shell integration remain pending.
+
+## Direct login integrated with native CLI
+
+The owner completed a fresh native login with password/TOTP and then ran the
+updated pi-sh direct-login command on the real Pi. Expected marker and status 23
+passed. This is owner-reported real-device evidence, separate from synthetic TLS
+tests. It does not verify all direct interactive or long-session behavior.
+
+The full local race suite and vet pass after integration. New tests include
+CSRF/header-bound signaling with own cookies, device mismatch and polling-origin
+rejection, one creation attempt, non-204 authorization failure, close/cancel, and
+real PTY password/code prompts and cancellation/restoration. A cancelled-reader
+race was found and fixed by serializing mode changes and restoration. The
+synthetic HTTP suite does not pretend its descriptions establish real WebRTC;
+transport and previous Pion/PTY tests remain distinct. No live login data are
+fixtures. See DIRECT_LOGIN_PROBE.md for scope.
+
+After direct-signaling integration, CGO-disabled package builds and every test
+package compilation passed again for macOS amd64/arm64, Linux amd64/arm64/386
+softfloat, and Windows amd64/arm64. Those target binaries were not executed.
+
+## Bash 5.2 timed-read regression — 2026-10-22
+
+`TestShellBrokerMegabyteStdinCount` sends 1MiB of every byte value to
+`wc -c` (the native read-only fixture) with whole records and with a test-only
+carrier that delays each record newline by 0.5–1.5 ms. Run it with the Pi's
+Bash version as well as 5.3:
+
+```sh
+PI_SH_TEST_BASH=<scratch>/bash-5.2/bash go test ./internal/shellbroker -run MegabyteStdinCount -count=3
+```
+
+Bash 5.2.37 was built only in the session scratch directory from the official
+GNU `bash-5.2.tar.gz` (SHA-256
+`a139c166df7ff4471c5e0733051642ee5556c1cc8a4a78f145583c5c81ab32fb`) plus official
+patches 001–037; no signature verification is claimed. Before the fix the
+late-newline case stalled 2/2 with 5.2.37 and passed 3/3 with 5.3; after it,
+3/3 with both. The whole shellbroker and cmd packages pass with 5.2.37, and the
+full race suite with 5.3. That 5.2 build is ephemeral and not used by CI.
