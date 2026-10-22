@@ -15,15 +15,45 @@ _ps_cleanup() {
   }
   [[ ${_ps_writer_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_writer_pid" 2>/dev/null
   [[ ${_ps_err_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_err_pid" 2>/dev/null
+  [[ ${_ps_out_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_out_pid" 2>/dev/null
+  [[ ${_ps_eout_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_eout_pid" 2>/dev/null
   [[ ${_ps_meta_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_meta_pid" 2>/dev/null
   [[ ${_ps_idle_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_idle_pid" 2>/dev/null
   [[ ${_ps_relay_pid:-} =~ ^[0-9]+$ ]] && kill "$_ps_relay_pid" 2>/dev/null
-  wait "${_ps_pid:-}" "${_ps_writer_pid:-}" "${_ps_err_pid:-}" "${_ps_meta_pid:-}" "${_ps_idle_pid:-}" "${_ps_relay_pid:-}" 2>/dev/null
+  wait "${_ps_pid:-}" "${_ps_writer_pid:-}" "${_ps_err_pid:-}" "${_ps_out_pid:-}" "${_ps_eout_pid:-}" "${_ps_meta_pid:-}" "${_ps_idle_pid:-}" "${_ps_relay_pid:-}" 2>/dev/null
   :
+}
+# Output reader worker. Each newline token from the parent permits one record.
+# Bash cannot learn how many pipe bytes are available and no timed read may
+# consume data (Bash 5.2), so bytes after the first are polled with -t 0 and
+# read singly. The first byte may block: this worker does nothing else. Each
+# record is encoded by one printf; "'" with no character encodes NUL as 00.
+_ps_reader() {
+  local fd=$1 c a IFS=
+  while read -r c; do
+    a=()
+    if read -r -d '' -n1 -u"$fd" c; then
+      a[0]="'$c"
+      while ((${#a[@]}<2048)) && read -t 0 -u"$fd"; do
+        if read -r -d '' -n1 -u"$fd" c; then
+          a+=("'$c")
+        else
+          printf -v c '%02x' "${a[@]}"
+          printf '%s\n%s\nF\n' "${#c}" "$c"
+          exit 0
+        fi
+      done
+      printf -v c '%02x' "${a[@]}"
+      printf '%s\n%s\n' "${#c}" "$c" || exit 0
+    else
+      printf 'F\n'
+      exit 0
+    fi
+  done
 }
 _ps_main() {
   local _ps_shell=${SHELL:-/bin/sh}
-  local _ps_pid _ps_writer_pid _ps_err_pid _ps_meta_pid _ps_idle_pid _ps_relay_pid _ps_done=0
+  local _ps_pid _ps_writer_pid _ps_err_pid _ps_out_pid _ps_eout_pid _ps_meta_pid _ps_idle_pid _ps_relay_pid _ps_done=0
   exec 2>/dev/null
   trap _ps_cleanup EXIT
   trap 'exit 125' HUP TERM
@@ -55,13 +85,26 @@ _ps_main() {
   coproc _PS_INPUT {
     exec 3<&- 5<&- 9<&- 10>&- 2>/dev/null
     printf 'start\n' >&6 || exit 125
-    local line seq hex escaped i
-    while IFS= read -r line; do
-      if [[ $line == F ]]; then exec 6>&-; printf 'F\n'; exit 0; fi
-      seq=${line%% *}; hex=${line#* }
-      [[ $seq =~ ^[0-9]+$ && $hex != *[!0123456789abcdef]* && $((${#hex}%2)) == 0 && ${#hex} -le 2048 ]] || exit 125
-      escaped=
-      for ((i=0;i<${#hex};i+=2)); do escaped+="\\x${hex:i:2}"; done
+    local seq n hex escaped i fast=0
+    # Bash >=5.2 expands & in a substitution to the match: one-step escaping.
+    if ((BASH_VERSINFO[0]>5||(BASH_VERSINFO[0]==5&&BASH_VERSINFO[1]>=2))); then
+      shopt -s patsub_replacement && fast=1
+    fi
+    # The parent writes "seq length", then exactly length hex digits and a
+    # newline, only after the previous acknowledgement: -N cannot stall.
+    while IFS=' ' read -r seq n; do
+      if [[ $seq == F ]]; then exec 6>&-; printf 'F\n'; exit 0; fi
+      [[ $seq =~ ^[0-9]+$ && $n =~ ^[0-9]+$ ]] && ((n>0 && n<=4096 && n%2==0)) || exit 125
+      IFS= read -r -N $((n+1)) hex || exit 125
+      [[ ${hex:n} == $'\n' ]] || exit 125
+      hex=${hex:0:n}
+      [[ $hex != *[!0123456789abcdef]* ]] || exit 125
+      if ((fast)); then
+        escaped=${hex//??/\\x&}
+      else
+        escaped=
+        for ((i=0;i<n;i+=2)); do escaped+="\\x${hex:i:2}"; done
+      fi
       if ! printf '%b' "$escaped" >&6; then printf 'K\n'; exit 0; fi
       printf 'A %s\n' "$seq"
     done
@@ -71,52 +114,79 @@ _ps_main() {
   exec 7<&${_PS_INPUT[0]} 8>&${_PS_INPUT[1]}
   eval "exec ${_PS_INPUT[0]}<&- ${_PS_INPUT[1]}>&-"
   exec 6>&-
+  coproc _PS_OUT { exec 3<&- 7<&- 8>&- 9<&- 10>&- 2>/dev/null; _ps_reader 5; } 2>/dev/null
+  _ps_out_pid=$_PS_OUT_PID
+  exec 14<&${_PS_OUT[0]} 15>&${_PS_OUT[1]}
+  eval "exec ${_PS_OUT[0]}<&- ${_PS_OUT[1]}>&-"
+  coproc _PS_EOUT { exec 5<&- 7<&- 8>&- 9<&- 10>&- 14<&- 15>&- 2>/dev/null; _ps_reader 3; } 2>/dev/null
+  _ps_eout_pid=$_PS_EOUT_PID
+  exec 16<&${_PS_EOUT[0]} 17>&${_PS_EOUT[1]}
+  eval "exec ${_PS_EOUT[0]}<&- ${_PS_EOUT[1]}>&-"
+  exec 3<&- 5<&-
   # Bash 5.2 read -t can report a timeout after consuming the delimiter. Data
   # descriptors are therefore polled with -t 0 and read without a timeout; the
   # loop sleeps with timed reads on this pipe, which nothing ever writes.
-  coproc _PS_IDLE { exec cat 3<&- 5<&- 7<&- 8>&- 9<&- 10>&- 2>/dev/null; }
+  coproc _PS_IDLE { exec cat 7<&- 8>&- 9<&- 10>&- 14<&- 15>&- 16<&- 17>&- 2>/dev/null; }
   _ps_idle_pid=$_PS_IDLE_PID
   exec 11<&${_PS_IDLE[0]} 12>&${_PS_IDLE[1]}
   eval "exec ${_PS_IDLE[0]}<&- ${_PS_IDLE[1]}>&-"
   # Bash may buffer terminal reads (macOS), hiding queued records from -t 0.
   # Pipes are always read unbuffered, so relay the carrier through one.
   exec 13<&0
-  coproc _PS_RELAY { exec cat <&13 3<&- 5<&- 7<&- 8>&- 9<&- 10>&- 11<&- 12>&- 13<&- 2>/dev/null; }
+  coproc _PS_RELAY { exec cat <&13 7<&- 8>&- 9<&- 10>&- 11<&- 12>&- 13<&- 14<&- 15>&- 16<&- 17>&- 2>/dev/null; }
   _ps_relay_pid=$_PS_RELAY_PID
   exec 0<&${_PS_RELAY[0]} 13<&-
   eval "exec ${_PS_RELAY[0]}<&- ${_PS_RELAY[1]}>&-"
-  local out_seq=0 err_seq=0 out_ack=0 err_ack=0 in_seq=0
-  local out_eof=0 err_eof=0 input_closed=0 input_pending=0
-  local record= line= status ch hex byte fd name seqvar eofvar ackvar
+  local out_seq=0 err_seq=0 out_ack=0 err_ack=0 out_req=0 err_req=0
+  local in_seq=0 in_fwd=0 in_ack=0 out_eof=0 err_eof=0 input_closed=0 input_pending=0
+  local record= line= status hex n fd tfd name seqvar eofvar ackvar reqvar idle plen=${#_ps_prefix}
+  local -a inq=()
   local meta_line= meta_state= terminal_kind=unknown unknown_since=-1 refreshed=0
   _ps_emit R
   while :; do
+    idle=1
     # Only this parent writes carrier records; workers communicate through pipes.
-    # The client sends whole records, so a started line completes promptly.
+    # The client sends whole records, so a started record completes promptly.
+    # read -N fetches its exact remaining length in few syscalls, never more.
     if IFS= read -r -t 0; then
-      IFS= read -r record || exit 125
-      ((${#record}<=2304+${#_ps_prefix})) || _ps_fail
-      [[ $record == "$_ps_prefix"* ]] || _ps_fail
-      record=${record#"$_ps_prefix"}
-      case $record in
-        'A O '*) line=${record#A O }; [[ $line =~ ^[0-9]+$ && $line -eq $((out_ack+1)) && $line -le $out_seq ]] || _ps_fail; out_ack=$line ;;
-        'A E '*) line=${record#A E }; [[ $line =~ ^[0-9]+$ && $line -eq $((err_ack+1)) && $line -le $err_seq ]] || _ps_fail; err_ack=$line ;;
-        'I '*)
-          ((input_closed==0 && input_pending==0)) || _ps_fail
-          line=${record#I }; status=${line%% *}; hex=${line#* }
-          [[ $status =~ ^[0-9]+$ && $status -eq $((in_seq+1)) && $hex != *[!0123456789abcdef]* && $((${#hex}%2)) == 0 && ${#hex} -le 2048 ]] || _ps_fail
-          in_seq=$status; input_pending=1
-          printf '%s %s\n' "$status" "$hex" >&8 || { input_closed=1; _ps_emit K; }
+      idle=0
+      IFS= read -r -N $((plen+2)) record || exit 125
+      [[ ${record:0:plen} == "$_ps_prefix" ]] || _ps_fail
+      case ${record:plen} in
+        'A ')
+          IFS= read -r line || exit 125
+          ((${#line}<=24)) || _ps_fail
+          case $line in
+            'O '*) line=${line#O }; [[ $line =~ ^[0-9]+$ && $line -eq $((out_ack+1)) && $line -le $out_seq ]] || _ps_fail; out_ack=$line ;;
+            'E '*) line=${line#E }; [[ $line =~ ^[0-9]+$ && $line -eq $((err_ack+1)) && $line -le $err_seq ]] || _ps_fail; err_ack=$line ;;
+            *) _ps_fail ;;
+          esac
           ;;
-        F) ((input_pending==0)) || _ps_fail; if ((input_closed==0)); then printf 'F\n' >&8 || :; exec 8>&-; input_closed=1; fi ;;
+        'I ')
+          # "I seq length hex": up to eight unacknowledged records of at most
+          # 2048 bytes. Records arriving after K are validated and dropped.
+          IFS= read -r -d ' ' status || exit 125
+          IFS= read -r -d ' ' n || exit 125
+          [[ $status =~ ^[0-9]{1,9}$ && $n =~ ^[0-9]{1,4}$ ]] && ((status==in_seq+1 && n>0 && n<=4096 && n%2==0 && in_seq-in_ack<8)) || _ps_fail
+          IFS= read -r -N $((n+1)) hex || exit 125
+          [[ ${hex:n} == $'\n' ]] || _ps_fail
+          hex=${hex:0:n}
+          [[ $hex != *[!0123456789abcdef]* ]] || _ps_fail
+          in_seq=$status
+          ((input_closed)) || inq[status]=$hex
+          ;;
+        $'F\n') ((input_pending==0 && in_fwd==in_seq)) || _ps_fail; if ((input_closed==0)); then printf 'F\n' >&8 || :; exec 8>&-; input_closed=1; fi ;;
         # D is a pi-sh application acknowledgement, never native agent status.
         # Kill/reap owned groups and helpers before confirming cancellation.
-        C) _ps_cleanup; _ps_done=1; _ps_emit D; return 125 ;;
+        $'C\n') _ps_cleanup; _ps_done=1; _ps_emit D; return 125 ;;
         *) _ps_fail ;;
       esac
-    else
-      IFS= read -r -t 0.001 -u11 line
-      (($?>128)) || exit 125
+    fi
+    # The writer holds at most one record; the rest wait here, in memory.
+    if ((input_closed==0 && input_pending==0 && in_fwd<in_seq)); then
+      ((in_fwd++)); input_pending=1; idle=0
+      printf '%s %s\n%s\n' "$in_fwd" "${#inq[in_fwd]}" "${inq[in_fwd]}" >&8 || { input_closed=1; input_pending=0; in_fwd=$in_seq; inq=(); exec 8>&-; _ps_emit K; }
+      unset "inq[in_fwd]"
     fi
     while IFS= read -r -t 0 -u9; do
       # This shell wrote each notice completely before the pipe exposed it.
@@ -137,36 +207,42 @@ _ps_main() {
       fi
     done
     if ((input_closed==0)) && IFS= read -r -t 0 -u7; then
+      idle=0
       # Replies are single short writes; a failed read means the worker ended.
       if IFS= read -r -u7 line; then
         case $line in
-          'A '*) [[ ${line#A } == "$in_seq" ]] || _ps_fail; input_pending=0; _ps_emit "A $in_seq" ;;
-          K) input_closed=1; input_pending=0; exec 8>&-; _ps_emit K ;;
+          'A '*) [[ ${line#A } == "$in_fwd" && $input_pending == 1 ]] || _ps_fail; input_pending=0; in_ack=$in_fwd; _ps_emit "A $in_fwd" ;;
+          K) input_closed=1; input_pending=0; in_fwd=$in_seq; inq=(); exec 8>&-; _ps_emit K ;;
           *) _ps_fail ;;
         esac
       else
-        input_closed=1; input_pending=0; exec 8>&-; _ps_emit K
+        input_closed=1; input_pending=0; in_fwd=$in_seq; inq=(); exec 8>&-; _ps_emit K
       fi
     fi
     for name in O E; do
-      if [[ $name == O ]]; then fd=5; seqvar=out_seq; eofvar=out_eof; ackvar=out_ack; else fd=3; seqvar=err_seq; eofvar=err_eof; ackvar=err_ack; fi
-      local -n sequence=$seqvar ended=$eofvar acknowledged=$ackvar
-      ((ended==0 && sequence-acknowledged<4)) || continue
-      hex=
-      for ((byte=0;byte<128;byte++)); do
-        IFS= read -r -t 0 -u"$fd" || break
-        ch=
-        if IFS= read -r -d '' -n1 -u"$fd" ch; then
-          if [[ -z $ch ]]; then hex+=00; else printf -v status '%02x' "'$ch"; hex+=$status; fi
-        else
-          status=$?
-          if ((status==1)); then ended=1; fi
-          break
-        fi
+      if [[ $name == O ]]; then fd=14; tfd=15; seqvar=out_seq; eofvar=out_eof; ackvar=out_ack; reqvar=out_req; else fd=16; tfd=17; seqvar=err_seq; eofvar=err_eof; ackvar=err_ack; reqvar=err_req; fi
+      local -n sequence=$seqvar ended=$eofvar acknowledged=$ackvar requested=$reqvar
+      ((ended==0)) || continue
+      # The reader writes each "length / hex" pair whole, so -N cannot stall.
+      while IFS= read -r -t 0 -u"$fd"; do
+        idle=0
+        if ! IFS= read -r -u"$fd" n || [[ $n == F ]]; then ended=1; _ps_emit "F $name"; break; fi
+        [[ $n =~ ^[0-9]{1,4}$ ]] && ((n>0 && n<=4096 && sequence<requested)) || _ps_fail
+        IFS= read -r -N $((n+1)) -u"$fd" hex || _ps_fail
+        [[ ${hex:n} == $'\n' ]] || _ps_fail
+        ((sequence++))
+        _ps_emit "$name $sequence ${hex:0:n}"
       done
-      if [[ -n $hex ]]; then ((sequence++)); _ps_emit "$name $sequence $hex"; fi
-      if ((ended==1)); then _ps_emit "F $name"; fi
+      # One token per record: at most eight unacknowledged output records.
+      while ((ended==0 && requested-acknowledged<8)); do
+        printf '\n' >&"$tfd" || break
+        ((requested++))
+      done
     done
+    if ((idle)); then
+      IFS= read -r -t 0.001 -u11 line
+      (($?>128)) || exit 125
+    fi
     if ((out_eof && err_eof && out_seq==out_ack && err_seq==err_ack)); then
       if ! kill -0 "$_ps_pid" 2>/dev/null; then
         if [[ $terminal_kind == unknown ]]; then
