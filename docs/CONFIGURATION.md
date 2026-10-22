@@ -37,8 +37,9 @@ config-file invocations have not yet been verified against the Pi.
   `*`, `?` and `!` negation. A matching negation excludes the block; a list of
   only negated patterns never selects a block. Patterns do not use filesystem
   character classes or path-separator rules.
-- Host matching uses the lowercased original destination with case-sensitive
-  patterns, matching the selected OpenSSH tests. HostName substitution does not
+- Host patterns are case-sensitive and match the destination exactly as typed,
+  as local OpenSSH 10.2 does (`Host pi-*` does not select `PI-ONE`; an earlier
+  revision wrongly lowercased the destination). HostName substitution does not
   trigger another Host evaluation. Wildcards operate on bytes.
 - First obtained value wins within the file. Explicit CLI settings override file
   values. Existing mixed short-flag/`-o` precedence is preserved.
@@ -51,9 +52,11 @@ config-file invocations have not yet been verified against the Pi.
 - HostName tokens `%h` (original destination) and `%%`, expanded once. Exact
   Connect name case and quoted internal spaces are preserved. This intentionally
   differs from OpenSSH's lowercasing/validation of DNS destination strings.
-- `-o` uses the same directive/value grammar and validates the same four fields.
+- `-o` uses the same directive/value grammar and validates the same fields
+  (the four scalars plus Tag).
 - `-G` reports hostname when a destination is present, plus escapechar, stdinnull
-  and requesttty. No authentication, DNS lookup or network connection occurs.
+  and requesttty, plus tag when set. No authentication, DNS lookup or network
+  connection occurs (Match exec still runs its local command, as in ssh -G).
 
 ## Include files
 
@@ -106,12 +109,79 @@ substitutions to avoid expansion-driven allocation spikes.
 
 All lines, including inactive blocks and duplicate/overridden values, are
 validated. Unsupported directives fail rather than silently discarding behavior.
-This is stricter than OpenSSH for some inactive directives/values. Match,
-IgnoreUnknown, User, LocalCommand, ProxyCommand, RemoteCommand and all
-unlisted directives remain unsupported. No local command, shell expansion,
-general environment expansion, backslash syntax, default file search or
-configuration canonicalization pass is implemented. Only Include supports the
-documented environment/path expansion; HostName retains its separate token set.
+This is stricter than OpenSSH for some inactive directives/values.
+IgnoreUnknown, User, LocalCommand, ProxyCommand, RemoteCommand, CanonicalizeHostname
+and all unlisted directives remain unsupported. Apart from Match exec (below),
+no local command, shell expansion, general environment expansion, backslash
+syntax, default file search or hostname canonicalization is implemented. Only
+Include supports the documented environment/path expansion; HostName retains
+its separate token set.
+
+## Match, Tag and -P
+
+`Match` follows local OpenSSH 10.2p1 (`ssh -G`), shared by all three clients:
+
+```sshconfig
+Match tagged work exec "test -e %d/.pi-work"
+    EscapeChar none
+Match host raspberrypi,!lab-* !localnetwork 192.168.1.0/24
+    RequestTTY no
+Match final originalhost pi
+    StdinNull yes
+```
+
+- Criteria: `all`, `canonical`, `final`, `host`, `originalhost`, `user`,
+  `localuser`, `localnetwork`, `tagged`, `version`, `sessiontype`, `command`,
+  `exec`. Criterion names are case-insensitive; `!criterion` negates; criteria
+  on one line are ANDed and all are validated even after one fails. Arguments
+  may be written `criterion=value`. A token starting with `#` ends the line.
+  `all` must stand alone (it may follow one criterion, as in OpenSSH).
+- Arguments are comma-separated pattern lists with `*`/`?`; a matching `!`
+  subpattern rejects the whole list; a list of only negations never matches.
+  `host`/`originalhost` fold ASCII case on both sides; all other criteria are
+  case-sensitive. An empty argument is an error except for `tagged` and
+  `command`, where `""` matches only an unset tag/empty command.
+- `host` uses the HostName-expanded target at that line; `originalhost` and
+  Host blocks use the destination as typed.
+- `user` and `%r` mean what OpenSSH means: the configured SSH user name
+  (User/`-l`, when obtained) or otherwise the local login name. This is only a
+  config evaluation input. A Connect session always runs as the agent's fixed
+  account, which pi-sh neither selects nor verifies. `localuser` and `%u` are
+  the local login name.
+- `localnetwork` takes a CIDR list (no negation, no empty entries, no host bits
+  set) and matches addresses of up local interfaces. Scoped (link-local) IPv6
+  addresses are skipped, matching OpenSSH's observed behavior. Interface
+  enumeration failure (possible on iSH, untested) is an explicit error.
+- `version` compares `pi-sh_<version>` (as in `pi-sh -V`), never an OpenSSH
+  version, so `Match version OpenSSH_*` is false by design.
+- `sessiontype`/`command`: pi-sh reports `exec` with the command words joined
+  by single spaces, or `shell` for no/empty command. pi-sftp and pi-cp report
+  what OpenSSH sftp would request: subsystem `sftp`, or `exec` of the explicit
+  server path given with `-s`/`--sftp-server`.
+- `exec` runs `$SHELL -c command` (or `/bin/sh`) with stdin and stdout on the
+  null device, stderr inherited and the environment unchanged; exit 0 matches,
+  other statuses do not, and death by signal is an error. As in OpenSSH it
+  runs only while preceding criteria on the line match, also inside inactive
+  Include files, again during the final pass, and during `-G`. Tokens: `%%`,
+  `%h`, `%n`, `%r`, `%u`, `%d`, `%i`, `%l`, `%L`. `%p`, `%C`, `%k`, `%j` have no
+  pi-sh meaning (no SSH port, host key or jump host) and fail. Tokens are
+  validated even when exec is skipped (stricter than OpenSSH). `%h`, `%n` and
+  `%r` values containing whitespace or shell metacharacters are refused
+  instead of being spliced into a shell (OpenSSH rejects such command-line
+  names but splices config HostName values). Not available on Windows.
+- `final`/`canonical`: a non-negated `final` anywhere (even on a failed line or
+  in an inactive Include) requests a second pass over all files. Earlier
+  values are kept; HostName is fixed to the effective target; `final` and
+  `canonical` then match. Without CanonicalizeHostname support only Match final
+  triggers the pass. The final target keeps exact Connect name case, where
+  OpenSSH lowercases it.
+- `Tag` sets the tag (first value wins; `none` is literal). pi-sh `-P tag`
+  sets it from the command line, first obtained relative to `-o Tag`, and may
+  be empty. pi-cp/pi-sftp keep `-P` for scp/sftp port semantics, so use
+  `-oTag=`. `-G` prints `tag` when set.
+- `-oMatch` is rejected like OpenSSH. Evidence: `TestMatchOpenSSHDifferential`
+  (129 `ssh -G` fixtures), `TestMatchRejectsLikeOpenSSH` (55), and
+  `TestMatchDocumentedDifferences`. Real-device and iSH verification pending.
 
 RequestTTY yes/force now selects the experimental command TTY path with the
 stdin-dependent policy in TTY_COMMANDS.md. Legacy TTY requests and interactive
