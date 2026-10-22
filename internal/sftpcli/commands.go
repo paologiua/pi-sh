@@ -11,12 +11,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/pkg/sftp"
+	"pi-sh/internal/pathglob"
 	"pi-sh/internal/sftpclient"
 )
 
@@ -33,60 +33,101 @@ type Console struct {
 	// RemoteUmask comes from sftpclient's private-creation setup. Nil is for
 	// embedding with an ordinary server and uses conservative chmod intersection.
 	RemoteUmask *os.FileMode
+	// abort is OpenSSH's err_abort for the current batch line: multi-path rm
+	// and chmod stop at their first failure.
+	abort bool
 }
 
+// Split tokenizes a command line like OpenSSH sftp's makeargv. Quotes may join
+// parts of one word; '#' outside quotes ends the line. Inside quotes, and when
+// backslash-escaped outside them, the glob characters '*', '?' and '[' stay
+// escaped with a backslash, as does an escaped backslash: commands that glob
+// see them literally and the others remove that escaping (pathglob.Unescape).
+// Inside quotes a backslash only escapes the enclosing quote character; other
+// backslashes are kept for glob(3) to interpret, as in OpenSSH. A trailing
+// backslash, an unterminated quote or a NUL is rejected.
 func Split(line string) ([]string, error) {
+	const (
+		start = iota
+		single
+		double
+		unquoted
+	)
 	var words []string
 	var word strings.Builder
-	var quote byte
-	started, escaped := false, false
+	state := start
 	for i := 0; i < len(line); i++ {
 		c := line[i]
 		if c == 0 {
 			return nil, errors.New("NUL in command")
 		}
-		if escaped {
-			word.WriteByte(c)
-			started = true
-			escaped = false
-			continue
-		}
-		if c == '\\' && quote != '\'' {
-			escaped = true
-			started = true
-			continue
-		}
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			} else {
-				word.WriteByte(c)
-			}
-			continue
-		}
-		if c == '\'' || c == '"' {
-			quote = c
-			started = true
-			continue
-		}
-		if c == '#' && !started {
-			break
-		}
-		if c == ' ' || c == '\t' || c == '\r' {
-			if started {
+		quoted := state == single || state == double
+		switch {
+		case c == ' ' || (c >= '\t' && c <= '\r'):
+			if state == unquoted {
 				words = append(words, word.String())
 				word.Reset()
-				started = false
+				state = start
+			} else if quoted {
+				word.WriteByte(c)
 			}
-			continue
+		case c == '\'' || c == '"':
+			q := single
+			if c == '"' {
+				q = double
+			}
+			switch state {
+			case start, unquoted:
+				state = q
+			case q:
+				state = unquoted
+			default:
+				word.WriteByte(c)
+			}
+		case c == '\\':
+			if i+1 >= len(line) {
+				return nil, errors.New("unterminated quote or backslash")
+			}
+			i++
+			next := line[i]
+			if quoted {
+				quote := byte('\'')
+				if state == double {
+					quote = '"'
+				}
+				switch {
+				case next == quote:
+				case strings.IndexByte("?[*", next) >= 0:
+					// A quoted, escaped glob character is a literal backslash
+					// followed by that literal character.
+					word.WriteString(`\\\`)
+				default:
+					word.WriteByte('\\')
+				}
+				word.WriteByte(next)
+				continue
+			}
+			state = unquoted
+			if strings.IndexByte(`?[*\`, next) >= 0 {
+				word.WriteByte('\\')
+			}
+			word.WriteByte(next)
+		case c == '#' && !quoted:
+			i = len(line)
+		default:
+			if state == start {
+				state = unquoted
+			}
+			if quoted && strings.IndexByte("?[*", c) >= 0 {
+				word.WriteByte('\\')
+			}
+			word.WriteByte(c)
 		}
-		word.WriteByte(c)
-		started = true
 	}
-	if quote != 0 || escaped {
+	if state == single || state == double {
 		return nil, errors.New("unterminated quote or backslash")
 	}
-	if started {
+	if state == unquoted {
 		words = append(words, word.String())
 	}
 	return words, nil
@@ -177,6 +218,7 @@ func (c *Console) Run(ctx context.Context) error {
 			}
 			args, err := Split(line)
 			done := false
+			c.abort = c.Batch && !ignore
 			if err == nil {
 				done, err = c.Execute(ctx, args)
 			}
@@ -279,6 +321,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			if err == nil {
 				_, err = fmt.Fprintln(c.Output, "ls [-f] [path]; -f lists in server order with bounded memory")
 			}
+			if err == nil {
+				_, err = fmt.Fprintln(c.Output, "get, ls, rm and chmod expand remote globs; put expands local globs; quote or backslash-escape * ? [ to match them literally")
+			}
 		}
 	case "pwd":
 		if !need(0) {
@@ -294,7 +339,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(1) {
 			return false, bad
 		}
-		target := c.local(a[0])
+		target := c.local(pathglob.Unescape(a[0]))
 		var info os.FileInfo
 		info, err = os.Stat(target)
 		if err == nil && !info.IsDir() {
@@ -308,7 +353,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			return false, bad
 		}
 		var target string
-		target, err = c.Client.RealPath(c.remote(a[0]))
+		target, err = c.Client.RealPath(c.remote(pathglob.Unescape(a[0])))
 		if err == nil {
 			var info os.FileInfo
 			info, err = c.Client.Stat(target)
@@ -323,56 +368,36 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if len(a) > 1 {
 			return false, bad
 		}
-		target := c.RemoteDir
-		if len(a) == 1 {
-			target = c.remote(a[0])
-		}
-		var info os.FileInfo
-		info, err = c.Client.Stat(target)
-		if err == nil && !info.IsDir() {
-			_, err = fmt.Fprintln(c.Output, display(path.Base(target)))
-		} else if err == nil && unsortedListing {
-			err = c.Client.ReadDirEach(ctx, target, func(info os.FileInfo) error {
-				_, err := fmt.Fprintln(c.Output, display(info.Name()))
-				return err
-			})
-		} else if err == nil {
-			var files []os.FileInfo
-			files, err = c.Client.ReadDirContext(ctx, target)
-			sort.Slice(files, func(i, j int) bool { return files[i].Name() < files[j].Name() })
-			if err == nil {
-				for _, f := range files {
-					if _, err = fmt.Fprintln(c.Output, display(f.Name())); err != nil {
-						break
-					}
-				}
-			}
+		if len(a) == 0 {
+			err = c.listDirectory(ctx, c.RemoteDir, unsortedListing)
+		} else {
+			err = c.globList(ctx, a[0], unsortedListing)
 		}
 	case "get", "put":
 		if len(a) < 1 || len(a) > 2 {
 			return false, bad
 		}
-		if name == "get" {
-			dst, baseErr := localBase(a[0])
-			if baseErr != nil && len(a) == 1 {
-				return false, baseErr
-			}
-			if len(a) == 2 {
-				dst = a[1]
-			}
-			err = c.get(c.remote(a[0]), c.local(dst), options)
-		} else {
-			dst := filepath.Base(a[0])
-			if len(a) == 2 {
-				dst = a[1]
-			}
-			err = c.put(c.local(a[0]), c.remote(dst), options)
+		// The source is a glob pattern; the destination is never globbed.
+		var dst *string
+		if len(a) == 2 {
+			literal := pathglob.Unescape(a[1])
+			dst = &literal
 		}
-	case "mkdir", "rmdir", "rm", "readlink":
+		if name == "get" {
+			err = c.globGet(ctx, a[0], dst, options)
+		} else {
+			err = c.globPut(ctx, a[0], dst, options)
+		}
+	case "rm":
 		if !need(1) {
 			return false, bad
 		}
-		target := c.remote(a[0])
+		err = c.eachRemote(ctx, a[0], c.removeFile)
+	case "mkdir", "rmdir", "readlink":
+		if !need(1) {
+			return false, bad
+		}
+		target := c.remote(pathglob.Unescape(a[0]))
 		switch name {
 		case "mkdir":
 			err = c.Client.Mkdir(target)
@@ -381,8 +406,6 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			}
 		case "rmdir":
 			err = c.Client.RemoveDirectory(target)
-		case "rm":
-			err = c.Client.Remove(target)
 		case "readlink":
 			var value string
 			value, err = c.Client.ReadLink(target)
@@ -394,12 +417,13 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(2) {
 			return false, bad
 		}
-		err = c.Client.Rename(c.remote(a[0]), c.remote(a[1]))
+		err = c.Client.Rename(c.remote(pathglob.Unescape(a[0])), c.remote(pathglob.Unescape(a[1])))
 	case "symlink":
 		if !need(2) {
 			return false, bad
 		}
-		err = c.Client.Symlink(a[0], c.remote(a[1]))
+		// OpenSSH removes glob escaping from the link path but not the target.
+		err = c.Client.Symlink(a[0], c.remote(pathglob.Unescape(a[1])))
 	case "chmod":
 		if !need(2) {
 			return false, bad
@@ -409,11 +433,11 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if err != nil || mode > 0777 {
 			return false, errors.New("chmod requires an octal mode between 000 and 777")
 		}
-		err = c.Client.Chmod(c.remote(a[1]), os.FileMode(mode))
+		err = c.eachRemote(ctx, a[1], func(name string) error { return c.Client.Chmod(name, os.FileMode(mode)) })
 	default:
 		return false, errors.New("unsupported SFTP command")
 	}
-	return false, sftpclient.SafeError(err)
+	return false, safeError(err)
 }
 
 func (c *Console) get(remote, local string, options transferOptions) (result error) {
