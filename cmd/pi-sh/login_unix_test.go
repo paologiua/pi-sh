@@ -22,7 +22,7 @@ import (
 // Pion peers and PTYs: TERM, initial size, resize, typed input, escapes and the
 // shell's own exit status. The fixture shell is /bin/sh with a private HOME.
 func TestLoginShellSessionOverWebRTC(t *testing.T) {
-	for _, name := range []string{"exit-status", "ctrl-d", "escape-disconnect"} {
+	for _, name := range []string{"exit-status", "ctrl-d", "escape-disconnect", "nested-job"} {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
 			if err := os.WriteFile(filepath.Join(home, ".profile"), []byte("unset HISTFILE\nprintf 'fixture-ready\\n'\n"), 0600); err != nil {
@@ -106,6 +106,28 @@ func TestLoginShellSessionOverWebRTC(t *testing.T) {
 				t.Fatal("resize not delivered")
 			}
 			switch name {
+			case "nested-job":
+				// The login shell's own job control: Ctrl-Z stops its foreground
+				// job, the shell regains the terminal and reports the stop.
+				if _, err := master.WriteString("stty size; sleep 30\r"); err != nil {
+					t.Fatal(err)
+				}
+				waitFor("35 111\r\n")
+				time.Sleep(300 * time.Millisecond)
+				if _, err := master.Write([]byte{26}); err != nil {
+					t.Fatal(err)
+				}
+				waitFor("Stopped")
+				if _, err := master.WriteString("kill -9 %1\r"); err != nil {
+					t.Fatal(err)
+				}
+				// Bash reports the change at a later prompt or jobs listing.
+				time.Sleep(200 * time.Millisecond)
+				if _, err := master.WriteString("jobs\r"); err != nil {
+					t.Fatal(err)
+				}
+				waitFor("Killed")
+				_, err = master.WriteString("exit 23\r")
 			case "exit-status":
 				_, err = master.WriteString("stty size; exit 23\r")
 			case "ctrl-d":
@@ -132,7 +154,7 @@ func TestLoginShellSessionOverWebRTC(t *testing.T) {
 			}
 			var status *commandStatus
 			switch name {
-			case "exit-status":
+			case "exit-status", "nested-job":
 				if !errors.As(err, &status) || status.code != 23 {
 					t.Fatalf("status %v: %q", err, text)
 				}
