@@ -422,8 +422,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(2) {
 			return false, bad
 		}
-		// OpenSSH removes glob escaping from the link path but not the target.
-		err = c.Client.Symlink(a[0], c.remote(pathglob.Unescape(a[1])))
+		err = c.Client.Symlink(pathglob.Unescape(a[0]), c.remote(pathglob.Unescape(a[1])))
 	case "chmod":
 		if !need(2) {
 			return false, bad

@@ -90,8 +90,10 @@ func (c *Console) remotePattern(arg string) string {
 	return strings.TrimSuffix(pathglob.Escape(c.RemoteDir), "/") + "/" + arg
 }
 
+// remoteGlob does not set GLOB_LIMIT: OpenSSH 10.2 sftp was observed to expand
+// 3,000 long matches in ls, get and rm. Directories are still streamed one NAME
+// packet at a time; only the matched paths are retained.
 func (c *Console) remoteGlob(ctx context.Context, pattern string, opt pathglob.Options) (pathglob.Result, error) {
-	opt.Limit = true
 	return pathglob.Glob(ctx, pathglob.Remote(c.Client), pattern, opt)
 }
 
@@ -190,8 +192,9 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 
 // eachRemote applies op to every GLOB_NOCHECK expansion of arg (rm, chmod).
 // Unlike OpenSSH, which ignores remote_glob failure and processes a partial
-// list, exceeding GLOB_LIMIT fails before any change. A batch without the '-'
-// prefix stops at the first failure, as OpenSSH's err_abort does.
+// list, a failed expansion (such as a lost connection while listing) fails
+// before any change. A batch without the '-' prefix stops at the first
+// failure, as OpenSSH's err_abort does.
 func (c *Console) eachRemote(ctx context.Context, arg string, op func(string) error) error {
 	pattern := c.remotePattern(arg)
 	res, err := c.remoteGlob(ctx, pattern, pathglob.Options{NoCheck: true})

@@ -49,7 +49,7 @@ func (p *Plan) report(err error) {
 }
 
 // download follows scp's SFTP-mode sink: the remote operand is a glob
-// (GLOB_NOCHECK|GLOB_MARK with GLOB_LIMIT); several matches need a local
+// (GLOB_NOCHECK|GLOB_MARK); several matches need a local
 // directory, which is created when the destination does not exist. Every
 // match is attempted; earlier failures are printed and the last is returned.
 func (p *Plan) download(ctx context.Context, client *sftp.Client, console *sftpcli.Console, source string) error {
@@ -57,7 +57,7 @@ func (p *Plan) download(ctx context.Context, client *sftp.Client, console *sftpc
 	if err != nil {
 		return err
 	}
-	res, err := pathglob.Glob(ctx, pathglob.Remote(client), pattern, pathglob.Options{Mark: true, NoCheck: true, Limit: true})
+	res, err := pathglob.Glob(ctx, pathglob.Remote(client), pattern, pathglob.Options{Mark: true, NoCheck: true})
 	if errors.Is(err, pathglob.ErrTooMany) {
 		return fmt.Errorf("%s: too many glob matches", display(source))
 	}

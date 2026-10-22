@@ -28,8 +28,9 @@ type FS interface {
 	Stat(ctx context.Context, name string) (fs.FileInfo, error)
 }
 
-// Options selects glob(3) flags. Limit applies OpenSSH remote_glob's GLOB_LIMIT
-// bounds; local OpenSSH globbing (sftp put) does not set it.
+// Options selects glob(3) flags. Limit applies OpenBSD's GLOB_LIMIT bounds for
+// callers that want them; the installed OpenSSH 10.2 sftp was observed to
+// expand far more matches, so pi-sftp and pi-cp leave it unset.
 type Options struct {
 	Mark    bool // GLOB_MARK: append '/' to directories (following symlinks).
 	NoCheck bool // GLOB_NOCHECK: return the unescaped pattern when nothing matches.
