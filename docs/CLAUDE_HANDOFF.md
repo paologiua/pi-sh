@@ -22,8 +22,10 @@ Questo documento indica il punto di ripresa; non riduce il contratto originale.
 `docs/STATUS.md` contiene anche aggiornamenti storici: gli esiti recenti in testa
 e `docs/REAL_DEVICE_TESTS.md` prevalgono sulle vecchie note di attesa.
 
-**Prima priorità: proseguire la milestone dei trasferimenti con le voci aperte
-del backlog File.** Lo stallo dell'input binario è stato diagnosticato, corretto
+**Prima priorità: voci aperte del backlog (vedi sotto), partendo dai difetti
+emersi nella prova nativa CLI del 2026-10-22.** Su Pi sono verificati anche
+pi-sftp/pi-cp di produzione (glob, tilde, ripresa, `-r -p`) e `pi-sh -v`, con
+pulizia verificata (REAL_DEVICE_TESTS.md, NATIVE_CLI_PLAN.md). Lo stallo dell'input binario è stato diagnosticato, corretto
 e verificato sul Pi il 2026-10-22, insieme al piano di trasferimento completo
 (vedi sotto). Il lavoro complessivo rimane incompleto.
 
@@ -127,6 +129,19 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 
 ## Correzioni recenti da preservare
 
+### Difetti aperti dalla prova CLI nativa (2026-10-22)
+
+- La redazione della diagnostica è eccessiva: `version=[redacted]` e
+  `session:[redacted]` nei messaggi `-v` (internal/diag).
+- Il run di `pi-sh` fallito per stdin locale (prima della correzione di
+  `localio` per /dev/null su macOS) ha riportato cleanup del broker non
+  confermato: capire perché l'abort dopo un errore di stdin non riceve `D`.
+- Proposta del proprietario da progettare: `-l email` o `email@device` per
+  scegliere l'account Raspberry Pi ID nel login diretto (CONNECTION_POLICY.md).
+- Per le prove con il companion, Claude in Chrome può eseguire il `fetch`
+  nella pagina Devices; non attendere la Promise (resta aperta per tutta la
+  sessione) e leggere l'URL dal log subito, senza redirezioni nascoste.
+
 ### Test TTY da osservare
 
 `TestStagedTTYStopOpenSSHDifferential/caught-suspend` è fallito una volta in una
@@ -180,7 +195,7 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | --- | --- | --- |
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
-| CLI/config | Verifica sul Pi di diagnostica, Match, policy di connessione; proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
+| CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
 | Forwarding | Capacità reali dell'agente; eventuali utility già presenti; -W/-L/-R/-D, half-close, concorrenza, bind/IPv6, cleanup, multiplexing e operazioni di controllo | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
