@@ -7,13 +7,30 @@ import (
 
 // Destination applies explicit HostName aliases and the pipe-only SFTP policy.
 func Destination(original, config string, overrides []string) (string, error) {
-	return DestinationWithServer(original, config, overrides, "")
+	return resolve(original, config, overrides, "", nil)
 }
 
 // DestinationWithServer is Destination for an explicit remote server path.
 // Match sessiontype/command see what OpenSSH sftp would request: the "sftp"
 // subsystem by default, or an exec of a server path (sftp -s /path).
 func DestinationWithServer(original, config string, overrides []string, server string) (string, error) {
+	return resolve(original, config, overrides, server, nil)
+}
+
+// Settings is Destination plus the first obtained values of all accepted
+// directives (for example loglevel), as ssh would see them for this session.
+func Settings(original, config string, overrides []string) (string, map[string]string, error) {
+	return SettingsWithServer(original, config, overrides, "")
+}
+
+// SettingsWithServer is Settings with DestinationWithServer's Match session.
+func SettingsWithServer(original, config string, overrides []string, server string) (string, map[string]string, error) {
+	out := map[string]string{}
+	target, err := resolve(original, config, overrides, server, out)
+	return target, out, err
+}
+
+func resolve(original, config string, overrides []string, server string, out map[string]string) (string, error) {
 	if _, err := sshconfig.Hostname("%h", original); err != nil {
 		return "", err
 	}
@@ -46,6 +63,11 @@ func DestinationWithServer(original, config string, overrides []string, server s
 			if _, set := values[k]; !set {
 				values[k] = v
 			}
+		}
+	}
+	for k, v := range values {
+		if out != nil {
+			out[k] = v
 		}
 	}
 	if tty := values["requesttty"]; tty != "" && tty != "no" && tty != "auto" {

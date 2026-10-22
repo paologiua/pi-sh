@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"pi-sh/internal/diag"
 	"pi-sh/internal/sshconfig"
 )
 
@@ -21,6 +22,7 @@ type options struct {
 	tag                                   string
 	tagSet                                bool
 	inspection, query                     string
+	logging                               logOptions
 }
 
 func parseOptions(args []string) (options, error) {
@@ -78,7 +80,13 @@ func parseOptions(args []string) (options, error) {
 				} else {
 					o.tty = "yes"
 				}
-			case 'e', 'o', 'F', 'P', 'Q':
+			case 'v':
+				o.logging.verbosity.Verbose()
+			case 'q':
+				o.logging.verbosity.Quiet()
+			case 'y':
+				o.logging.syslog = true
+			case 'e', 'o', 'F', 'P', 'Q', 'E':
 				value := a[j+1:]
 				if j+1 == len(a) {
 					i++
@@ -100,6 +108,8 @@ func parseOptions(args []string) (options, error) {
 						o.tag, o.tagSet = value, true
 						seen["tag"] = true
 					}
+				case 'E':
+					o.logging.file, o.logging.useFile = value, true
 				case 'F':
 					if value == "" {
 						return o, errors.New("configuration path must not be empty")
@@ -125,6 +135,9 @@ func parseOptions(args []string) (options, error) {
 			}
 		}
 	}
+	if o.logging.syslog && o.logging.useFile {
+		return o, diag.ErrBothDestinations
+	}
 	if len(o.args) > 0 {
 		if _, err := sshconfig.Hostname("%h", o.args[0]); err != nil {
 			return o, err
@@ -146,14 +159,14 @@ func parseOptions(args []string) (options, error) {
 			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "),
 		})
 		if err != nil {
-			return o, err
+			return o, configError{err}
 		}
 		for key, value := range values {
 			if seen[key] {
 				continue // CLI value seeded above, already validated and applied
 			}
 			if err := o.apply(key, value, seen); err != nil {
-				return o, err
+				return o, configError{err}
 			}
 		}
 	}
@@ -243,6 +256,10 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			o.hostname = value
 		case "tag":
 			o.tag, o.tagSet = value, true
+		case "loglevel":
+			o.logging.level = value
+		case "syslogfacility":
+			o.logging.facility = value
 		}
 		seen[key] = true
 	}
@@ -305,5 +322,5 @@ func (o options) writeConfig(w io.Writer) error {
 			return err
 		}
 	}
-	return nil
+	return o.logging.writeConfig(w)
 }
