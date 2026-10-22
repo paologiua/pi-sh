@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"pi-sh/internal/diag"
 	"pi-sh/internal/sshconfig"
 )
 
@@ -19,6 +20,7 @@ type options struct {
 	args                                  []string
 	configFile, hostname                  string
 	inspection, query                     string
+	logging                               logOptions
 }
 
 func parseOptions(args []string) (options, error) {
@@ -76,7 +78,13 @@ func parseOptions(args []string) (options, error) {
 				} else {
 					o.tty = "yes"
 				}
-			case 'e', 'o', 'F', 'Q':
+			case 'v':
+				o.logging.verbosity.Verbose()
+			case 'q':
+				o.logging.verbosity.Quiet()
+			case 'y':
+				o.logging.syslog = true
+			case 'e', 'o', 'F', 'Q', 'E':
 				value := a[j+1:]
 				if value == "" {
 					i++
@@ -92,6 +100,8 @@ func parseOptions(args []string) (options, error) {
 				case 'e':
 					o.escape = value
 					seen["escapechar"] = true
+				case 'E':
+					o.logging.file, o.logging.useFile = value, true
 				case 'F':
 					if value == "" {
 						return o, errors.New("configuration path must not be empty")
@@ -117,6 +127,9 @@ func parseOptions(args []string) (options, error) {
 			}
 		}
 	}
+	if o.logging.syslog && o.logging.useFile {
+		return o, diag.ErrBothDestinations
+	}
 	if len(o.args) > 0 {
 		if _, err := sshconfig.Hostname("%h", o.args[0]); err != nil {
 			return o, err
@@ -132,11 +145,11 @@ func parseOptions(args []string) (options, error) {
 		}
 		values, err := sshconfig.LoadWithOverrides(o.configFile, o.args[0], initial)
 		if err != nil {
-			return o, err
+			return o, configError{err}
 		}
 		for key, value := range values {
 			if err := o.apply(key, value, seen); err != nil {
-				return o, err
+				return o, configError{err}
 			}
 		}
 	}
@@ -224,6 +237,10 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			o.tty = value
 		case "hostname":
 			o.hostname = value
+		case "loglevel":
+			o.logging.level = value
+		case "syslogfacility":
+			o.logging.facility = value
 		}
 		seen[key] = true
 	}
@@ -279,5 +296,8 @@ func (o options) writeConfig(w io.Writer) error {
 		tty = "true"
 	}
 	_, err := fmt.Fprintf(w, "escapechar %s\nstdinnull %s\nrequesttty %s\n", label, stdin, tty)
+	if err == nil {
+		err = o.logging.writeConfig(w)
+	}
 	return err
 }

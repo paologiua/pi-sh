@@ -16,7 +16,7 @@ import (
 var capabilityQueries = map[string][]string{
 	"pi-sh-auth":      {"browser-companion", "direct-login"},
 	"pi-sh-command":   {"experimental-command-no-tty", "experimental-command-tty", "interactive-shell", "legacy-command-pty"},
-	"pi-sh-config":    {"EscapeChar", "Host", "HostName", "Include", "RequestTTY", "StdinNull"},
+	"pi-sh-config":    {"EscapeChar", "Host", "HostName", "Include", "LogLevel", "RequestTTY", "StdinNull", "SyslogFacility"},
 	"pi-sh-escape":    {"disconnect", "help", "literal-prefix"},
 	"pi-sh-transport": {"connect-webrtc"},
 }
