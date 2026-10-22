@@ -129,15 +129,35 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 
 ## Correzioni recenti da preservare
 
+### Rami di agenti non ancora integrati (2026-10-23)
+
+Tre agenti si sono fermati per il limite settimanale di utilizzo (ripresa possibile
+dal 25 ottobre alle 14:00, con SendMessage all'agente o rileggendo il ramo). Il lavoro
+è committato nei worktree `.claude/worktrees/agent-*` ma è incompleto e non verificato
+su `main`; ognuno ha ancora 1–2 file non committati. Non unirli senza completare test e verifica.
+
+- `worktree-agent-aeda33dc242b6413b` (terminale): shell interattiva tramite adattatori
+  in memoria, SIGTSTP esterno, HUP alla shell di login su abort, escape rimanenti
+  (`~.` esce 255). Si era fermato aggiornando un test sull'help degli escape.
+- `worktree-agent-a2fd792200a64ad6c` (forwarding): parser `forwardspec` (OpenSSH 10.2),
+  motore locale `-L`, `-D` SOCKS4/4a/5, `-W`, adattatore Bash multiplexato. Mancano i
+  test dell'adattatore e gli script di sonda in sola lettura da eseguire sul Pi.
+- `worktree-agent-a80cb6879808fc633` (broker): benchmark con RTT simulato, input in
+  pipeline, codifica dell'output nei worker, cleanup confermato anche a comando già
+  finito (difetto aperto del 2026-10-22), script di throughput nativo. Stava
+  aggiornando SHELL_BROKER.md.
+
+Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
+opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
+aperte del proprietario: SetEnv/SendEnv (prefisso di assegnazioni validate?),
+AddressFamily/BindAddress (equivalente fattibile, non fatto). Prove native in sola
+lettura del ramo CLI richiedono login diretto (password/TOTP del proprietario).
+
 ### Difetti aperti dalla prova CLI nativa (2026-10-22)
 
-- La redazione della diagnostica è eccessiva: `version=[redacted]` e
-  `session:[redacted]` nei messaggi `-v` (internal/diag).
 - Il run di `pi-sh` fallito per stdin locale (prima della correzione di
   `localio` per /dev/null su macOS) ha riportato cleanup del broker non
   confermato: capire perché l'abort dopo un errore di stdin non riceve `D`.
-- Proposta del proprietario da progettare: `-l email` o `email@device` per
-  scegliere l'account Raspberry Pi ID nel login diretto (CONNECTION_POLICY.md).
 - Per le prove con il companion, Claude in Chrome può eseguire il `fetch`
   nella pagina Devices; non attendere la Promise (resta aperta per tutta la
   sessione) e leggere l'URL dal log subito, senza redirezioni nascoste.
