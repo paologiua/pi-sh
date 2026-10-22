@@ -373,3 +373,31 @@ func TestSuspendDrainCancellationNeverRunsAction(t *testing.T) {
 		t.Fatal("cancelled drain invoked action", err)
 	}
 }
+
+// Darwin's poll reports POLLNVAL for /dev/null although read/write work, so
+// `cmd < /dev/null` and `> /dev/null` must behave as EOF and a sink.
+func TestDevNullStreams(t *testing.T) {
+	in, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer in.Close()
+	out, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	s, err := Open(context.Background(), Files{Stdin: in, Stdout: out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.Stdin.Read(make([]byte, 16)); n != 0 || err != io.EOF {
+		t.Fatalf("read /dev/null: n=%d err=%v", n, err)
+	}
+	if n, err := s.Stdout.Write([]byte("discarded")); n != 9 || err != nil {
+		t.Fatalf("write /dev/null: n=%d err=%v", n, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

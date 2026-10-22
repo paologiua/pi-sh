@@ -2,6 +2,7 @@
 # Driver for docs/NATIVE_CLI_PLAN.md. Without --execute-approved it prints the plan.
 # Every Connect session uses the browser companion; nothing is replayed on failure.
 set -u
+setopt pipefail
 root=/tmp/pi-sh-cli-1368401b474527931b94c1e129f64cbf
 device=${PI_SH_DEVICE:-raspberrypi}
 repo=${0:A:h:h}
@@ -35,12 +36,12 @@ rename c.txt "n ' 世界.txt"
 ls
 get *.bin dl
 EOF
-"$repo/bin/pi-sftp" --browser -b s1.batch "$device" > s1.out 2>&1 || { cat s1.out; fail session-1; }
+"$repo/bin/pi-sftp" --browser -b s1.batch "$device" 2>&1 | tee s1.out || { cat s1.out; fail session-1; }
 for f in a.bin b.bin; do [[ $(sum $f) == $(sum dl/$f) ]] || fail "glob download integrity $f"; done
 print "glob-download-integrity: passed"
 head -c 300000 b.bin > dl/b-partial.bin
 print "cd $root\nreget b.bin dl/b-partial.bin" > s1b.batch
-"$repo/bin/pi-sftp" --browser -b s1b.batch "$device" > s1b.out 2>&1 || { cat s1b.out; fail resume; }
+"$repo/bin/pi-sftp" --browser -b s1b.batch "$device" 2>&1 | tee s1b.out || { cat s1b.out; fail resume; }
 [[ $(sum b.bin) == $(sum dl/b-partial.bin) ]] || fail "resume integrity"
 print "resume-integrity: passed"
 
@@ -49,14 +50,14 @@ print "== session 2: pi-cp recursive upload, remote glob, tilde"
 "$repo/bin/pi-cp" --browser "$device:$root/*.bin" dl2 || fail "pi-cp remote glob"
 for f in a.bin b.bin; do [[ $(sum $f) == $(sum dl2/$f) ]] || fail "pi-cp glob integrity $f"; done
 print "pi-cp-glob-integrity: passed"
-if "$repo/bin/pi-cp" --browser "$device:~/pi-sh-cli-missing-1368401b" dl2/missing > s2t.out 2>&1; then
+if "$repo/bin/pi-cp" --browser "$device:~/pi-sh-cli-missing-1368401b" dl2/missing 2>&1 | tee s2t.out; then
   fail "tilde missing file unexpectedly succeeded"
 fi
 [[ ! -e dl2/missing ]] || fail "tilde failure left a local file"
 print "tilde-missing-failure: passed"
 
 print "== session 3: pi-sh diagnostics"
-"$repo/bin/pi-sh" --browser --experimental-command -T -v "$device" 'exit 0' > s3.out 2> s3.err || fail "pi-sh -v"
+"$repo/bin/pi-sh" --browser --experimental-command -T -v "$device" 'exit 0' < /dev/null > s3.out 2> >(tee s3.err >&2) || fail "pi-sh -v"
 grep -Eiq 'candidate|a=fingerprint|ice-pwd|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|token|cookie' s3.err && fail "diagnostics leaked sensitive data"
 grep -q 'debug1' s3.err || fail "no debug1 output"
 print "diagnostics-redaction: passed"
@@ -76,11 +77,11 @@ rmdir tree
 cd /tmp
 rmdir $root
 EOF
-"$repo/bin/pi-sftp" --browser -b s4.batch "$device" > s4.out 2>&1 || { cat s4.out; fail cleanup; }
+"$repo/bin/pi-sftp" --browser -b s4.batch "$device" 2>&1 | tee s4.out || { cat s4.out; fail cleanup; }
 
 print "== session 5: verify absence"
 print "ls $root" > s5.batch
-if "$repo/bin/pi-sftp" --browser -b s5.batch "$device" > s5.out 2>&1; then fail "root still present"; fi
+if "$repo/bin/pi-sftp" --browser -b s5.batch "$device" 2>&1 | tee s5.out; then fail "root still present"; fi
 grep -qi 'not found\|no such' s5.out || { cat s5.out; fail "absence not confirmed"; }
 print "cleanup-absence: passed"
 cd / && rm -rf "$work"

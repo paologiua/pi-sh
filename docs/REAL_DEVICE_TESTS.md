@@ -1,5 +1,32 @@
 # Authorized real-device evidence — 2026-10-19/22
 
+## 2026-10-22 native pi-sftp / pi-cp / pi-sh CLI plan (owner approved)
+
+The owner approved docs/NATIVE_CLI_PLAN.md ("Autorizzo il piano CLI e la pulizia")
+and asked Claude to drive the browser companion; Claude ran each fetch step in
+the Devices tab through Claude in Chrome. Production binaries, browser mode:
+
+| Check | Result |
+| --- | --- |
+| pi-sftp batch: exclusive mkdir, chmod 700, put, `ls *.bin`, `chmod 600 *.bin`, rename to space/quote/Unicode name, `get *.bin dl` | passed; downloaded SHA-256 equal |
+| pi-sftp `reget` of a truncated 1MiB copy | passed; SHA-256 equal |
+| pi-cp `-r -p` upload of a tree with empty dir and Unicode/space/quote name | passed |
+| pi-cp download of quoted remote glob `root/*.bin` | passed; SHA-256 equal |
+| pi-cp `~/missing` (tilde) | expected "file does not exist", no local file |
+| pi-sh `-v` `exit 0` | first two runs failed locally (see below); after the fix exit0, 11 debug1 lines, no SDP/ICE/address/token |
+| Cleanup batch (explicit rm/rmdir of known entries and root) | exit0 |
+| Separate session `ls root` | "not found": root absent |
+
+Two earlier driver attempts failed at the companion wait before any remote
+command (the driver hid the instruction in a per-session file); no remote state
+was created. pi-sh then failed with "local stdin read failed" for stdin from a
+background shell and from /dev/null: Darwin poll returns POLLNVAL for /dev/null,
+which localio treated as a closed descriptor. Fixed in localio (regression test
+TestDevNullStreams, red before/green after) and verified natively as above. Its
+failed run also reported broker cleanup unconfirmed; that run executed only
+`exit 0`. Over-redaction noted: diagnostics print `version=[redacted]` and
+`session:[redacted]`. Only fixed outcomes are retained.
+
 ## 2026-10-22 approved native transfer plan rerun after the fix
 
 After renewing recent sign-in, the owner ran the exact approved plan once:

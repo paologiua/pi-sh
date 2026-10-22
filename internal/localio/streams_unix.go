@@ -31,6 +31,9 @@ type endpoint struct {
 	owner *unixStreams
 	fd    int
 	mu    sync.Mutex
+	// unpollable marks a valid descriptor that poll rejects with POLLNVAL, as
+	// Darwin does for /dev/null. Its I/O is attempted directly instead.
+	unpollable bool
 }
 
 // Open snapshots every distinct descriptor BEFORE changing any flag: stdin,
@@ -185,6 +188,9 @@ func (e *endpoint) wait(events int16) error {
 		if err := e.owner.ctx.Err(); err != nil {
 			return err
 		}
+		if e.unpollable {
+			return nil
+		}
 		fds := []unix.PollFd{{Fd: int32(e.fd), Events: events}, {Fd: int32(e.owner.wakeFD), Events: unix.POLLIN}}
 		_, err := unix.Poll(fds, -1)
 		if err == unix.EINTR {
@@ -197,7 +203,11 @@ func (e *endpoint) wait(events int16) error {
 			return err
 		}
 		if fds[0].Revents&unix.POLLNVAL != 0 {
-			return os.ErrClosed
+			if _, err := unix.FcntlInt(uintptr(e.fd), unix.F_GETFL, 0); err != nil {
+				return os.ErrClosed
+			}
+			e.unpollable = true
+			return nil
 		}
 		if fds[0].Revents&(events|unix.POLLHUP|unix.POLLERR) != 0 {
 			return nil
@@ -222,6 +232,7 @@ func (e *endpoint) Read(p []byte) (int, error) {
 		}
 		n, err := unix.Read(e.fd, p)
 		if err == unix.EINTR || err == unix.EAGAIN || err == unix.EWOULDBLOCK {
+			e.pause(err)
 			continue
 		}
 		if err != nil {
@@ -253,6 +264,7 @@ func (e *endpoint) Write(p []byte) (int, error) {
 			total += n
 		}
 		if err == unix.EINTR || err == unix.EAGAIN || err == unix.EWOULDBLOCK {
+			e.pause(err)
 			continue
 		}
 		if err != nil {
@@ -263,4 +275,13 @@ func (e *endpoint) Write(p []byte) (int, error) {
 		}
 	}
 	return total, nil
+}
+
+// pause waits briefly after EAGAIN on an unpollable descriptor; cancellation
+// still wakes it through the private pipe.
+func (e *endpoint) pause(err error) {
+	if !e.unpollable || err == unix.EINTR {
+		return
+	}
+	_, _ = unix.Poll([]unix.PollFd{{Fd: int32(e.owner.wakeFD), Events: unix.POLLIN}}, 10)
 }

@@ -1,6 +1,8 @@
-# Native pi-cp / pi-sftp CLI verification — proposed, awaiting owner approval
+# Native pi-cp / pi-sftp CLI verification — owner approved, executed 2026-10-22
 
-Not authorized yet. This plan exercises the production `pi-sftp` and `pi-cp`
+Approved by the owner ("Autorizzo il piano CLI e la pulizia") and executed once;
+all checks passed and cleanup verified root absence (REAL_DEVICE_TESTS.md). A new
+run needs a new approval and a fresh root name. This plan exercises the production `pi-sftp` and `pi-cp`
 executables on the Pi (the earlier approved plan used `transfer-probe`), including
 the new glob/tilde, diagnostics and connection-policy code. It runs only after the
 owner approves this exact plan.
