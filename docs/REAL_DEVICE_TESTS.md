@@ -1,5 +1,23 @@
 # Authorized real-device evidence — 2026-10-19/22
 
+## 2026-10-23 Raspberry Pi ID account selection, direct login (owner run)
+
+The owner ran read-only direct-login checks of the merged CLI branch, typing the
+password and one-time code at the local prompts; the email is not recorded here.
+
+| Check | Result |
+| --- | --- |
+| `pi-sh -v --direct-login --experimental-command -nT email::raspberrypi 'exit 23'` | no email prompt, account line shown, exit23; debug1 version and `session:` lines readable (redaction fix verified) |
+| same with `-l email` | exit23 |
+| same with `PI_SH_ACCOUNT` and no account given | exit23 |
+| `-oRemoteCommand='echo %n' email::raspberrypi` | printed `raspberrypi`, exit0 |
+| `pi-sftp --direct-login --read-only -b - email::raspberrypi` (pwd/quit) | login rejected after the password step: "login was not accepted; no automatic retry", exit255 |
+
+The last check was the fifth full sign-in within minutes. The prompt reads from
+/dev/tty, so the piped batch did not become the password. Rejection cause is
+unclassified (possible service throttling or a mistyped password); no retry was
+made. The pi-sftp account path remains to be verified natively, later and alone.
+
 ## 2026-10-22 native pi-sftp / pi-cp / pi-sh CLI plan (owner approved)
 
 The owner approved docs/NATIVE_CLI_PLAN.md ("Autorizzo il piano CLI e la pulizia")
