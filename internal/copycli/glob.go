@@ -69,7 +69,7 @@ func (p *Plan) download(ctx context.Context, client *sftp.Client, console *sftpc
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return fmt.Errorf("%s: no such file or directory", display(source))
+			return fmt.Errorf("%s: %w", display(source), os.ErrNotExist)
 		}
 	}
 	target := p.Target.Path
