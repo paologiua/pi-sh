@@ -51,7 +51,13 @@ config-file invocations have not yet been verified against the Pi.
 - HostName tokens `%h` (original destination) and `%%`, expanded once. Exact
   Connect name case and quoted internal spaces are preserved. This intentionally
   differs from OpenSSH's lowercasing/validation of DNS destination strings.
-- `-o` uses the same directive/value grammar and validates the same four fields.
+- `-o` uses the same directive/value grammar and validates the same fields.
+- Connection policy: BatchMode, ConnectTimeout, ConnectionAttempts,
+  ServerAliveInterval/CountMax, TCPKeepAlive, ChannelTimeout and
+  NumberOfPasswordPrompts use OpenSSH value syntax (flags yes/true/no/false
+  case-insensitive, time units, integers). User and Port are syntax-checked
+  everywhere but refused when they apply to the destination; an inactive block
+  may contain them. See [CONNECTION_POLICY.md](CONNECTION_POLICY.md).
 - `-G` reports hostname when a destination is present, plus escapechar, stdinnull
   and requesttty. No authentication, DNS lookup or network connection occurs.
 
@@ -107,7 +113,7 @@ substitutions to avoid expansion-driven allocation spikes.
 All lines, including inactive blocks and duplicate/overridden values, are
 validated. Unsupported directives fail rather than silently discarding behavior.
 This is stricter than OpenSSH for some inactive directives/values. Match,
-IgnoreUnknown, User, LocalCommand, ProxyCommand, RemoteCommand and all
+IgnoreUnknown, LocalCommand, ProxyCommand, RemoteCommand, UnusedConnectionTimeout and all
 unlisted directives remain unsupported. No local command, shell expansion,
 general environment expansion, backslash syntax, default file search or
 configuration canonicalization pass is implemented. Only Include supports the
