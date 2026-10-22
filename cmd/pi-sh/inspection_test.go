@@ -57,7 +57,7 @@ func TestOfflineCapabilityQueries(t *testing.T) {
 		"help":            "help\npi-sh-auth\npi-sh-command\npi-sh-config\npi-sh-escape\npi-sh-transport\n",
 		"pi-sh-auth":      "browser-companion\ndirect-login\n",
 		"pi-sh-command":   "experimental-command-no-tty\nexperimental-command-tty\ninteractive-shell\nlegacy-command-pty\n",
-		"pi-sh-config":    "EscapeChar\nHost\nHostName\nInclude\nLogLevel\nRequestTTY\nStdinNull\nSyslogFacility\n",
+		"pi-sh-config":    "EscapeChar\nHost\nHostName\nInclude\nLogLevel\nMatch\nRequestTTY\nStdinNull\nSyslogFacility\nTag\n",
 		"pi-sh-escape":    "disconnect\nhelp\nliteral-prefix\n",
 		"pi-sh-transport": "connect-webrtc\n",
 	}

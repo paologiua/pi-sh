@@ -56,7 +56,7 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
 	}
-	target, settings, err := sftpcli.Settings(plan.Device, *config, overrides)
+	target, settings, err := sftpcli.SettingsWithServer(plan.Device, *config, overrides, *server)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1

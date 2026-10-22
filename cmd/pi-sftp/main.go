@@ -53,7 +53,7 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
 	}
-	target, settings, err := sftpcli.Settings(f.Arg(0), *config, overrides)
+	target, settings, err := sftpcli.SettingsWithServer(f.Arg(0), *config, overrides, *server)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
