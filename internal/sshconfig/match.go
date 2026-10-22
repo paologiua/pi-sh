@@ -24,7 +24,8 @@ const (
 )
 
 // Context is the invocation that Match criteria evaluate. It never contains
-// credentials; the remote Connect account is fixed by the agent and unknown.
+// credentials. The SSH user's role is played by the Raspberry Pi ID account
+// email; the device's shell account is fixed by the agent and unknown.
 type Context struct {
 	// Host is the original destination as typed (Host, originalhost and %n).
 	Host string
@@ -36,6 +37,10 @@ type Context struct {
 	// Command is the remote command words joined by single spaces, or the
 	// subsystem name, as matched by Match command.
 	Command string
+	// DefaultUser is the local default account (PI_SH_ACCOUNT or the account
+	// file). Like OpenSSH's local login name default, Match user and %r see
+	// it when no User/-l/destination account has been obtained.
+	DefaultUser string
 	// Stderr receives Match exec standard error; nil selects os.Stderr.
 	Stderr io.Writer
 
@@ -347,12 +352,16 @@ func (p *parser) currentHost() (string, error) {
 	return p.ctx.Host, nil
 }
 
-// remoteUser is the configured SSH user name (User/-l once obtained) or the
-// local login name, exactly as OpenSSH's Match user and %r. It is a config
-// evaluation input only: Connect runs the agent's fixed, unverified account.
+// remoteUser follows OpenSSH's Match user and %r: the user obtained so far
+// (User/-l/destination; for pi-sh the Raspberry Pi ID account email), else
+// the default. pi-sh's default is the local default account when one is
+// configured, otherwise the local login name as in OpenSSH.
 func (p *parser) remoteUser() (string, error) {
 	if name, ok := p.values["user"]; ok {
 		return name, nil
+	}
+	if p.ctx.DefaultUser != "" {
+		return p.ctx.DefaultUser, nil
 	}
 	return p.env.user()
 }

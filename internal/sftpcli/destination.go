@@ -3,6 +3,7 @@ package sftpcli
 import (
 	"errors"
 
+	"pi-sh/internal/account"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/sshconfig"
 )
@@ -80,10 +81,14 @@ func resolve(original, config string, overrides []string, server string, operand
 			values[key] = value
 		}
 	}
+	defaultAccount, err := account.Default()
+	if err != nil {
+		return "", nil, policy, err
+	}
 	if config != "none" {
-		// A CLI/destination user is seeded so Match user/%r evaluate as in
-		// OpenSSH; connpolicy still refuses it afterwards.
-		session := sshconfig.Context{Host: original, Overrides: values, SessionType: sshconfig.SessionSubsystem, Command: "sftp"}
+		// A CLI/destination account is seeded so Match user/%r evaluate as in
+		// OpenSSH; connpolicy validates it afterwards.
+		session := sshconfig.Context{Host: original, Overrides: values, SessionType: sshconfig.SessionSubsystem, Command: "sftp", DefaultUser: defaultAccount}
 		if server != "" {
 			session.SessionType, session.Command = sshconfig.SessionExec, server
 		}
@@ -103,10 +108,11 @@ func resolve(original, config string, overrides []string, server string, operand
 	if values["stdinnull"] == "yes" {
 		return "", values, policy, errors.New("SFTP needs its private protocol stdin; StdinNull yes is incompatible")
 	}
-	policy, err := connpolicy.FromValues(values)
+	policy, err = connpolicy.FromValues(values)
 	if err != nil {
 		return "", values, policy, err
 	}
+	policy.DefaultAccount = defaultAccount
 	target := original
 	if name := values["hostname"]; name != "" {
 		if target, err = sshconfig.Hostname(name, original); err != nil {

@@ -12,6 +12,7 @@ import (
 
 	"pi-sh/internal/cliargs"
 	"pi-sh/internal/connectsession"
+	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
@@ -56,6 +57,9 @@ func app() int {
 		return 1
 	}
 	parsed, err := sshdest.SFTP(f.Arg(0))
+	if err == nil {
+		err = connpolicy.DestinationUser(parsed)
+	}
 	if err == nil && parsed.HasPath {
 		err = errors.New("an initial remote path in the destination is not implemented; use cd or get after connecting")
 	}

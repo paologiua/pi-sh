@@ -25,24 +25,27 @@ import (
 // Phase messages are fixed, secret-free text. Device names/IDs, URLs, ICE
 // servers, SDP and credentials are never logged; only counts and enum states.
 const (
-	MsgLoginStart     diag.Message = "authentication: interactive direct login started"
-	MsgLoginStage     diag.Message = "authentication: login stage"
-	MsgLoginDone      diag.Message = "authentication: direct login completed"
-	MsgDiscovery      diag.Message = "discovery: resolving destination device"
-	MsgDiscoveryDone  diag.Message = "discovery: destination device prepared"
-	MsgAuthenticated  diag.Message = "Authenticated to Raspberry Pi Connect"
-	MsgSignedIn       diag.Message = "signed in directly; session is held in memory for this process"
-	MsgBridgeReady    diag.Message = "authentication: loopback companion bridge listening"
-	MsgBrowserNotice  diag.Message = "experimental browser authentication; no account credentials leave Chrome"
-	MsgConfiguration  diag.Message = "signaling: requesting session configuration"
-	MsgICEServers     diag.Message = "signaling: session configuration received"
-	MsgPeer           diag.Message = "transport: creating WebRTC peer and shell data channel"
-	MsgOffer          diag.Message = "signaling: sending local offer"
-	MsgAnswer         diag.Message = "signaling: remote answer received"
-	MsgChannelOpen    diag.Message = "transport: shell data channel open"
-	MsgAttemptFailed  diag.Message = "connection: establishment attempt failed before any command; retrying"
-	MsgBrokerStart    diag.Message = "broker: starting shell-only broker"
-	MsgBrokerFinished diag.Message = "broker: finished"
+	MsgLoginStart   diag.Message = "authentication: interactive direct login started"
+	MsgLoginStage   diag.Message = "authentication: login stage"
+	MsgLoginDone    diag.Message = "authentication: direct login completed"
+	MsgLoginAccount diag.Message = "authentication: account preselected; email prompt skipped"
+	// The default account applies only to direct login.
+	MsgDefaultAccountUnused diag.Message = "authentication: default account not used by the browser companion"
+	MsgDiscovery            diag.Message = "discovery: resolving destination device"
+	MsgDiscoveryDone        diag.Message = "discovery: destination device prepared"
+	MsgAuthenticated        diag.Message = "Authenticated to Raspberry Pi Connect"
+	MsgSignedIn             diag.Message = "signed in directly; session is held in memory for this process"
+	MsgBridgeReady          diag.Message = "authentication: loopback companion bridge listening"
+	MsgBrowserNotice        diag.Message = "experimental browser authentication; no account credentials leave Chrome"
+	MsgConfiguration        diag.Message = "signaling: requesting session configuration"
+	MsgICEServers           diag.Message = "signaling: session configuration received"
+	MsgPeer                 diag.Message = "transport: creating WebRTC peer and shell data channel"
+	MsgOffer                diag.Message = "signaling: sending local offer"
+	MsgAnswer               diag.Message = "signaling: remote answer received"
+	MsgChannelOpen          diag.Message = "transport: shell data channel open"
+	MsgAttemptFailed        diag.Message = "connection: establishment attempt failed before any command; retrying"
+	MsgBrokerStart          diag.Message = "broker: starting shell-only broker"
+	MsgBrokerFinished       diag.Message = "broker: finished"
 )
 
 type loggedLogin struct {
@@ -252,7 +255,10 @@ func AuthenticateWithPolicy(ctx context.Context, destination string, direct bool
 		client := webauth.New()
 		loginCtx, stop := context.WithTimeout(ctx, loginLimit)
 		log.Debug(MsgLoginStart)
-		err := loginprompt.Authenticate(loginCtx, loggedLogin{boundedLogin{client, policy.ConnectTimeout()}, log})
+		if policy.LoginAccount() != "" {
+			log.Debug(MsgLoginAccount)
+		}
+		err := loginprompt.AuthenticateAs(loginCtx, loggedLogin{boundedLogin{client, policy.ConnectTimeout()}, log}, policy.LoginAccount())
 		stop()
 		if err != nil {
 			return nil, err
@@ -261,6 +267,11 @@ func AuthenticateWithPolicy(ctx context.Context, destination string, direct bool
 		log.Verbose(MsgAuthenticated, diag.State("method", "direct-login"))
 		log.Info(MsgSignedIn)
 		return &directSource{client: client, lifetime: ctx, destination: destination, log: log}, nil
+	}
+	if policy.DefaultAccount != "" {
+		// The default only replaces the direct-login email prompt; the
+		// companion uses whatever account Chrome is signed in to.
+		log.Debug(MsgDefaultAccountUnused)
 	}
 	bridge, err := browserauth.New(ctx, destination)
 	if err != nil {
