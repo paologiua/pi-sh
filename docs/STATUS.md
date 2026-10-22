@@ -1,5 +1,12 @@
 # Development status — 2026-10-22
 
+Later the same day four parallel engineering branches were merged (local evidence
+only; no Pi verification yet): diagnostics -v/-q/-E/-y with structural redaction
+(DIAGNOSTICS.md), ssh_config Match/Tag/-P (CONFIGURATION.md), destination parsing
+and connection policy incl. BatchMode, ConnectTimeout/ConnectionAttempts and
+ServerAlive via ICE (CONNECTION_POLICY.md, with owner decisions), and glob/tilde
+for pi-sftp/pi-cp (GLOB_TILDE.md). Each was compared with local OpenSSH 10.2p1.
+
 Claude Code resumed from the handoff. The intermittent binary-input stall now has a
 locally demonstrated cause: Bash 5.2 (the Pi has 5.2.37) can report a `read -t`
 timeout after consuming the newline, so the broker kept a complete `I` record as a

@@ -116,8 +116,22 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 - **CLI/configurazione:** subset esplicito di `-F/-o`, Host/Include/HostName,
   precedenza, `-G/-V/-Q`, escape e opzioni dopo la destinazione fino al comando.
   Ci sono confronti locali con OpenSSH_10.2p1 / LibreSSL 3.3.6.
+- **Integrato il 2026-10-22 (solo locale, Pi da verificare):** diagnostica
+  `-v/-q/-E/-y`, LogLevel, SyslogFacility con redazione strutturale
+  (`internal/diag`, DIAGNOSTICS.md); `Match`, `Tag`, `-P` (CONFIGURATION.md);
+  destinazioni `user@host`/URI/IPv6 e operandi scp/sftp (`internal/sshdest`),
+  rifiuto di utente/porta/IP, BatchMode, ConnectTimeout/ConnectionAttempts,
+  ServerAlive via ICE (`internal/connpolicy`, CONNECTION_POLICY.md); glob e
+  tilde in pi-sftp/pi-cp (`internal/pathglob`, GLOB_TILDE.md). Decisioni del
+  proprietario in CONNECTION_POLICY.md.
 
 ## Correzioni recenti da preservare
+
+### Test TTY da osservare
+
+`TestStagedTTYStopOpenSSHDifferential/caught-suspend` è fallito una volta in una
+suite completa (2026-10-22) e poi è passato più volte. Tocca il TTY adapter dove
+il `cat` inattivo ignora i segnali di job control: se si ripete, indagare lì.
 
 ### Letture temporizzate nel broker (Bash 5.2)
 
@@ -165,8 +179,8 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Area | Lavoro ancora necessario | Documenti da leggere quando la affronti |
 | --- | --- | --- |
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
-| File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; prove ripetute/più grandi; ricorsione console SFTP; glob/tilde; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
-| CLI/config | user@host/URI/IPv6 e identità Unix; Match; configurazioni predefinite; resto dei token/direttive; diagnostica/log/quiet; BatchMode/prompt; timeout/keepalive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
+| File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
+| CLI/config | Verifica sul Pi di diagnostica, Match, policy di connessione; proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
 | Forwarding | Capacità reali dell'agente; eventuali utility già presenti; -W/-L/-R/-D, half-close, concorrenza, bind/IPv6, cleanup, multiplexing e operazioni di controllo | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
