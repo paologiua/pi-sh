@@ -12,6 +12,7 @@ import (
 
 	"pi-sh/internal/cliargs"
 	"pi-sh/internal/connectsession"
+	"pi-sh/internal/diag"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
 	"pi-sh/internal/sshdest"
@@ -35,6 +36,9 @@ func app() int {
 	batch := f.String("b", "", "batch file, or - for stdin")
 	config := f.String("F", "none", "explicit configuration file, or none")
 	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
+	var verbosity diag.Verbosity
+	f.Var(verbosity.VerboseFlag(), "v", "verbose connection diagnostics; repeat for more (maximum DEBUG3)")
+	f.Var(verbosity.QuietFlag(), "q", "quiet: suppress connection notices, warnings and diagnostics")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
@@ -44,7 +48,7 @@ func app() int {
 		return 1
 	}
 	if *direct == *browser || f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afp] [-s existing-server] [-b file|-] [-F file|none] [-o option] device-or-alias")
+		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqv] [-s existing-server] [-b file|-] [-F file|none] [-o option] device-or-alias")
 		return 1
 	}
 	if _, err := sftpclient.ServerCommand(*server); err != nil {
@@ -64,7 +68,7 @@ func app() int {
 	if operand["port"] == "" {
 		operand["port"] = parsed.Port
 	}
-	target, policy, err := sftpcli.Resolve(parsed.Host, *config, overrides, operand)
+	target, settings, policy, err := sftpcli.ResolveSession(parsed.Host, *config, overrides, *server, operand)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
@@ -79,23 +83,29 @@ func app() int {
 		defer file.Close()
 		input = file
 	}
+	// As with scp/sftp passing -v/-q/-o LogLevel to ssh, these control only
+	// the connection layer; file errors are always reported. The browser
+	// companion instruction is never suppressed.
+	level, _ := verbosity.Resolve(settings["loglevel"])
+	log, _ := diag.Open(diag.Config{Program: "pi-sftp", Level: level, Stderr: os.Stderr})
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
+	ctx = diag.With(ctx, log)
 	source, err := connectsession.AuthenticateWithPolicy(ctx, target, *direct, policy, os.Stderr, "pi-sftp")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
+		sessionFailure(log, err)
 		return 255
 	}
 	defer source.Close()
 	carrier, err := connectsession.DialWithPolicy(ctx, source, policy)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
+		sessionFailure(log, err)
 		return 255
 	}
 	defer carrier.Close()
 	session, err := sftpclient.Open(ctx, carrier.Run, sftpclient.Options{Server: *server, ReadOnly: *readOnly})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
+		sessionFailure(log, err)
 		return 255
 	}
 	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != ""}
@@ -113,4 +123,14 @@ func app() int {
 
 func destination(original, config string, overrides []string) (string, error) {
 	return sftpcli.Destination(original, config, overrides)
+}
+
+// sessionFailure reports a connection-layer failure (exit 255). Under -q or
+// LogLevel QUIET the detail is suppressed like ssh's own messages, but the
+// failure is still stated, as scp/sftp print "Connection closed".
+func sessionFailure(log *diag.Logger, err error) {
+	log.Failure(diag.Fatal, err)
+	if !log.Enabled(diag.Fatal) {
+		fmt.Fprintln(os.Stderr, "pi-sftp: connection closed")
+	}
 }

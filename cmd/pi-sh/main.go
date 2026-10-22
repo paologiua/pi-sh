@@ -13,6 +13,7 @@ import (
 	"pi-sh/internal/command"
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/connpolicy"
+	"pi-sh/internal/diag"
 	"pi-sh/internal/shellbroker"
 	"pi-sh/internal/terminal"
 	"pi-sh/internal/transport"
@@ -22,18 +23,33 @@ func main() { os.Exit(app()) }
 
 func app() int {
 	opts, err := parseOptions(os.Args[1:])
-	if err != nil {
+	var fromConfig configError
+	if err != nil && !errors.As(err, &fromConfig) {
 		fmt.Fprintln(os.Stderr, "pi-sh:", err)
 		fmt.Fprintln(os.Stderr, "usage: pi-sh (--browser|--direct-login) [options] [device-or-alias]\n       pi-sh (--browser|--direct-login) --experimental-command [options] device-or-alias command [arguments...]\n       pi-sh -G [-F path|none] [-o option] [device-or-alias]\n       pi-sh -V\n       pi-sh -Q query")
 		return 255
 	}
-	if opts.inspection != "" {
+	if err == nil && opts.inspection != "" {
 		if err := writeInspection(opts, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "pi-sh:", err)
 			return 255
 		}
 		return 0
 	}
+	// As in ssh(1), -E/-y take effect after option parsing (-V/-Q exit first);
+	// an unopenable log file exits 1. Configuration-file errors and all later
+	// diagnostics follow the selected level and destination.
+	log, logErr := opts.logging.open(os.Stderr)
+	if logErr != nil {
+		fmt.Fprintln(os.Stderr, "pi-sh:", logErr)
+		return 1
+	}
+	defer log.Close()
+	if err != nil {
+		log.Failure(diag.Error, err)
+		return 255
+	}
+	logStartup(log, opts)
 	if opts.dump {
 		if err := opts.writeConfig(os.Stdout); err != nil {
 			return 255
@@ -50,7 +66,7 @@ func app() int {
 	} else if opts.broker {
 		useTTY, warning := opts.requestTTY(terminal.IsTerminal(os.Stdin))
 		if warning {
-			fmt.Fprintln(os.Stderr, "pi-sh: pseudo-terminal will not be allocated because stdin is not a terminal or is disabled")
+			log.Info(msgNoTTY)
 		}
 		text := strings.Join(opts.args[1:], " ")
 		if useTTY {
@@ -63,11 +79,17 @@ func app() int {
 		}
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "pi-sh:", err)
+		log.Failure(diag.Fatal, err)
 		return 255
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
+	ctx = diag.With(ctx, log)
+	if opts.direct {
+		log.Debug(msgAuthDirect)
+	} else {
+		log.Debug(msgAuthBrowser)
+	}
 	source, err := authentication(ctx, destination, opts.direct, opts.policy)
 	if err == nil {
 		defer source.Close()
@@ -79,11 +101,12 @@ func app() int {
 	}
 	if err != nil {
 		if errors.Is(err, errEscape) {
-			fmt.Fprintln(os.Stderr, "pi-sh: disconnected locally; remote TTY cleanup was not confirmed")
+			log.Info(msgEscape)
 			return 0
 		}
 		var status *commandStatus
 		if errors.As(err, &status) {
+			log.Debug(msgExitStatus, diag.Count("exit_status", status.code))
 			return status.code
 		}
 		if errors.Is(err, transport.ErrClosed) || errors.Is(err, io.EOF) {
@@ -93,7 +116,7 @@ func app() int {
 				err = errors.Join(err, shellbroker.ErrCleanupUnconfirmed)
 			}
 		}
-		fmt.Fprintln(os.Stderr, "pi-sh:", err)
+		log.Failure(diag.Fatal, err)
 		return 255
 	}
 	return 0
@@ -104,6 +127,7 @@ func connect(ctx context.Context, bridge sessionSource, escape rune, plan *comma
 }
 
 func connectWithPolicy(ctx context.Context, policy connpolicy.Policy, bridge sessionSource, escape rune, plan *command.Plan, brokerPlan *shellbroker.Plan, ttyCommand *ttyCommandRequest, stdin io.Reader) error {
+	log := diag.From(ctx)
 	peerContext := ctx
 	if brokerPlan != nil || ttyCommand != nil {
 		// The coordinator owns Close, allowing Run to report cleanup evidence
@@ -118,16 +142,20 @@ func connectWithPolicy(ctx context.Context, policy connpolicy.Policy, bridge ses
 	}
 	defer p.Close()
 	if plan != nil {
-		fmt.Fprintln(os.Stderr, "pi-sh: experimental command adapter; remote PTY, merged stdout/stderr, stdin /dev/null")
+		log.Info(msgLegacy)
+		log.Debug(msgSessionMode, diag.State("adapter", "legacy"))
 		return runLegacyFileCommand(ctx, bridge.Failures(), ch, plan, os.Stdout)
 	}
 	if brokerPlan != nil {
-		fmt.Fprintln(os.Stderr, "pi-sh: experimental shell-only broker; binary stdin, separate stdout/stderr; no Python")
+		log.Info(msgBroker)
+		log.Debug(msgSessionMode, diag.State("adapter", "broker-no-tty"))
 		return runShellFileCommand(ctx, bridge.Failures(), ch, brokerPlan, stdin, os.Stdout, os.Stderr)
 	}
 	if ttyCommand != nil {
-		fmt.Fprintln(os.Stderr, "pi-sh: experimental TTY command; merged stdout/stderr; abnormal remote cleanup remains unverified")
+		log.Info(msgTTYCommand)
+		log.Debug(msgSessionMode, diag.State("adapter", "broker-tty"))
 		return runTTYSession(ctx, bridge.Failures(), p, ch, *ttyCommand, stdin, os.Stdin, os.Stdout, os.Stderr, escape)
 	}
+	log.Debug(msgSessionShell)
 	return runInteractiveSession(ctx, bridge.Failures(), p, ch, os.Stdin, os.Stdout, os.Stderr, escape)
 }

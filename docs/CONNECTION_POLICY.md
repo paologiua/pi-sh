@@ -39,6 +39,11 @@ the client cannot select a user, and cannot prove before login that a requested
 name matches the agent account. An inactive `User` (another `Host` block) is
 syntax-checked and ignored, so shared configurations remain usable.
 
+Match evaluation is unaffected: a CLI or destination user is seeded into the
+configuration context, so `Match user` and `%r` see it exactly as OpenSSH
+would (otherwise the local login name). The refusal happens only after the
+whole configuration, including any final pass, has been evaluated.
+
 A possible future "accept only if it provably matches" mode would need a
 remote `id -un` check inside the broker before the user's command; that adds
 a remote command, cannot cover the interactive shell, and is left to the owner.
@@ -120,7 +125,7 @@ exceed the bound by the ICE check interval. The message is not OpenSSH's
 
 ## `-G` output
 
-`-G` additionally prints `batchmode`, `connectionattempts`, `connecttimeout`,
+`-G` additionally prints, after the base, tag and logging fields, `batchmode`, `connectionattempts`, `connecttimeout`,
 `serveralivecountmax`, `serveraliveinterval`, `tcpkeepalive` and
 `channeltimeout` in OpenSSH form. `user`, `port` and
 `numberofpasswordprompts` are not printed (no equivalent / differing default).

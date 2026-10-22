@@ -1,31 +1,9 @@
 package main
 
 import (
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
-
-func runApp(t *testing.T, args ...string) (int, string) {
-	t.Helper()
-	oldArgs, oldErrors := os.Args, os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Args = append([]string{"pi-sftp"}, args...)
-	os.Stderr = w
-	code := app()
-	os.Args, os.Stderr = oldArgs, oldErrors
-	w.Close()
-	output, err := io.ReadAll(r)
-	r.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return code, string(output)
-}
 
 // All refusals happen before authentication: no prompt, listener or request.
 func TestConnectionPolicyRefusedBeforeLogin(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"pi-sh/internal/connpolicy"
+	"pi-sh/internal/diag"
 	"pi-sh/internal/sshconfig"
 	"pi-sh/internal/sshdest"
 )
@@ -20,11 +21,14 @@ type options struct {
 	tty                                   string
 	args                                  []string
 	configFile, hostname                  string
+	tag                                   string
+	tagSet                                bool
 	inspection, query                     string
 	// connection holds first-obtained connection-policy values (User, Port,
 	// BatchMode, timeouts ...); policy is the validated result.
 	connection map[string]string
 	policy     connpolicy.Policy
+	logging    logOptions
 }
 
 func parseOptions(args []string) (options, error) {
@@ -82,9 +86,15 @@ func parseOptions(args []string) (options, error) {
 				} else {
 					o.tty = "yes"
 				}
-			case 'e', 'o', 'F', 'Q', 'l', 'p':
+			case 'v':
+				o.logging.verbosity.Verbose()
+			case 'q':
+				o.logging.verbosity.Quiet()
+			case 'y':
+				o.logging.syslog = true
+			case 'e', 'o', 'F', 'P', 'Q', 'E', 'l', 'p':
 				value := a[j+1:]
-				if value == "" {
+				if j+1 == len(a) {
 					i++
 					if i == len(args) {
 						return o, fmt.Errorf("option -%c requires an argument", c)
@@ -107,6 +117,14 @@ func parseOptions(args []string) (options, error) {
 					}
 					o.connection[key] = value
 					seen[key] = true
+				case 'P':
+					// ssh -P is first-obtained like -o Tag and may be empty.
+					if !seen["tag"] {
+						o.tag, o.tagSet = value, true
+						seen["tag"] = true
+					}
+				case 'E':
+					o.logging.file, o.logging.useFile = value, true
 				case 'F':
 					if value == "" {
 						return o, errors.New("configuration path must not be empty")
@@ -131,6 +149,9 @@ func parseOptions(args []string) (options, error) {
 				return o, fmt.Errorf("unsupported SSH option -%c", c)
 			}
 		}
+	}
+	if o.logging.syslog && o.logging.useFile {
+		return o, diag.ErrBothDestinations
 	}
 	if len(o.args) > 0 {
 		target, err := sshdest.SSH(o.args[0])
@@ -158,13 +179,27 @@ func parseOptions(args []string) (options, error) {
 		if seen["hostname"] {
 			initial["hostname"] = o.hostname
 		}
-		values, err := sshconfig.LoadWithOverrides(o.configFile, o.args[0], initial)
+		if o.tagSet {
+			initial["tag"] = o.tag
+		}
+		// Match user/%r see the CLI or destination user as OpenSSH would; the
+		// user is still refused by connpolicy after evaluation.
+		if user, ok := o.connection["user"]; ok {
+			initial["user"] = user
+		}
+		// Match command/sessiontype see the words ssh would join for exec.
+		values, err := sshconfig.LoadContext(o.configFile, sshconfig.Context{
+			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "),
+		})
 		if err != nil {
-			return o, err
+			return o, configError{err}
 		}
 		for key, value := range values {
+			if seen[key] {
+				continue // CLI value seeded above, already validated and applied
+			}
 			if err := o.apply(key, value, seen); err != nil {
-				return o, err
+				return o, configError{err}
 			}
 		}
 	}
@@ -265,6 +300,12 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			if connpolicy.Known(key) {
 				o.connection[key] = value
 			}
+		case "tag":
+			o.tag, o.tagSet = value, true
+		case "loglevel":
+			o.logging.level = value
+		case "syslogfacility":
+			o.logging.facility = value
 		}
 		seen[key] = true
 	}
@@ -320,6 +361,14 @@ func (o options) writeConfig(w io.Writer) error {
 		tty = "true"
 	}
 	if _, err := fmt.Fprintf(w, "escapechar %s\nstdinnull %s\nrequesttty %s\n", label, stdin, tty); err != nil {
+		return err
+	}
+	if o.tagSet {
+		if _, err := fmt.Fprintf(w, "tag %s\n", o.tag); err != nil {
+			return err
+		}
+	}
+	if err := o.logging.writeConfig(w); err != nil {
 		return err
 	}
 	return o.policy.WriteConfig(w)
