@@ -5,10 +5,11 @@ import (
 	"os"
 
 	"pi-sh/internal/connectsession"
+	"pi-sh/internal/connpolicy"
 )
 
 type sessionSource = connectsession.Source
 
-func authentication(ctx context.Context, destination string, direct bool) (sessionSource, error) {
-	return connectsession.Authenticate(ctx, destination, direct, os.Stderr, "pi-sh")
+func authentication(ctx context.Context, destination string, direct bool, policy connpolicy.Policy) (sessionSource, error) {
+	return connectsession.AuthenticateWithPolicy(ctx, destination, direct, policy, os.Stderr, "pi-sh")
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+
+	"pi-sh/internal/connpolicy"
 )
 
 const (
@@ -125,6 +127,11 @@ func Validate(key, value string) error {
 	case "hostname":
 		_, err := Hostname(value, "placeholder")
 		return err
+	case "user", "port", "batchmode", "numberofpasswordprompts", "connecttimeout", "connectionattempts",
+		"serveraliveinterval", "serveralivecountmax", "tcpkeepalive", "channeltimeout":
+		// Syntax only; connpolicy.FromValues rejects effective settings that
+		// have no Connect equivalent (for example any User or Port).
+		return connpolicy.Validate(key, value)
 	default:
 		return errors.New("unsupported SSH configuration directive")
 	}

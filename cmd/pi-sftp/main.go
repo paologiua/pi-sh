@@ -14,6 +14,7 @@ import (
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
+	"pi-sh/internal/sshdest"
 )
 
 type optionList []string
@@ -33,6 +34,7 @@ func app() int {
 	preserve := f.Bool("p", false, "preserve regular-file permission bits and access/modification times")
 	batch := f.String("b", "", "batch file, or - for stdin")
 	config := f.String("F", "none", "explicit configuration file, or none")
+	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
@@ -49,7 +51,20 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
 	}
-	target, err := destination(f.Arg(0), *config, overrides)
+	parsed, err := sshdest.SFTP(f.Arg(0))
+	if err == nil && parsed.HasPath {
+		err = errors.New("an initial remote path in the destination is not implemented; use cd or get after connecting")
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
+		return 1
+	}
+	// -P and -o values precede the destination's user/port; any is refused.
+	operand := map[string]string{"port": *port, "user": parsed.User}
+	if operand["port"] == "" {
+		operand["port"] = parsed.Port
+	}
+	target, policy, err := sftpcli.Resolve(parsed.Host, *config, overrides, operand)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
@@ -66,13 +81,13 @@ func app() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
-	source, err := connectsession.Authenticate(ctx, target, *direct, os.Stderr, "pi-sftp")
+	source, err := connectsession.AuthenticateWithPolicy(ctx, target, *direct, policy, os.Stderr, "pi-sftp")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 255
 	}
 	defer source.Close()
-	carrier, err := connectsession.Dial(ctx, source)
+	carrier, err := connectsession.DialWithPolicy(ctx, source, policy)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 255

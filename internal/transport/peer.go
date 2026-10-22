@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/pion/logging"
 	"github.com/pion/webrtc/v4"
@@ -33,6 +34,12 @@ var (
 type Config struct {
 	ICEServers []webrtc.ICEServer
 	RelayOnly  bool
+	// DeadPeerTimeout, when positive, is how long the peer may stay silent
+	// before the connection fails and Close runs. ICE consent checks (STUN
+	// binding requests authenticated with the negotiated ICE credentials) are
+	// sent at least every two seconds, and any received packet counts as
+	// liveness. Zero keeps Pion's defaults (failure after about 30 seconds).
+	DeadPeerTimeout time.Duration
 }
 
 type Peer struct {
@@ -61,6 +68,10 @@ func New(ctx context.Context, cfg Config) (*Peer, error) {
 func newPeer(ctx context.Context, cfg Config, s webrtc.SettingEngine) (*Peer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if t := cfg.DeadPeerTimeout; t > 0 {
+		disconnected := min(5*time.Second, t/2)
+		s.SetICETimeouts(disconnected, t-disconnected, max(min(2*time.Second, t/4), time.Millisecond))
 	}
 	c := webrtc.Configuration{ICEServers: cfg.ICEServers}
 	if cfg.RelayOnly {
