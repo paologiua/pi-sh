@@ -18,6 +18,10 @@ import (
 	"golang.org/x/net/html"
 )
 
+// ErrAnswerTimeout means Connect accepted the offer but supplied no answer
+// within the polling budget. No remote command has been sent at that point.
+var ErrAnswerTimeout = errors.New("Connect WebRTC answer timed out")
+
 type reply struct {
 	http.Header
 	status int
@@ -243,7 +247,7 @@ func (s *Connection) Exchange(ctx context.Context, offer webrtc.SessionDescripti
 		go s.watch()
 		return *result.Answer, nil
 	}
-	return webrtc.SessionDescription{}, errors.New("Connect WebRTC answer timed out")
+	return webrtc.SessionDescription{}, ErrAnswerTimeout
 }
 
 func (s *Connection) watch() {

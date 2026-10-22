@@ -15,13 +15,18 @@ import (
 func TestCopyOperandSyntax(t *testing.T) {
 	for _, tc := range []struct{ input, device, path string }{
 		{"pi:file", "pi", "file"}, {"pi:", "pi", "."}, {"./file:colon", "", "./file:colon"}, {"/dir/file:colon", "", "/dir/file:colon"}, {"C:\\dir\\file", "", "C:\\dir\\file"}, {"local", "", "local"},
+		// OpenSSH scp grammar: URIs, bracketed hosts, ignored empty user, leading colon is local.
+		{"scp://pi/path", "pi", "path"}, {"scp://pi//abs", "pi", "/abs"}, {"scp://pi", "pi", "."}, {"scp://pi/p%20q", "pi", "p q"},
+		{"[pi]:x", "pi", "x"}, {"@pi:x", "pi", "x"}, {":x", "", ":x"}, {"Pi #1:x", "Pi #1", "x"},
 	} {
 		got, err := Parse(tc.input)
 		if err != nil || got.Device != tc.device || got.Path != tc.path {
 			t.Fatal(tc, got, err)
 		}
 	}
-	for _, args := range [][]string{{"local"}, {"a", "b"}, {"one:a", "two:b"}, {"a:x", "b:y", "local"}, {"scp://pi/path", "local"}, {"user@pi:file", "local"}} {
+	for _, args := range [][]string{{"local"}, {"a", "b"}, {"one:a", "two:b"}, {"a:x", "b:y", "local"}, {"scp://pi/path", "scp://other/x"}, {"user@pi:file", "local"},
+		{"scp://user@pi/x", "local"}, {"scp://pi:22/x", "local"}, {"[::1]:x", "local"}, {"alice@[::1]:x", "local"},
+		{"scp://[::1]/x", "local"}, {"scp://a@b@pi/x", "local"}, {"scp://pi:0/x", "local"}} {
 		if _, err := New(args); err == nil {
 			t.Fatal("unsupported operands accepted", args)
 		}

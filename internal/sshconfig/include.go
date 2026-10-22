@@ -18,15 +18,23 @@ const (
 )
 
 type parser struct {
-	host                  string
+	ctx                   Context
+	env                   *localEnv
 	values                map[string]string
 	includes              bool
+	final, wantFinal      bool
 	home                  string
 	bytes, files, entries int
 	stack                 []os.FileInfo
 }
 
-func newParser(host string) *parser { return &parser{host: host, values: make(map[string]string)} }
+func newParser(ctx Context) *parser {
+	env := ctx.env
+	if env == nil {
+		env = systemEnv()
+	}
+	return &parser{ctx: ctx, env: env, values: make(map[string]string)}
+}
 
 type budgetReader struct {
 	p *parser
@@ -117,7 +125,9 @@ func (p *parser) directive(text string, active *bool, never bool, depth int) err
 			if pattern == "" {
 				return errors.New("empty Host pattern")
 			}
-			if match(pattern, strings.ToLower(p.host)) {
+			// Host patterns are case-sensitive against the destination as
+			// typed (OpenSSH 10.2); only Match host/originalhost fold case.
+			if match(pattern, p.ctx.Host) {
 				if negative {
 					negated = true
 				} else {
@@ -126,6 +136,19 @@ func (p *parser) directive(text string, active *bool, never bool, depth int) err
 			}
 		}
 		*active = matched && !negated && !never
+		return nil
+	}
+	if key == "match" {
+		if len(args) == 0 {
+			return errors.New("Match requires criteria")
+		}
+		// Every Match line is evaluated, even under an inactive Include: as in
+		// OpenSSH, exec may run and "final" may request the second pass.
+		matched, err := p.match(args)
+		if err != nil {
+			return err
+		}
+		*active = matched && !never
 		return nil
 	}
 	if key == "include" {
@@ -191,12 +214,12 @@ func (p *parser) includePath(value string) (string, error) {
 			case '%':
 				token = "%"
 			case 'n':
-				token = p.host
+				token = p.ctx.Host
 			case 'h':
-				token = p.host
+				token = p.ctx.Host
 				if name := p.values["hostname"]; name != "" {
 					var err error
-					token, err = Hostname(name, p.host)
+					token, err = Hostname(name, p.ctx.Host)
 					if err != nil {
 						return "", err
 					}

@@ -7,9 +7,20 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/pion/logging"
 	"github.com/pion/webrtc/v4"
+	"pi-sh/internal/diag"
+)
+
+// State transitions are logged as enum names only; candidates, addresses, SDP
+// and ICE credentials never reach diagnostics.
+const (
+	msgPeerState      diag.Message = "transport: peer connection state"
+	msgICEState       diag.Message = "transport: ICE connection state"
+	msgGatheringState diag.Message = "transport: ICE gathering state"
+	msgSignalingState diag.Message = "transport: signaling state"
 )
 
 const (
@@ -33,6 +44,12 @@ var (
 type Config struct {
 	ICEServers []webrtc.ICEServer
 	RelayOnly  bool
+	// DeadPeerTimeout, when positive, is how long the peer may stay silent
+	// before the connection fails and Close runs. ICE consent checks (STUN
+	// binding requests authenticated with the negotiated ICE credentials) are
+	// sent at least every two seconds, and any received packet counts as
+	// liveness. Zero keeps Pion's defaults (failure after about 30 seconds).
+	DeadPeerTimeout time.Duration
 }
 
 type Peer struct {
@@ -62,6 +79,10 @@ func newPeer(ctx context.Context, cfg Config, s webrtc.SettingEngine) (*Peer, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if t := cfg.DeadPeerTimeout; t > 0 {
+		disconnected := min(5*time.Second, t/2)
+		s.SetICETimeouts(disconnected, t-disconnected, max(min(2*time.Second, t/4), time.Millisecond))
+	}
 	c := webrtc.Configuration{ICEServers: cfg.ICEServers}
 	if cfg.RelayOnly {
 		c.ICETransportPolicy = webrtc.ICETransportPolicyRelay
@@ -83,7 +104,18 @@ func newPeer(ctx context.Context, cfg Config, s webrtc.SettingEngine) (*Peer, er
 			_ = ch.Close()
 		}
 	})
+	log := diag.From(ctx)
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		log.Debug3(msgICEState, diag.State("state", state.String()))
+	})
+	pc.OnICEGatheringStateChange(func(state webrtc.ICEGatheringState) {
+		log.Debug3(msgGatheringState, diag.State("state", state.String()))
+	})
+	pc.OnSignalingStateChange(func(state webrtc.SignalingState) {
+		log.Debug3(msgSignalingState, diag.State("state", state.String()))
+	})
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		log.Debug2(msgPeerState, diag.State("state", state.String()))
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
 			_ = p.Close()
 		}

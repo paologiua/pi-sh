@@ -63,6 +63,8 @@ copied as trees; without it they fail as "not a regular file" while other
 matches continue. Local operands and the remote upload target are literal: the
 local shell expands local globs, as for scp.
 
+Operands are recognised only by `internal/sshdest` (scp grammar and
+`scp://` URIs); the glob/tilde rules below apply to the parsed remote path.
 Remote `~` and `~/` handling follows scp's prepare_remote_path: `~` and `~/`
 are the server's starting directory and `~/x` becomes the relative `x`, so the
 result is the home directory only if the server starts there (the same

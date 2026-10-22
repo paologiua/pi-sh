@@ -71,7 +71,7 @@ func TestIncludeExpansionUsesOriginalAndEffectiveNames(t *testing.T) {
 	if err != nil || got["escapechar"] != "!" || got["stdinnull"] != "yes" {
 		t.Fatal("Include token/environment expansion", got, err)
 	}
-	p := newParser("alias")
+	p := newParser(Context{Host: "alias"})
 	p.home = dir
 	for _, tt := range []struct{ in, want string }{
 		{"part.conf", filepath.Join(dir, ".ssh", "part.conf")},
@@ -129,12 +129,12 @@ func TestIncludeBoundsAndErrorsAreAggregateAndRedacted(t *testing.T) {
 	if _, err := Load(root, "alias"); err == nil || strings.Contains(err.Error(), dir) || strings.Contains(err.Error(), "PI_SH_TEST_INCLUDE_SECRET") {
 		t.Fatal("nonregular path accepted or disclosed", err)
 	}
-	p := newParser("alias")
+	p := newParser(Context{Host: "alias"})
 	p.entries = MaxGlobEntries
 	if _, err := p.glob(leaf); err == nil {
 		t.Fatal("filesystem visit limit ignored")
 	}
-	p = newParser("alias")
+	p = newParser(Context{Host: "alias"})
 	p.entries = MaxGlobEntries - 10
 	if _, err := p.glob(filepath.Join(dir, "*")); err == nil {
 		t.Fatal("directory enumeration visit limit ignored")

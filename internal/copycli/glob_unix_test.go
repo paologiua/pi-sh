@@ -128,7 +128,7 @@ func TestRemotePathTilde(t *testing.T) {
 			t.Errorf("remotePath(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, args := range [][]string{{"pi:~root/x", "local"}, {"local", "pi:~pi"}} {
+	for _, args := range [][]string{{"pi:~root/x", "local"}, {"local", "pi:~pi"}, {"scp://pi/~root/x", "local"}} {
 		if _, err := New(args); err == nil || !strings.Contains(err.Error(), "expand-path") {
 			t.Errorf("%q: ~user accepted before login: %v", args, err)
 		}

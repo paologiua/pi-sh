@@ -25,7 +25,9 @@ Host initial-pi-one
   RequestTTY force
 `
 	for _, tc := range []struct{ host, escape, stdin string }{
-		{"pi-one", "!", "yes"}, {"box", "!", "yes"}, {"pi-excluded", "#", ""}, {"unmatched", "none", ""}, {"PI-ONE", "!", "yes"},
+		{"pi-one", "!", "yes"}, {"box", "!", "yes"}, {"pi-excluded", "#", ""}, {"unmatched", "none", ""},
+		// OpenSSH 10.2 Host patterns are case-sensitive against the typed destination.
+		{"PI-ONE", "none", ""},
 	} {
 		got, err := Parse(strings.NewReader(text), tc.host)
 		if err != nil {
@@ -51,7 +53,7 @@ func TestConfigGrammarAndErrors(t *testing.T) {
 		"Host *\nHostName %n", "Host *\nHostName value%", "Host *\nHostName \"unterminated", "HostName \" \"", "HostName \"a\x1bb\"", "HostName \"a\tb\"",
 		"Host *\nHostName two words", "Host *\nEscapeChar = = none", "Host *\nHostName x\\y",
 		"Host other\nProxyCommand echo hidden", "Host other\nLocalCommand echo hidden", "Include another",
-		"Match exec true", "IgnoreUnknown *", "EscapeChar !\nEscapeChar invalid", "HostName x\x00y",
+		"Match exec", "Match bogus x", "IgnoreUnknown *", "EscapeChar !\nEscapeChar invalid", "HostName x\x00y",
 		strings.Repeat("a", 64<<10), strings.Repeat("# comment\n", MaxBytes/10+1),
 	} {
 		if _, err := Parse(strings.NewReader(text), "pi"); err == nil {

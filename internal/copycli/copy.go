@@ -10,35 +10,39 @@ import (
 	"strings"
 
 	"github.com/pkg/sftp"
+	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/sftpcli"
+	"pi-sh/internal/sshdest"
 )
 
 type Operand struct{ Device, Path string }
 
+// Parse follows OpenSSH scp operand syntax: [user@]host:path, [user@][addr]:path
+// and scp://[user@]host[:port][/path]. A user, a port or an address literal
+// has no Connect equivalent and is refused explicitly.
 func Parse(s string) (Operand, error) {
 	if s == "" || strings.IndexByte(s, 0) >= 0 {
 		return Operand{}, errors.New("empty or invalid copy operand")
 	}
-	if strings.Contains(s, "://") {
-		return Operand{}, errors.New("copy URIs are not implemented")
+	d, remote, err := sshdest.Copy(s)
+	if err != nil {
+		return Operand{}, err
 	}
-	// Windows absolute drive paths are local even when a script is parsed on Unix.
-	if len(s) >= 3 && s[1] == ':' && ((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z')) && (s[2] == '/' || s[2] == '\\') {
+	if !remote {
 		return Operand{Path: s}, nil
 	}
-	colon := strings.IndexByte(s, ':')
-	slash := strings.IndexByte(s, '/')
-	if colon < 0 || (slash >= 0 && slash < colon) {
-		return Operand{Path: s}, nil
+	switch {
+	case d.User != "":
+		return Operand{}, connpolicy.ErrUser
+	case d.Port != "":
+		return Operand{}, connpolicy.ErrPort
+	case strings.ContainsAny(d.Host, "\r\n\t"):
+		return Operand{}, errors.New("copy remote operand requires an exact Connect device/alias")
 	}
-	device, p := s[:colon], s[colon+1:]
-	if device == "" || strings.ContainsAny(device, "@[]\r\n\t") {
-		return Operand{}, errors.New("copy remote operand requires an exact Connect device/alias, without user or address syntax")
+	if err := connpolicy.Target(d.Host); err != nil {
+		return Operand{}, err
 	}
-	if p == "" {
-		p = "."
-	}
-	return Operand{Device: device, Path: p}, nil
+	return Operand{Device: d.Host, Path: d.Path}, nil
 }
 
 type Plan struct {
