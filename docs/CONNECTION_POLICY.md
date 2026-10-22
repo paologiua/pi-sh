@@ -148,3 +148,14 @@ exceed the bound by the ICE check interval. The message is not OpenSSH's
   default peer remains open.
 - `cmd/*/policy_test.go`: CLI refusals before login, `-G` differentials and
   BatchMode status 255 without a password prompt.
+
+## Owner decisions — 2026-10-22
+
+1. **Remote user:** refuse every `user@`, URI user, `-l` and `User` before login
+   (current behaviour). No remote `id -un` check is added. The owner suggested
+   exploring a destination form that identifies the Connect account and device,
+   for example `email#device`; that is an open design item, not implemented.
+2. **Stricter limits:** ConnectionAttempts capped at 10 and
+   NumberOfPasswordPrompts above 1 refused are confirmed.
+3. **ServerAlive:** using WebRTC/ICE connectivity checks as the equivalent of
+   ServerAliveInterval/CountMax is accepted, with the documented differences.
