@@ -192,6 +192,15 @@ func TestRecursiveCopyAgainstLocalSCP(t *testing.T) {
 									t.Fatal(err)
 								}
 							}
+							// Nothing in the test reads this file. Endpoint scanners can read new
+							// files and update atime; a changed control classifies such a failure.
+							control := root + "/atime-control"
+							if err := os.WriteFile(control, []byte("control"), 0600); err != nil {
+								t.Fatal(err)
+							}
+							if err := os.Chtimes(control, time.Unix(1600000001, 0), time.Unix(1600000013, 0)); err != nil {
+								t.Fatal(err)
+							}
 							t.Cleanup(func() {
 								for _, parent := range []string{a, b} {
 									filepath.Walk(parent, func(name string, info os.FileInfo, err error) error {
@@ -243,7 +252,11 @@ func TestRecursiveCopyAgainstLocalSCP(t *testing.T) {
 										t.Errorf("entry %q differs: mode %o/%o atime %d/%d mtime %d/%d length %d/%d", name, g.Mode, w.Mode, g.Atime, w.Atime, g.Mtime, w.Mtime, len(g.Data), len(w.Data))
 									}
 								}
-								t.Fatal("recursive copy differs from OpenSSH")
+								controlAtime := int64(-1)
+								if remote, err := client.Stat(control); err == nil {
+									controlAtime = remote.Sys().(*sftp.FileStat).AccessTime().Unix()
+								}
+								t.Fatalf("recursive copy differs from OpenSSH; untouched control atime %d (1600000001 unless an external reader opened it)", controlAtime)
 							}
 							gi, err := os.Stat(dst)
 							if err != nil {

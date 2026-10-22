@@ -76,7 +76,7 @@ prima `allow pasting`). Bash 5.2.37 di prova era in
    documenti dell'area scelta dal backlog.
 2. Prosegui la milestone dei trasferimenti con le voci aperte del backlog File:
    prove native delle CLI `pi-cp`/`pi-sftp` (non solo del transfer-probe),
-   discrepanza sui timestamp ricorsivi, glob/tilde, errori/interruzioni. Ogni
+   glob/tilde, errori/interruzioni. Ogni
    nuova scrittura sul Pi richiede un'autorizzazione specifica: quella esistente
    copre solo il piano `NATIVE_TRANSFER_PLAN.md` e la sua root.
 3. Registra separatamente risultati locali e sul Pi e aggiorna la matrice.
@@ -177,15 +177,16 @@ candidato, non ogni soluzione. `nc` funziona nel fixture sul Mac ma dialetto,
 presenza e comportamento sul Pi sono ignoti. Non installarlo e non inventare
 canali Connect. Opzioni SSH senza equivalente devono essere rifiutate chiaramente.
 
-Resta inoltre una discrepanza isolata sui timestamp nelle prove ricorsive,
-non classificata: precedenti ripetizioni verdi non ne spiegano la causa.
-Vedi `docs/SFTP_LISTING.md` e `docs/SCP_RECURSION.md` prima di dichiararla risolta.
+La discrepanza isolata sugli atime nelle prove ricorsive è stata classificata
+(2026-10-22) come lettore esterno sul Mac di test (probabilmente Trend Micro):
+il test ora riporta un file di controllo intatto in caso di fallimento.
+Vedi `docs/SFTP_LISTING.md`.
 
 ## Toolchain, test e stato della working tree
 
-La working tree contiene il progetto esistente interamente non tracciato su
-`main` senza commit iniziale. Non usare reset/clean o eliminare file come fossero
-scarti. Nessun commit/push è stato effettuato. Ricontrolla con `git status`.
+Il progetto ha il commit iniziale `58181d3` su `main` (2026-10-22, richiesto dal
+proprietario). Nessun push. Non usare reset/clean o eliminare file come fossero
+scarti. Ricontrolla con `git status`.
 
 Ambiente locale usato nell'ultima verifica:
 

@@ -105,3 +105,19 @@ from per-rune text input and corrected with available-input batching. The full
 final race suite now passes, along with120 positive/120 no-status concurrent
 cases; this supersedes the failed gate above. Transfer code and its timestamp
 stress caveat are unchanged. See TTY_COMPLETION.md.
+
+## Recursive atime discrepancy: environmental reader — 2026-10-22
+
+On this Mac, files created under `$TMPDIR` and given an old atime are read by an
+external process within about two seconds: without any read by the test, 132/200
+and then 130/200 files had atime reset to the current time. A
+`.metadata_never_index` marker did not change the rate, so Spotlight is unlikely.
+The active Trend Micro Endpoint Security system extension is the probable reader;
+the exact process was not identified (that needs privileged `fs_usage`). Such a
+read after the copy sets atime, and before the snapshot, explains an isolated
+regular-file atime mismatch without a pi-sh defect.
+
+The assertion is unchanged: a missed preservation would also show a recent atime.
+`TestRecursiveCopyAgainstLocalSCP` now keeps an untouched control file in each
+case and reports its atime on failure; a control no longer at 1600000001 marks
+external interference. The 48 cases then passed 10 consecutive runs (480 cases).
