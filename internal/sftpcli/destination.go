@@ -7,6 +7,18 @@ import (
 
 // Destination applies explicit HostName aliases and the pipe-only SFTP policy.
 func Destination(original, config string, overrides []string) (string, error) {
+	return resolve(original, config, overrides, nil)
+}
+
+// Settings is Destination plus the first obtained values of all accepted
+// directives (for example loglevel), as ssh would see them for this session.
+func Settings(original, config string, overrides []string) (string, map[string]string, error) {
+	out := map[string]string{}
+	target, err := resolve(original, config, overrides, out)
+	return target, out, err
+}
+
+func resolve(original, config string, overrides []string, out map[string]string) (string, error) {
 	if _, err := sshconfig.Hostname("%h", original); err != nil {
 		return "", err
 	}
@@ -35,6 +47,11 @@ func Destination(original, config string, overrides []string) (string, error) {
 			if _, set := values[k]; !set {
 				values[k] = v
 			}
+		}
+	}
+	for k, v := range values {
+		if out != nil {
+			out[k] = v
 		}
 	}
 	if tty := values["requesttty"]; tty != "" && tty != "no" && tty != "auto" {

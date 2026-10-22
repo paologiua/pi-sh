@@ -10,6 +10,16 @@ import (
 
 	"github.com/pion/logging"
 	"github.com/pion/webrtc/v4"
+	"pi-sh/internal/diag"
+)
+
+// State transitions are logged as enum names only; candidates, addresses, SDP
+// and ICE credentials never reach diagnostics.
+const (
+	msgPeerState      diag.Message = "transport: peer connection state"
+	msgICEState       diag.Message = "transport: ICE connection state"
+	msgGatheringState diag.Message = "transport: ICE gathering state"
+	msgSignalingState diag.Message = "transport: signaling state"
 )
 
 const (
@@ -83,7 +93,18 @@ func newPeer(ctx context.Context, cfg Config, s webrtc.SettingEngine) (*Peer, er
 			_ = ch.Close()
 		}
 	})
+	log := diag.From(ctx)
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		log.Debug3(msgICEState, diag.State("state", state.String()))
+	})
+	pc.OnICEGatheringStateChange(func(state webrtc.ICEGatheringState) {
+		log.Debug3(msgGatheringState, diag.State("state", state.String()))
+	})
+	pc.OnSignalingStateChange(func(state webrtc.SignalingState) {
+		log.Debug3(msgSignalingState, diag.State("state", state.String()))
+	})
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
+		log.Debug2(msgPeerState, diag.State("state", state.String()))
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateClosed {
 			_ = p.Close()
 		}

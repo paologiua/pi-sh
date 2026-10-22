@@ -298,6 +298,19 @@ terminal/stdin settings, before authentication/network setup; it is not an
 implicit diagnostic. It never reports credentials, cookies or transport secrets.
 StdinNull does not disable controlling-terminal login prompts or TLS/DTLS checks.
 
+## Diagnostics boundary
+
+`-v`/`-E`/`-y` diagnostics (DIAGNOSTICS.md) accept only fixed message constants
+and typed fields (counts, durations, enum state names); a test rejects any
+dynamic message conversion. Error text and every line pass a redaction backstop
+for SDP/ICE, URLs, credential-like pairs, tokens and email addresses, and
+control characters are neutralized. Paths, device names/IDs, addresses, cookies,
+passwords, one-time codes and remote terminal/stdio bytes are never logged. The
+browser companion `fetch(...)` capability is written only to the terminal, never
+to an `-E` file or syslog, and is not suppressed by `-q`. `-E` files are created
+0600 and appended; existing file modes are not changed. `-y` uses only the local
+syslog socket.
+
 ## SFTP and copy boundary
 
 Transfer option parsing accepts attached values only for registered short

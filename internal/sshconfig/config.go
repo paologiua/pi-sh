@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+
+	"pi-sh/internal/diag"
 )
 
 const (
@@ -124,6 +126,12 @@ func Validate(key, value string) error {
 		}
 	case "hostname":
 		_, err := Hostname(value, "placeholder")
+		return err
+	case "loglevel":
+		_, err := diag.ParseLevel(value)
+		return err
+	case "syslogfacility":
+		_, err := diag.ParseFacility(value)
 		return err
 	default:
 		return errors.New("unsupported SSH configuration directive")
