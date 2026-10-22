@@ -1,0 +1,484 @@
+// Package fwdbroker multiplexes forwarded connections over one Connect shell
+// carrier using an in-memory Bash adapter. Each connection runs a connector
+// program that already exists on the device (see Connector); nothing is
+// installed or written remotely. The framing is pi-sh application data inside
+// the evidenced shell channel, not a native Connect forwarding protocol.
+package fwdbroker
+
+import (
+	"context"
+	_ "embed"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"pi-sh/internal/forward"
+	"pi-sh/internal/shellbroker"
+)
+
+//go:embed forward.bash
+var source string
+
+const (
+	// MaxStreams bounds concurrent remote connectors (and their processes).
+	MaxStreams  = 64
+	inputChunk  = 1024
+	inputWindow = 4
+	outWindow   = 8
+	maxStderr   = 4096
+	quitTimeout = 2 * time.Second
+)
+
+var (
+	ErrProtocol    = errors.New("invalid or incomplete forwarding adapter exchange")
+	ErrClosed      = errors.New("forwarding adapter closed")
+	ErrNoConnector = errors.New("no supported connector (OpenBSD netcat, Nmap ncat or socat) is present on the device; pi-sh does not install software")
+)
+
+// Mux is a started adapter. It implements forward.Dialer.
+type Mux struct {
+	records   *shellbroker.Records
+	connector Connector
+	Detected  map[string][]string
+
+	mu      sync.Mutex
+	streams map[int]*stream
+	next    int
+	slots   chan struct{}
+	done    chan struct{}
+	err     error
+	quit    chan struct{}
+	once    sync.Once
+}
+
+// Start stages the adapter over the carrier and selects a connector. ctx must
+// remain live while the Mux is used; the carrier is caller-owned.
+func Start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
+	adapter, err := shellbroker.NewAdapter(source, []string{"cat"}, "forwarding adapter requires existing Bash >=4.3 and cat")
+	if err != nil {
+		return nil, err
+	}
+	records, err := adapter.Start(ctx, carrier)
+	if err != nil {
+		return nil, err
+	}
+	m := &Mux{records: records, Detected: map[string][]string{}, streams: map[int]*stream{},
+		slots: make(chan struct{}, MaxStreams), done: make(chan struct{}), quit: make(chan struct{})}
+	for {
+		text, err := records.Next()
+		if err != nil {
+			return nil, err
+		}
+		if text == "R" {
+			break
+		}
+		f := strings.Fields(text)
+		if len(f) < 2 || len(f) > 3 || f[0] != "T" || len(m.Detected) > 8 {
+			return nil, ErrProtocol
+		}
+		if len(f) == 3 {
+			line, err := hex.DecodeString(f[2])
+			if err != nil || len(m.Detected[f[1]]) >= 3 {
+				return nil, ErrProtocol
+			}
+			m.Detected[f[1]] = append(m.Detected[f[1]], string(line))
+		} else if _, ok := m.Detected[f[1]]; !ok {
+			m.Detected[f[1]] = nil
+		}
+	}
+	go m.receive()
+	connector, ok := Select(m.Detected)
+	if !ok {
+		m.Close()
+		return nil, ErrNoConnector
+	}
+	m.connector = connector
+	return m, nil
+}
+
+// Connector reports the selected remote connector.
+func (m *Mux) Connector() Connector { return m.connector }
+
+// Done is closed when the adapter or carrier fails or the Mux is closed.
+func (m *Mux) Done() <-chan struct{} { return m.done }
+
+// Err reports why Done was closed.
+func (m *Mux) Err() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.err
+}
+
+func (m *Mux) fail(err error) {
+	m.once.Do(func() {
+		m.mu.Lock()
+		m.err = err
+		m.mu.Unlock()
+		close(m.done)
+	})
+}
+
+// Close asks the adapter to kill and reap every connector, waiting a bounded
+// time for its confirmation. Streams fail afterwards.
+func (m *Mux) Close() error {
+	select {
+	case <-m.done:
+		return nil
+	default:
+	}
+	err := m.records.Send("Q")
+	if err == nil {
+		select {
+		case <-m.quit:
+		case <-m.done:
+		case <-time.After(quitTimeout):
+			err = errors.New("forwarding adapter cleanup was not confirmed")
+		}
+	}
+	m.fail(ErrClosed)
+	return err
+}
+
+func (m *Mux) receive() {
+	for {
+		text, err := m.records.Next()
+		if err != nil {
+			m.fail(fmt.Errorf("forwarding carrier failed: %w", err))
+			return
+		}
+		if text == "D" {
+			close(m.quit)
+			m.fail(ErrClosed)
+			return
+		}
+		if err := m.dispatch(text); err != nil {
+			m.fail(err)
+			return
+		}
+	}
+}
+
+func (m *Mux) dispatch(text string) error {
+	f := strings.Fields(text)
+	if len(f) < 2 {
+		if strings.HasPrefix(text, "Z ") {
+			return errors.New("forwarding adapter failed: " + text[2:])
+		}
+		return ErrProtocol
+	}
+	id, err := strconv.Atoi(f[1])
+	if err != nil {
+		return ErrProtocol
+	}
+	m.mu.Lock()
+	s := m.streams[id]
+	m.mu.Unlock()
+	if s == nil {
+		if f[0] == "d" && len(f) == 2 && id > 0 && id <= m.lastID() {
+			return nil // a close crossed the connector's exit
+		}
+		return ErrProtocol
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case f[0] == "o" && len(f) == 4:
+		seq, err := strconv.Atoi(f[2])
+		data, herr := hex.DecodeString(f[3])
+		if err != nil || herr != nil || len(data) == 0 || len(data) > 512 || seq != s.outSeq+1 || s.outEOF {
+			return ErrProtocol
+		}
+		s.outSeq = seq
+		s.gotData = true
+		select {
+		case s.events <- data:
+		default:
+			return ErrProtocol // the adapter exceeded its window
+		}
+	case f[0] == "f" && len(f) == 2:
+		if s.outEOF {
+			return ErrProtocol
+		}
+		s.outEOF = true
+		close(s.events)
+	case f[0] == "e" && len(f) == 3:
+		data, err := hex.DecodeString(f[2])
+		if err != nil {
+			return ErrProtocol
+		}
+		if len(s.stderr)+len(data) <= maxStderr {
+			s.stderr = append(s.stderr, data...)
+		}
+		if !s.ready && s.readyText != "" && strings.Contains(string(s.stderr), s.readyText) {
+			s.ready = true
+			close(s.readyCh)
+		}
+	case f[0] == "a" && len(f) == 3:
+		seq, err := strconv.Atoi(f[2])
+		if err != nil || seq != s.inAcked+1 || seq > s.inSent {
+			return ErrProtocol
+		}
+		s.inAcked = seq
+		s.signal()
+	case f[0] == "k" && len(f) == 2:
+		if !s.inClosed {
+			s.inClosed = true
+			close(s.inClosedCh)
+		}
+	case f[0] == "x" && len(f) == 3:
+		code, err := strconv.Atoi(f[2])
+		if err != nil || code < 0 || code > 255 || s.exited {
+			return ErrProtocol
+		}
+		s.status, s.exited = code, true
+		close(s.exitCh)
+		m.finish(s)
+	case f[0] == "d" && len(f) == 2:
+		m.finish(s)
+	default:
+		return ErrProtocol
+	}
+	return nil
+}
+
+func (m *Mux) lastID() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.next
+}
+
+// finish forgets an adapter-side stream (called with s.mu held).
+func (m *Mux) finish(s *stream) {
+	if s.released {
+		return
+	}
+	s.released = true
+	if !s.inClosed {
+		s.inClosed = true
+		close(s.inClosedCh)
+	}
+	if !s.outEOF {
+		s.outEOF = true
+		close(s.events)
+	}
+	m.mu.Lock()
+	delete(m.streams, s.id)
+	m.mu.Unlock()
+	<-m.slots
+}
+
+// Dial starts a connector for target. With a connector that reports
+// readiness, Dial waits for it and returns an *forward.OpenError on failure.
+func (m *Mux) Dial(ctx context.Context, target forward.Target) (forward.Stream, error) {
+	argv, err := m.connector.Argv(target)
+	if err != nil {
+		return nil, &forward.OpenError{Detail: err.Error()}
+	}
+	select {
+	case m.slots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-m.done:
+		return nil, m.Err()
+	}
+	words := make([]string, len(argv))
+	for i, a := range argv {
+		words[i] = hex.EncodeToString([]byte(a))
+	}
+	m.mu.Lock()
+	m.next++
+	s := &stream{mux: m, id: m.next, readyText: m.connector.ReadyText(target), events: make(chan []byte, outWindow+1), readyCh: make(chan struct{}),
+		exitCh: make(chan struct{}), inClosedCh: make(chan struct{}), wake: make(chan struct{}, 1)}
+	m.streams[s.id] = s
+	m.mu.Unlock()
+	if err := m.records.Send(fmt.Sprintf("O %d %s", s.id, strings.Join(words, " "))); err != nil {
+		m.fail(err)
+		return nil, err
+	}
+	if s.readyText == "" {
+		return s, nil
+	}
+	select {
+	case <-s.readyCh:
+		return s, nil
+	case <-s.exitCh:
+		select {
+		case <-s.readyCh:
+			return s, nil
+		default:
+		}
+		return nil, s.openError()
+	case <-ctx.Done():
+		s.Close()
+		return nil, ctx.Err()
+	case <-m.done:
+		return nil, m.Err()
+	}
+}
+
+type stream struct {
+	mux       *Mux
+	id        int
+	readyText string
+
+	mu                          sync.Mutex
+	events                      chan []byte
+	pending                     []byte
+	outSeq, outRead             int
+	outEOF, gotData, ready      bool
+	readyCh, exitCh, inClosedCh chan struct{}
+	inClosed, exited, released  bool
+	status                      int
+	stderr                      []byte
+	inSent, inAcked             int
+	wake                        chan struct{}
+	wroteEOF, closed            bool
+	writeMu                     sync.Mutex
+}
+
+func (s *stream) signal() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *stream) openError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	detail := strings.TrimSpace(string(s.stderr))
+	if i := strings.LastIndexByte(detail, '\n'); i >= 0 {
+		detail = detail[i+1:]
+	}
+	if detail == "" {
+		detail = fmt.Sprintf("remote connector exited with status %d", s.status)
+	}
+	return &forward.OpenError{Detail: detail}
+}
+
+// Read delivers remote output; each block is acknowledged once fully read.
+func (s *stream) Read(b []byte) (int, error) {
+	if len(s.pending) == 0 {
+		select {
+		case data, ok := <-s.events:
+			if !ok {
+				return 0, s.eof()
+			}
+			s.pending = data
+		case <-s.mux.done:
+			return 0, s.mux.Err()
+		}
+	}
+	n := copy(b, s.pending)
+	s.pending = s.pending[n:]
+	if len(s.pending) == 0 {
+		s.outRead++
+		s.mu.Lock()
+		live := !s.released
+		s.mu.Unlock()
+		if live {
+			if err := s.mux.records.Send(fmt.Sprintf("A %d %d", s.id, s.outRead)); err != nil {
+				s.mux.fail(err)
+			}
+		}
+	}
+	return n, nil
+}
+
+// eof distinguishes a stream that opened from one whose connector failed.
+func (s *stream) eof() error {
+	s.mu.Lock()
+	opened := s.ready || s.gotData
+	s.mu.Unlock()
+	if opened {
+		return io.EOF
+	}
+	select {
+	case <-s.exitCh:
+	case <-s.mux.done:
+		return s.mux.Err()
+	}
+	s.mu.Lock()
+	failed := s.exited && s.status != 0
+	s.mu.Unlock()
+	if failed {
+		return s.openError()
+	}
+	return io.EOF
+}
+
+var errInputClosed = errors.New("remote connector stopped reading input")
+
+func (s *stream) Write(b []byte) (int, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	written := 0
+	for len(b) > 0 {
+		for {
+			s.mu.Lock()
+			closed, room := s.inClosed, s.inSent-s.inAcked < inputWindow
+			s.mu.Unlock()
+			if closed {
+				return written, errInputClosed
+			}
+			if room {
+				break
+			}
+			select {
+			case <-s.wake:
+			case <-s.inClosedCh:
+			case <-s.mux.done:
+				return written, s.mux.Err()
+			}
+		}
+		chunk := b[:min(len(b), inputChunk)]
+		s.mu.Lock()
+		s.inSent++
+		seq := s.inSent
+		s.mu.Unlock()
+		if err := s.mux.records.Send(fmt.Sprintf("I %d %d %s", s.id, seq, hex.EncodeToString(chunk))); err != nil {
+			s.mux.fail(err)
+			return written, err
+		}
+		written += len(chunk)
+		b = b[len(chunk):]
+	}
+	return written, nil
+}
+
+// CloseWrite sends EOF; the adapter closes the connector's stdin after all
+// earlier input, and the connector shuts down the socket's write side.
+func (s *stream) CloseWrite() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.mu.Lock()
+	skip := s.wroteEOF || s.inClosed
+	s.wroteEOF = true
+	s.mu.Unlock()
+	if skip {
+		return nil
+	}
+	return s.mux.records.Send(fmt.Sprintf("F %d", s.id))
+}
+
+// Close kills the connector unless it already exited.
+func (s *stream) Close() error {
+	s.mu.Lock()
+	skip := s.closed || s.released
+	s.closed = true
+	s.mu.Unlock()
+	if skip {
+		return nil
+	}
+	select {
+	case <-s.mux.done:
+		return nil
+	default:
+	}
+	return s.mux.records.Send(fmt.Sprintf("C %d", s.id))
+}
