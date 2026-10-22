@@ -36,6 +36,30 @@ requires a fresh login. Prompts use the controlling terminal so command stdin is
 kept separate. Options may precede or follow the exact device/alias until the first command
 word or `--`; later tokens remain command operands.
 
+### Choosing the Raspberry Pi ID account
+
+The Raspberry Pi ID account plays the role of the SSH user. Give it as
+`email::device` (owner decision; `email::device:path` for `pi-cp`/`pi-sftp`),
+with `pi-sh -l email`, as an email `User` in a `-F` file or `-oUser=email`, or
+percent-encoded in a URI (`ssh://me%40example.com@raspberrypi`). Precedence is
+OpenSSH's: the first value obtained on the command line (in order, including
+the destination), then the configuration file. A local non-secret default can be
+set with `PI_SH_ACCOUNT=email` or a one-line file `~/.config/pi-sh/account`
+(`$XDG_CONFIG_HOME/pi-sh/account` when set); pi-sh only reads it.
+
+```sh
+./bin/pi-sh --direct-login me@example.com::raspberrypi
+./bin/pi-sh --direct-login -l me@example.com raspberrypi
+./bin/pi-cp --direct-login ./notes.txt me@example.com::raspberrypi:notes.txt
+./bin/pi-sftp --direct-login me@example.com::raspberrypi
+```
+
+With an account, direct login skips the email prompt and asks only for the
+password and one-time code. `--browser` uses whatever account Chrome is signed
+in to and refuses an explicit account it cannot verify. A Unix-style
+`pi@raspberrypi` is refused: Connect opens the device's fixed agent account.
+See [connection policy](docs/CONNECTION_POLICY.md).
+
 Interactive mode is available with `./bin/pi-sh --direct-login raspberrypi`;
 interactive behavior was previously tested with browser-assisted signaling,
 while the new direct mode's real-device evidence currently covers the command
@@ -46,7 +70,11 @@ See [direct authentication](docs/DIRECT_LOGIN_PROBE.md) for scope and evidence.
 
 `-F path` loads an explicit local configuration file and bounded `Include` files,
 with `Host`, `HostName`,
-`EscapeChar`, `StdinNull` and `RequestTTY`. CLI settings take precedence; no
+`EscapeChar`, `StdinNull`, `RequestTTY`, `User` (account email), `RemoteCommand`,
+`Match`/`Tag`, logging and connection-policy directives. Every other OpenSSH
+keyword or flag is either accepted only with the value pi-sh always implements
+(for example `Compression no`) or refused with a specific reason, never silently
+ignored. CLI settings take precedence; no
 default SSH or pi-sh files are read. `-G -F path alias` prints the supported
 effective configuration without logging in or connecting. See
 [configuration files](docs/CONFIGURATION.md) for an example, tests and differences.
@@ -190,9 +218,9 @@ pending. See [command cancellation](docs/COMMAND_CANCELLATION.md).
   experimental SFTP subset, including literal `pi-cp -r` trees tested locally.
   Native content-transfer verification remains pending; see
   [recursive copy limits](docs/SCP_RECURSION.md). Configuration files support only
-  the documented Host/Include/HostName and terminal/stdin subset; Match and most
-  directives remain unimplemented.
-  Unsupported options are rejected.
+  the documented subset (CONFIGURATION.md); SSH keys, host keys, algorithms,
+  compression, binding, address families, environment passing, -f, -N/-s and
+  LocalCommand are refused with specific reasons. Unsupported options are rejected.
 - Interactive stdout/stderr share the Connect PTY. The command broker separates
   them using anonymous pipes and client-defined framing. Native agent status
   remains unverified: ordinary interactive remote close returns **255**;

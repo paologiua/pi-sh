@@ -63,7 +63,7 @@ func app() int {
 		return 1
 	}
 	if *direct == *browser || f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqv] [-s existing-server] [-b file|-] [-F file|none] [-o option] device-or-alias")
+		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
 		return 1
 	}
 	if _, err := sftpclient.ServerCommand(*server); err != nil {

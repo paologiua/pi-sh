@@ -59,7 +59,7 @@ func app() int {
 		return 1
 	}
 	if *direct == *browser {
-		fmt.Fprintln(os.Stderr, "usage: pi-cp (--direct-login|--browser) [-pqrv] [options] source(s) destination")
+		fmt.Fprintln(os.Stderr, "usage: pi-cp (--direct-login|--browser) [-Bpqrv] [options] source(s) destination\n       remote operands: [email::]device:path or scp://[email%40domain@]device[/path]")
 		return 1
 	}
 	plan, err := copycli.New(f.Args())
