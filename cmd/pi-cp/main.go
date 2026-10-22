@@ -15,6 +15,7 @@ import (
 	"pi-sh/internal/diag"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
+	"pi-sh/internal/sshconfig"
 )
 
 type optionList []string
@@ -36,6 +37,21 @@ func app() int {
 	f.Var(verbosity.QuietFlag(), "q", "quiet: suppress connection notices, warnings and diagnostics")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
+	batch := f.Bool("B", false, "batch mode (BatchMode yes): fails before any prompt, since Connect sign-in always needs a person")
+	f.Bool("s", false, "use the SFTP protocol (always the case)")
+	f.Bool("T", false, "no effect: strict filename checking applies only to the legacy SCP protocol, as in scp's SFTP mode")
+	cliargs.Refuse(f, map[string]string{
+		"3": "remote-to-remote copies are not implemented",
+		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
+		"A": sshconfig.ReasonForwarding, "O": "the legacy SCP protocol is not implemented; pi-cp always uses SFTP",
+		"R": "remote-to-remote copies are not implemented",
+	}, map[string]string{
+		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": sshconfig.ReasonForwarding,
+		"l": "bandwidth limiting is not implemented",
+		"D": "a local SFTP server program cannot replace the Connect session",
+		"S": "pi-cp always connects through Raspberry Pi Connect; the transport program cannot be replaced",
+		"X": "SFTP buffer and request tuning is not implemented",
+	})
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -56,6 +72,10 @@ func app() int {
 	if _, err = sftpclient.ServerCommand(*server); err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
+	}
+	if *batch {
+		// scp -B passes -oBatchMode=yes to ssh; it is placed first here.
+		overrides = append(optionList{"BatchMode=yes"}, overrides...)
 	}
 	target, settings, policy, err := sftpcli.ResolveSession(plan.Device, *config, overrides, *server, map[string]string{"port": *port, "user": plan.Account})
 	if err != nil {

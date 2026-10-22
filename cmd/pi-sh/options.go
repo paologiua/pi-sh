@@ -30,6 +30,9 @@ type options struct {
 	connection map[string]string
 	policy     connpolicy.Policy
 	logging    logOptions
+	// remoteCommand is the first obtained RemoteCommand (raw; "none" = no
+	// command); it supplies the command when none is given on the CLI.
+	remoteCommand string
 	// destinationParsed records that the destination's account/port were
 	// seeded at its command-line position (first obtained, as in ssh.c).
 	destinationParsed bool
@@ -153,6 +156,10 @@ func parseOptions(args []string) (options, error) {
 					}
 				}
 				j = len(a)
+			case '4', '6', 'C', 'f', 'K', 'k', 'N', 's', 'B', 'b', 'c', 'I', 'i', 'm':
+				// Known ssh(1) options with an explicit decision; see
+				// refusedFlag. Their operands, if any, are never interpreted.
+				return o, fmt.Errorf("option -%c is not supported: %s", c, refusedFlag(c))
 			default:
 				if c < 'A' || c > 'z' {
 					return o, errors.New("unsupported SSH option")
@@ -219,6 +226,9 @@ func parseOptions(args []string) (options, error) {
 	if _, err := parseEscape(o.escape); err != nil {
 		return o, err
 	}
+	if err := o.applyRemoteCommand(defaultAccount); err != nil {
+		return o, err
+	}
 	if o.policy, err = connpolicy.FromValues(o.connection); err != nil {
 		return o, err
 	}
@@ -254,6 +264,35 @@ func parseOptions(args []string) (options, error) {
 		return o, errors.New("noninteractive shell requires the command broker and an explicit command")
 	}
 	return o, nil
+}
+
+// applyRemoteCommand follows ssh(1): RemoteCommand together with a
+// command-line command is an error (also for -G); otherwise its %-expanded
+// text becomes the command, which still needs an explicit command adapter.
+// -G prints the expanded text, as ssh -G does.
+func (o *options) applyRemoteCommand(defaultAccount string) error {
+	if o.remoteCommand == "" || o.remoteCommand == "none" {
+		return nil
+	}
+	if len(o.args) > 1 {
+		return errors.New("Cannot execute command-line and remote command.")
+	}
+	if len(o.args) == 0 {
+		return nil
+	}
+	user := o.connection["user"]
+	if user == "" {
+		user = defaultAccount
+	}
+	text, err := sshconfig.ExpandCommand(o.remoteCommand, o.args[0], o.destination(), user)
+	if err != nil {
+		return fmt.Errorf("RemoteCommand: %w", err)
+	}
+	o.remoteCommand = text
+	if !o.dump {
+		o.args = append(o.args, text)
+	}
+	return nil
 }
 
 // parseDestination splits o.args[0] into the target and seeds its account
@@ -298,6 +337,9 @@ func (o options) requestTTY(stdinTerminal bool) (enabled, warning bool) {
 // Parse only one scalar directive; reject additional tokens instead of silently
 // ignoring local-execution directives or malformed configuration.
 func scalarOption(s string) (string, string, error) {
+	if key, value, ok := sshconfig.RawCommand(s); ok {
+		return key, value, nil
+	}
 	key, args, err := sshconfig.Fields(s)
 	if err != nil {
 		return "", "", err
@@ -332,10 +374,36 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			o.logging.level = value
 		case "syslogfacility":
 			o.logging.facility = value
+		case "remotecommand":
+			o.remoteCommand = value
+		case "refuseconnection":
+			// As in OpenSSH 10.2, an obtained value always terminates.
+			return errors.New("RefuseConnection: connection refused by configuration")
 		}
 		seen[key] = true
 	}
 	return nil
+}
+
+// refusedFlag explains the decision for known ssh(1) flags that have no
+// Connect equivalent. Forwarding/multiplexing flags are documented in
+// docs/FORWARDING.md and keep the generic refusal.
+func refusedFlag(c byte) string {
+	switch c {
+	case '4', '6':
+		return sshconfig.ReasonFamily
+	case 'B', 'b':
+		return sshconfig.ReasonBind
+	case 'C':
+		return sshconfig.ReasonCompress
+	case 'f':
+		return sshconfig.ReasonFork
+	case 'N', 's':
+		return sshconfig.ReasonSession
+	case 'c', 'm':
+		return sshconfig.ReasonCrypto
+	}
+	return sshconfig.ReasonAuth // -i, -I, -K, -k
 }
 
 func (o options) destination() string {
@@ -398,6 +466,11 @@ func (o options) writeConfig(w io.Writer) error {
 	}
 	if o.tagSet {
 		if _, err := fmt.Fprintf(w, "tag %s\n", o.tag); err != nil {
+			return err
+		}
+	}
+	if o.remoteCommand != "" && o.remoteCommand != "none" {
+		if _, err := fmt.Fprintf(w, "remotecommand %s\n", o.remoteCommand); err != nil {
 			return err
 		}
 	}

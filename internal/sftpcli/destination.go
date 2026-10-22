@@ -57,6 +57,9 @@ func resolve(original, config string, overrides []string, server string, operand
 	values := map[string]string{}
 	for _, line := range overrides {
 		key, args, err := sshconfig.Fields(line)
+		if raw, value, ok := sshconfig.RawCommand(line); ok {
+			key, args, err = raw, []string{value}, nil
+		}
 		if err != nil {
 			return "", nil, policy, err
 		}
@@ -101,6 +104,13 @@ func resolve(original, config string, overrides []string, server string, operand
 				values[k] = v
 			}
 		}
+	}
+	if _, set := values["refuseconnection"]; set {
+		return "", values, policy, errors.New("RefuseConnection: connection refused by configuration")
+	}
+	if command := values["remotecommand"]; command != "" && command != "none" {
+		// ssh(1) refuses a RemoteCommand together with the sftp subsystem.
+		return "", values, policy, errors.New("Cannot execute command-line and remote command: RemoteCommand conflicts with the SFTP session")
 	}
 	if tty := values["requesttty"]; tty != "" && tty != "no" && tty != "auto" {
 		return "", values, policy, errors.New("SFTP requires the broker's pipe/no-TTY mode")
