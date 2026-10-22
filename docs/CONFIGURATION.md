@@ -56,8 +56,16 @@ config-file invocations have not yet been verified against the Pi.
   `-v`/`-q` override LogLevel. See [DIAGNOSTICS.md](DIAGNOSTICS.md).
 - `-o` uses the same directive/value grammar and validates the same fields
   (including Tag).
+- Connection policy: BatchMode, ConnectTimeout, ConnectionAttempts,
+  ServerAliveInterval/CountMax, TCPKeepAlive, ChannelTimeout and
+  NumberOfPasswordPrompts use OpenSSH value syntax (flags yes/true/no/false
+  case-insensitive, time units, integers). User and Port are syntax-checked
+  everywhere but refused when they apply to the destination; an inactive block
+  may contain them. A CLI/destination user still feeds Match user/%r before
+  the refusal. See [CONNECTION_POLICY.md](CONNECTION_POLICY.md).
 - `-G` reports hostname when a destination is present, plus escapechar, stdinnull,
-  requesttty, loglevel and syslogfacility, plus tag when set. No authentication,
+  requesttty, loglevel and syslogfacility, plus tag when set, then the
+  connection-policy fields. No authentication,
   DNS lookup or network connection occurs (Match exec still runs its local
   command, as in ssh -G).
 
@@ -113,7 +121,7 @@ substitutions to avoid expansion-driven allocation spikes.
 All lines, including inactive blocks and duplicate/overridden values, are
 validated. Unsupported directives fail rather than silently discarding behavior.
 This is stricter than OpenSSH for some inactive directives/values.
-IgnoreUnknown, User, LocalCommand, ProxyCommand, RemoteCommand, CanonicalizeHostname
+IgnoreUnknown, LocalCommand, ProxyCommand, RemoteCommand, UnusedConnectionTimeout, CanonicalizeHostname
 and all unlisted directives remain unsupported. Apart from Match exec (below),
 no local command, shell expansion, general environment expansion, backslash
 syntax, default file search or hostname canonicalization is implemented. Only

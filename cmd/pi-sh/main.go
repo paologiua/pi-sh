@@ -9,10 +9,10 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"time"
 
 	"pi-sh/internal/command"
 	"pi-sh/internal/connectsession"
+	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/shellbroker"
 	"pi-sh/internal/terminal"
@@ -90,14 +90,14 @@ func app() int {
 	} else {
 		log.Debug(msgAuthBrowser)
 	}
-	source, err := authentication(ctx, destination, opts.direct)
+	source, err := authentication(ctx, destination, opts.direct, opts.policy)
 	if err == nil {
 		defer source.Close()
 		stdin := opts.stdin(os.Stdin)
 		if opts.stdinNull {
 			stdin = nil
 		}
-		err = connect(ctx, source, escape, plan, brokerPlan, ttyCommand, stdin)
+		err = connectWithPolicy(ctx, opts.policy, source, escape, plan, brokerPlan, ttyCommand, stdin)
 	}
 	if err != nil {
 		if errors.Is(err, errEscape) {
@@ -123,49 +123,24 @@ func app() int {
 }
 
 func connect(ctx context.Context, bridge sessionSource, escape rune, plan *command.Plan, brokerPlan *shellbroker.Plan, ttyCommand *ttyCommandRequest, stdin io.Reader) error {
-	connecting, stop := context.WithTimeout(ctx, 2*time.Minute)
-	defer stop()
+	return connectWithPolicy(ctx, connpolicy.Default(), bridge, escape, plan, brokerPlan, ttyCommand, stdin)
+}
+
+func connectWithPolicy(ctx context.Context, policy connpolicy.Policy, bridge sessionSource, escape rune, plan *command.Plan, brokerPlan *shellbroker.Plan, ttyCommand *ttyCommandRequest, stdin io.Reader) error {
 	log := diag.From(ctx)
-	started := time.Now()
-	log.Debug(connectsession.MsgConfiguration)
-	cfg, err := bridge.Configuration(connecting)
-	if err != nil {
-		return err
-	}
-	log.Debug2(connectsession.MsgICEServers, diag.Count("ice_servers", len(cfg.ICE.ICEServers)))
 	peerContext := ctx
 	if brokerPlan != nil || ttyCommand != nil {
 		// The coordinator owns Close, allowing Run to report cleanup evidence
 		// before transport teardown. Only the no-TTY broker has an abort handshake.
 		peerContext = context.WithoutCancel(ctx)
 	}
-	p, err := transport.New(peerContext, transport.Config{ICEServers: cfg.ICE.ICEServers})
+	// Establishment (with ConnectTimeout/ConnectionAttempts) ends at channel
+	// readiness; no command byte has been sent before it returns.
+	p, ch, err := connectsession.Establish(ctx, peerContext, bridge, policy)
 	if err != nil {
 		return err
 	}
 	defer p.Close()
-	ch, err := p.CreateChannel("shell")
-	if err != nil {
-		return err
-	}
-	log.Debug(connectsession.MsgOffer)
-	offer, err := p.Offer(connecting)
-	if err != nil {
-		return err
-	}
-	answer, err := bridge.Exchange(connecting, offer)
-	if err != nil {
-		return err
-	}
-	log.Debug(connectsession.MsgAnswer)
-	if err := p.ApplyAnswer(answer); err != nil {
-		return err
-	}
-	// Wait for data-channel readiness without sending a remote command.
-	if err := ch.Send(connecting, transport.Message{Text: true}); err != nil {
-		return err
-	}
-	log.Debug(connectsession.MsgChannelOpen, diag.Elapsed("elapsed", time.Since(started)))
 	if plan != nil {
 		log.Info(msgLegacy)
 		log.Debug(msgSessionMode, diag.State("adapter", "legacy"))

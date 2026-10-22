@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 )
 
@@ -172,6 +173,11 @@ func Validate(key, value string) error {
 	case "hostname":
 		_, err := Hostname(value, "placeholder")
 		return err
+	case "user", "port", "batchmode", "numberofpasswordprompts", "connecttimeout", "connectionattempts",
+		"serveraliveinterval", "serveralivecountmax", "tcpkeepalive", "channeltimeout":
+		// Syntax only; connpolicy.FromValues rejects effective settings that
+		// have no Connect equivalent (for example any User or Port).
+		return connpolicy.Validate(key, value)
 	case "tag":
 		// Any single nonempty argument, including "none", is a literal tag.
 	case "loglevel":

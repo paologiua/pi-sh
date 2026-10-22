@@ -27,11 +27,12 @@ terminal, while Connect's shell carrier still has a PTY.
 | `-n` | No local stdin reads; no-TTY broker sends EOF; forced TTY stops input without inventing Ctrl-D; auth may still prompt |
 | `-T` | Explicit no-TTY command through the broker; interactive no-TTY shell and legacy adapter reject it |
 | `-t`, `-tt` | Experimental broker command TTY: -t requires terminal stdin without -n; -tt forces it, including pipes/-n; legacy TTY requests rejected |
-| `-o` | HostName, EscapeChar, StdinNull, RequestTTY, LogLevel and SyslogFacility; keywords case-insensitive, values case-sensitive (LogLevel/SyslogFacility values ASCII case-insensitive as in OpenSSH) |
+| `-o` | HostName, EscapeChar, StdinNull, RequestTTY, LogLevel and SyslogFacility; keywords case-insensitive, values case-sensitive (LogLevel/SyslogFacility values ASCII case-insensitive as in OpenSSH). Connection policy (BatchMode, ConnectTimeout, ConnectionAttempts, ServerAlive*, TCPKeepAlive, ChannelTimeout, NumberOfPasswordPrompts; User/Port always refused) per [CONNECTION_POLICY.md](CONNECTION_POLICY.md) |
+| `-l user`, `-p port` | Parsed and always refused before login: the Connect agent account is fixed and there is no SSH port (pi-sh `-P` is Tag; pi-cp/pi-sftp `-P` is the refused port) |
 | `-F path`, `-Fpath`, `-F none` | Read explicit root/Include files, or disable file loading; no default root config files |
 | `-V` | Offline unofficial build version on stderr; immediate exit before file/auth/network setup |
 | `-Q query`, `-Qquery` | Offline help/namespaced client capabilities on stdout; SSH algorithm queries explicitly refused; LOCAL_INSPECTION.md |
-| `-G` | Print hostname (with a destination), escapechar, stdinnull, requesttty, loglevel and syslogfacility; exit before login/discovery/network |
+| `-G` | Print hostname (with a destination), escapechar, stdinnull, requesttty, loglevel, syslogfacility, tag when set, and the connection-policy fields; exit before login/discovery/network |
 | `-v`, `-vv`, `-vvv` | Cumulative debug levels DEBUG1–DEBUG3 with ssh.c ordering against `-q`; override LogLevel |
 | `-q` | QUIET: suppresses informational/warning notices and error text (exit status unchanged); never the browser companion instruction or login prompts |
 | `-E file`, `-Efile` | Append diagnostics to file (created 0600); unopenable file exits 1; not opened for -V/-Q |
@@ -59,7 +60,9 @@ Custom --browser/--direct-login/adapter flags follow the same boundary. -V/-Q
 still exit immediately, including after the host, before file loading or auth.
 
 The broker/legacy command remains an explicit opt-in; command arguments are joined
-with single spaces as previously. user@host/URI/address mapping and the general
+with single spaces as previously. Destinations follow the OpenSSH 10.2p1 `user@host`
+and `ssh://` grammar; any user, port or address literal is refused before login
+([CONNECTION_POLICY.md](CONNECTION_POLICY.md)). The general
 option inventory remain gaps. Aliases use Host/HostName in an explicit file or
 `-o HostName=value`. No default SSH or pi-sh config is read.
 

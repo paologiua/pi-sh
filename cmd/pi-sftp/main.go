@@ -15,6 +15,7 @@ import (
 	"pi-sh/internal/diag"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
+	"pi-sh/internal/sshdest"
 )
 
 type optionList []string
@@ -34,6 +35,7 @@ func app() int {
 	preserve := f.Bool("p", false, "preserve regular-file permission bits and access/modification times")
 	batch := f.String("b", "", "batch file, or - for stdin")
 	config := f.String("F", "none", "explicit configuration file, or none")
+	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
 	var verbosity diag.Verbosity
 	f.Var(verbosity.VerboseFlag(), "v", "verbose connection diagnostics; repeat for more (maximum DEBUG3)")
 	f.Var(verbosity.QuietFlag(), "q", "quiet: suppress connection notices, warnings and diagnostics")
@@ -53,7 +55,20 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
 	}
-	target, settings, err := sftpcli.SettingsWithServer(f.Arg(0), *config, overrides, *server)
+	parsed, err := sshdest.SFTP(f.Arg(0))
+	if err == nil && parsed.HasPath {
+		err = errors.New("an initial remote path in the destination is not implemented; use cd or get after connecting")
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
+		return 1
+	}
+	// -P and -o values precede the destination's user/port; any is refused.
+	operand := map[string]string{"port": *port, "user": parsed.User}
+	if operand["port"] == "" {
+		operand["port"] = parsed.Port
+	}
+	target, settings, policy, err := sftpcli.ResolveSession(parsed.Host, *config, overrides, *server, operand)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
@@ -76,13 +91,13 @@ func app() int {
 	ctx, cancel := signal.NotifyContext(context.Background(), terminationSignals()...)
 	defer cancel()
 	ctx = diag.With(ctx, log)
-	source, err := connectsession.Authenticate(ctx, target, *direct, os.Stderr, "pi-sftp")
+	source, err := connectsession.AuthenticateWithPolicy(ctx, target, *direct, policy, os.Stderr, "pi-sftp")
 	if err != nil {
 		sessionFailure(log, err)
 		return 255
 	}
 	defer source.Close()
-	carrier, err := connectsession.Dial(ctx, source)
+	carrier, err := connectsession.DialWithPolicy(ctx, source, policy)
 	if err != nil {
 		sessionFailure(log, err)
 		return 255
