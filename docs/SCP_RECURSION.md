@@ -69,6 +69,7 @@ Open work remains:
   further evidence. Cancellation during an in-flight SFTP operation depends on
   the surrounding session's transport cancellation.
 - SFTP console `get -r`/`put -r` is still unimplemented; it must not silently inherit
-  SCP's link-following policy. Glob/tilde, sparse files, progress and rate control
-  remain separate work.
+  SCP's link-following policy. Remote download globs and `~`/`~/` are handled
+  as in scp's SFTP mode (GLOB_TILDE.md); sparse files, progress and rate
+  control remain separate work.
 - Native Pi, Windows/Linux runtime and physical iSH recursive checks are pending.
