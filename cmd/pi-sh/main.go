@@ -106,8 +106,9 @@ func app() int {
 	}
 	if err != nil {
 		if errors.Is(err, errEscape) {
+			// Like ssh after ~., no remote exit status exists: exit 255.
 			log.Info(msgEscape)
-			return 0
+			return 255
 		}
 		var status *commandStatus
 		if errors.As(err, &status) {
