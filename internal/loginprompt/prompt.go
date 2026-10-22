@@ -22,6 +22,14 @@ type Authenticator interface {
 }
 
 func Authenticate(ctx context.Context, c Authenticator) error {
+	return AuthenticateAs(ctx, c, "")
+}
+
+// AuthenticateAs is Authenticate with a preselected Raspberry Pi ID account
+// (from email::device, -l, User or the local default). A nonempty account
+// replaces the email prompt; the password and one-time code are still read
+// from the controlling terminal and never stored.
+func AuthenticateAs(ctx context.Context, c Authenticator, account string) error {
 	in, out, err := openTerminal()
 	if err != nil {
 		return errors.New("direct login requires a controlling terminal")
@@ -30,10 +38,10 @@ func Authenticate(ctx context.Context, c Authenticator) error {
 	if out != in {
 		defer out.Close()
 	}
-	return authenticate(ctx, c, in, out)
+	return authenticate(ctx, c, in, out, account)
 }
 
-func authenticate(ctx context.Context, c Authenticator, in, out *os.File) (resultErr error) {
+func authenticate(ctx context.Context, c Authenticator, in, out *os.File, account string) (resultErr error) {
 	fd := int(in.Fd())
 	state, err := term.GetState(fd)
 	if err != nil {
@@ -46,7 +54,7 @@ func authenticate(ctx context.Context, c Authenticator, in, out *os.File) (resul
 		}
 	}()
 	result := make(chan error, 1)
-	go func() { result <- run(ctx, c, in, out, guard) }()
+	go func() { result <- run(ctx, c, in, out, guard, account) }()
 	select {
 	case err := <-result:
 		if ctx.Err() != nil {
@@ -60,7 +68,7 @@ func authenticate(ctx context.Context, c Authenticator, in, out *os.File) (resul
 
 // A cancelled blocking terminal read may outlive this call until the dedicated
 // CLI process exits. Context is checked before any subsequent credential POST.
-func run(ctx context.Context, c Authenticator, in, out *os.File, guard *terminalGuard) error {
+func run(ctx context.Context, c Authenticator, in, out *os.File, guard *terminalGuard, account string) error {
 	stage, err := c.Begin(ctx)
 	if err != nil {
 		return err
@@ -68,9 +76,16 @@ func run(ctx context.Context, c Authenticator, in, out *os.File, guard *terminal
 	if stage != webauth.PasswordRequired {
 		return errors.New("unexpected initial login step")
 	}
-	fmt.Fprintln(out, "Raspberry Pi ID email (type it, then press Enter):")
 	var email []byte
-	for len(email) < 320 {
+	if account != "" {
+		// The account is not secret; naming it mirrors ssh's "user@host's
+		// password:" so the person knows which account the password is for.
+		fmt.Fprintf(out, "Raspberry Pi ID account: %s\n", account)
+		email = []byte(account)
+	} else {
+		fmt.Fprintln(out, "Raspberry Pi ID email (type it, then press Enter):")
+	}
+	for account == "" && len(email) < 320 {
 		var b [1]byte
 		if _, err = in.Read(b[:]); err != nil {
 			return errors.New("could not read login email")

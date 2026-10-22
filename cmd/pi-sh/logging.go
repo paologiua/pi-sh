@@ -71,7 +71,7 @@ func logStartup(log *diag.Logger, o options) {
 	parts := strings.Fields(clientVersion())
 	if len(parts) >= 3 {
 		goos, arch, _ := strings.Cut(parts[2], "/")
-		log.Debug(msgVersion, diag.State("version", parts[0]), diag.State("go", parts[1]), diag.State("os", goos), diag.State("arch", arch))
+		log.Debug(msgVersion, diag.Version("version", parts[0]), diag.Version("go", parts[1]), diag.State("os", goos), diag.State("arch", arch))
 	}
 	if o.configFile != "" && o.configFile != "none" {
 		log.Debug(msgConfigFile)

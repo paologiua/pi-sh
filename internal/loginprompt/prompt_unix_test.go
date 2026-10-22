@@ -39,8 +39,12 @@ func (a *syntheticAuth) Code(_ context.Context, code []byte) (webauth.Stage, err
 }
 
 func TestCredentialPromptsAndRestoration(t *testing.T) {
-	for _, cancelled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "complete", true: "cancel"}[cancelled], func(t *testing.T) {
+	for _, mode := range []string{"complete", "cancel", "account"} {
+		cancelled := mode == "cancel"
+		// A preselected account (email::device, -l, User or the local
+		// default) replaces the email prompt; secrets are still prompted.
+		account := map[bool]string{true: "fixture@example.invalid"}[mode == "account"]
+		t.Run(mode, func(t *testing.T) {
 			master, slave, err := pty.Open()
 			if err != nil {
 				t.Fatal(err)
@@ -84,12 +88,19 @@ func TestCredentialPromptsAndRestoration(t *testing.T) {
 			}
 			a := &syntheticAuth{}
 			done := make(chan error, 1)
-			go func() { done <- authenticate(ctx, a, slave, slave) }()
-			until("Raspberry Pi ID email")
-			if _, err = master.Write([]byte("fixture@example.invalid\n")); err != nil {
-				t.Fatal(err)
+			go func() { done <- authenticate(ctx, a, slave, slave, account) }()
+			if account == "" {
+				until("Raspberry Pi ID email")
+				if _, err = master.Write([]byte("fixture@example.invalid\n")); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				until("Raspberry Pi ID account: fixture@example.invalid")
 			}
 			until("Password (hidden")
+			if account != "" && bytes.Contains(captured, []byte("Raspberry Pi ID email")) {
+				t.Fatal("email prompt shown despite a preselected account")
+			}
 			for {
 				current, _ := term.GetState(int(slave.Fd()))
 				if !reflect.DeepEqual(current, before) {
