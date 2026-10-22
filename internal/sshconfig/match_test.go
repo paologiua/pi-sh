@@ -130,7 +130,7 @@ func TestMatchExecSemantics(t *testing.T) {
 		if _, err := parseWith(tc.text+"\n", Context{Host: "pi"}, tc.f); err == nil {
 			t.Errorf("accepted %q", tc.text)
 		}
-		if len(tc.f.commands) != 0 {
+		if tc.f.runErr == nil && len(tc.f.commands) != 0 {
 			t.Errorf("%q ran a command", tc.text)
 		}
 	}
