@@ -51,9 +51,11 @@ config-file invocations have not yet been verified against the Pi.
 - HostName tokens `%h` (original destination) and `%%`, expanded once. Exact
   Connect name case and quoted internal spaces are preserved. This intentionally
   differs from OpenSSH's lowercasing/validation of DNS destination strings.
-- `-o` uses the same directive/value grammar and validates the same four fields.
-- `-G` reports hostname when a destination is present, plus escapechar, stdinnull
-  and requesttty. No authentication, DNS lookup or network connection occurs.
+- LogLevel and SyslogFacility with OpenSSH's value sets (ASCII case-insensitive);
+  `-v`/`-q` override LogLevel. See [DIAGNOSTICS.md](DIAGNOSTICS.md).
+- `-o` uses the same directive/value grammar and validates the same fields.
+- `-G` reports hostname when a destination is present, plus escapechar, stdinnull,
+  requesttty, loglevel and syslogfacility. No authentication, DNS lookup or network connection occurs.
 
 ## Include files
 
