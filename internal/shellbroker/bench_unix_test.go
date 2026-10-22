@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -20,6 +22,10 @@ type delayedStream struct {
 	out  chan timedFrame
 	in   chan timedFrame
 	done <-chan struct{}
+	// receiveDelay, when nonzero, overrides oneWay for received frames.
+	receiveDelay atomic.Int64
+	// delayAfterCommit starts receiveDelay only once G was sent.
+	delayAfterCommit time.Duration
 }
 
 type timedFrame struct {
@@ -48,8 +54,12 @@ func newDelayedStream(ctx context.Context, file *os.File, oneWay time.Duration) 
 		for {
 			select {
 			case r := <-inner.frames:
+				delay := oneWay
+				if d := s.receiveDelay.Load(); d > 0 {
+					delay = time.Duration(d)
+				}
 				select {
-				case s.in <- timedFrame{time.Now().Add(oneWay), r.data, r.err}:
+				case s.in <- timedFrame{time.Now().Add(delay), r.data, r.err}:
 				case <-ctx.Done():
 					return
 				}
@@ -65,6 +75,9 @@ func newDelayedStream(ctx context.Context, file *os.File, oneWay time.Duration) 
 }
 
 func (s *delayedStream) Send(ctx context.Context, b []byte) error {
+	if s.delayAfterCommit > 0 && bytes.Contains(b, []byte(":G ")) {
+		s.receiveDelay.Store(int64(s.delayAfterCommit))
+	}
 	select {
 	case s.out <- timedFrame{due: time.Now().Add(0), data: append([]byte(nil), b...)}:
 		return nil
@@ -142,6 +155,24 @@ func TestShellBrokerThroughputBenchmark(t *testing.T) {
 				t.Fatalf("%s rtt=%dms: code=%d err=%v out=%d stderr=%q", tc.name, rtt, code, err, out.Len(), stderr.String())
 			}
 			t.Logf("%-9s rtt=%2dms moved=%d elapsed=%v rate=%.1fKiB/s", tc.name, rtt, tc.moved, elapsed.Round(time.Millisecond), float64(tc.moved)/1024/elapsed.Seconds())
+		}
+	}
+}
+
+// Real-Bash form of the native 2026-10-22 defect: stdin fails locally while
+// `exit 0` completes remotely. The broker sends X and exits before C arrives,
+// so D can never come; the in-flight X must still confirm cleanup.
+func TestShellBrokerAbortAfterRemoteCompletion(t *testing.T) {
+	for i := 0; i < 3; i++ {
+		code, err := runLocalWithStream(t, "exit 0", func(context.CancelFunc) IO {
+			return IO{Stdin: failingInput{}}
+		}, nil, 20*time.Second, func(ctx context.Context, file *os.File) Stream {
+			s := newDelayedStream(ctx, file, 0)
+			s.delayAfterCommit = 500 * time.Millisecond
+			return s
+		})
+		if code != 0 || err == nil || !strings.Contains(err.Error(), "local stdin read failed") || errors.Is(err, ErrCleanupUnconfirmed) {
+			t.Fatalf("run %d: %d %v", i, code, err)
 		}
 	}
 }

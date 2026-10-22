@@ -473,7 +473,10 @@ func (p *Plan) abort(stream Stream, records <-chan recordResult) error {
 			if r.err != nil {
 				return ErrCleanupUnconfirmed
 			}
-			if r.text == "D" {
+			// The broker emits X/Y only after reaping the command and its
+			// helpers, then exits without reading C. A completion already in
+			// flight when C was sent therefore confirms cleanup as well.
+			if r.text == "D" || strings.HasPrefix(r.text, "X ") || strings.HasPrefix(r.text, "Y ") {
 				return nil
 			}
 		}
