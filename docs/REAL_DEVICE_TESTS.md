@@ -11,7 +11,7 @@ password and one-time code at the local prompts; the email is not recorded here.
 | same with `-l email` | exit23 |
 | same with `PI_SH_ACCOUNT` and no account given | exit23 |
 | `-oRemoteCommand='echo %n' email::raspberrypi` | printed `raspberrypi`, exit0 |
-| `pi-sftp --direct-login --read-only -b - email::raspberrypi` (pwd/quit) | login rejected after the password step: "login was not accepted; no automatic retry", exit255 |
+| `pi-sftp --direct-login --read-only -b - email::raspberrypi` (pwd/quit) | first try: login rejected after the password step ("login was not accepted", exit255); later retry passed (see below) |
 
 The last check was the fifth full sign-in within minutes. The prompt reads from
 /dev/tty, so the piped batch did not become the password. Rejection cause is
@@ -23,7 +23,9 @@ id.raspberrypi.com (a public resolver answered; resolution recovered within
 minutes). The next attempt signed in and then reported "Connect connection
 establishment timed out before any remote command was sent" (exit255): the owner
 confirmed the Pi had been switched off. Both outcomes are the expected bounded
-failures; pi-sftp with an account still awaits a run with the Pi online.
+failures; With the Pi back online, `pi-sftp --direct-login --read-only -b - email::raspberrypi`
+(pwd/quit) skipped the email prompt, printed the remote home directory and exited0.
+Account selection is now verified natively for pi-sh and pi-sftp.
 
 ## 2026-10-22 native pi-sftp / pi-cp / pi-sh CLI plan (owner approved)
 
