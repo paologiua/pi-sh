@@ -17,6 +17,13 @@ The last check was the fifth full sign-in within minutes. The prompt reads from
 /dev/tty, so the piped batch did not become the password. Rejection cause is
 unclassified (possible service throttling or a mistyped password); no retry was
 made. The pi-sftp account path remains to be verified natively, later and alone.
+Follow-ups the same day: one attempt failed before login with "web login HTTPS
+request failed (DNS)"; the local router resolver was briefly not answering for
+id.raspberrypi.com (a public resolver answered; resolution recovered within
+minutes). The next attempt signed in and then reported "Connect connection
+establishment timed out before any remote command was sent" (exit255): the owner
+confirmed the Pi had been switched off. Both outcomes are the expected bounded
+failures; pi-sftp with an account still awaits a run with the Pi online.
 
 ## 2026-10-22 native pi-sftp / pi-cp / pi-sh CLI plan (owner approved)
 
