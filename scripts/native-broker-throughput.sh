@@ -6,6 +6,8 @@
 # /dev/urandom, and `exit 0`. No remote file is written; nothing is installed.
 # Timing starts at the first remote output byte (a marker printed before the
 # transfer), so the manual companion step is excluded.
+# Known issue: step 4 pipes pi-sh's stderr, which also carries the companion
+# instruction, into the timer; run that step by hand with stderr to a file.
 set -u
 setopt pipefail
 device=${PI_SH_DEVICE:-raspberrypi}

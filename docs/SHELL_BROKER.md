@@ -228,9 +228,10 @@ measured native need plus a pure-Bash fallback.
 
 Single runs on a shared Mac; treat differences under ~10% as noise. Download is
 now insensitive to RTT and bound by the per-byte read loop. The Pi's CPU is
-slower, so native rates will be lower; they are unmeasured until the owner runs
-`scripts/native-broker-throughput.sh --execute-approved` (read-only: stdin to
-`wc -c`, `head -c` of `/dev/zero` and `/dev/urandom`, and `exit 0`).
+slower, so native rates are lower. Native single runs on 2026-10-26
+(REAL_DEVICE_TESTS.md): upload ≈186 KiB/s, stdout and stderr ≈18 KiB/s, against
+about 11 KiB/s before. Output remains the bottleneck; see "Why output is still
+per byte".
 
 **In-flight bounds.** At most eight records per direction and stream (about
 66 KiB of output hex for both streams), within the transport's 256 KiB / 4096
@@ -253,4 +254,5 @@ delayed 500 ms after `G` so `C` arrives after the broker exited). Both failed
 before the change and pass after it. Run still returns the local stdin error.
 OpenSSH's channel code appears to treat a local read error like EOF
 (`chan_read_failed`); whether pi-sh should match that is a separate, untested
-compatibility question. Native confirmation is step 5 of the script.
+compatibility question. One native run on 2026-10-26 confirmed cleanup
+(REAL_DEVICE_TESTS.md).
