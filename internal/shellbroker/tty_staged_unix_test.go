@@ -88,7 +88,7 @@ func runStagedTTYPlan(t *testing.T, carrier string, plan *TTYPlan, input []byte,
 				return err
 			}
 		}
-		return stream.Send(ctx, input)
+		return sendTTYInput(ctx, w, input, func(b []byte) error { return stream.Send(ctx, b) })
 	}})
 	if len(hooks) > 0 && hooks[0].beforeClose != nil {
 		hooks[0].beforeClose()

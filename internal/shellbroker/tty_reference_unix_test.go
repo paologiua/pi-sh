@@ -52,6 +52,34 @@ func (w *ttyWatch) Write(p []byte) (int, error) {
 
 func (w *ttyWatch) text() string { w.mu.Lock(); defer w.mu.Unlock(); return w.data.String() }
 
+// sendTTYInput writes fixture input. A trapped TSTP interrupts Bash's read
+// (status >128) and discards what it had already consumed, so a ^Z sent
+// together with a line could lose it. The line is sent after the handler ran,
+// and fixtures retry the interrupted read. They run it under modern Bash:
+// macOS /bin/sh (Bash 3.2) loses the line about 3 times in 100 on a bare PTY
+// when the trap runs during read, even when the line is sent afterwards.
+func sendTTYInput(ctx context.Context, w *ttyWatch, input []byte, send func([]byte) error) error {
+	if len(input) > 1 && input[0] == 26 {
+		if err := send(input[:1]); err != nil {
+			return err
+		}
+		// An untrapped ^Z stops the job instead and never prints the marker.
+		deadline := time.After(time.Second)
+	wait:
+		for !strings.Contains(w.text(), "caught-suspend") {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deadline:
+				break wait
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		input = input[1:]
+	}
+	return send(input)
+}
+
 type ptyFixtureHooks struct {
 	ready     func(*exec.Cmd, *os.File)
 	afterExit func()
@@ -139,7 +167,10 @@ func runPTYFixture(t *testing.T, cmd *exec.Cmd, bootstrap string, input []byte, 
 		}
 	}
 	if len(input) > 0 {
-		if _, err := f.Write(input); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := sendTTYInput(ctx, w, input, func(b []byte) error { _, err := f.Write(b); return err })
+		cancel()
+		if err != nil {
 			t.Fatal(err)
 		}
 	}

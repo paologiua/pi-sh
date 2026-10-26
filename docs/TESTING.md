@@ -792,3 +792,26 @@ already in flight). The cmd/pi-sh synthetic broker now speaks the
 `late-newlines` passes with both. Native throughput is unmeasured;
 `scripts/native-broker-throughput.sh` (dry run by default) is the read-only
 procedure.
+
+## Intermittent `caught-suspend` diagnosed — 2026-10-26
+
+`TestStagedTTYControllerAcrossCarriers/*/caught-suspend` failed again after the
+broker merge (`seen:` with an empty line). A bare-PTY script with no pi-sh code
+(send `^Z`, wait for the trap's output, then `x\r`) reproduced it with macOS
+`/bin/sh`, Bash 3.2: 3 of 100 runs lost the line, while Bash 5.3 lost 0 of 100.
+The fixtures ran their command under `SHELL=/bin/sh`, so the loss came from
+Bash 3.2 and not from the TTY adapter. A trapped TSTP also interrupts `read` in
+modern Bash (status >128), which made `^Z` and the line in one write racy too.
+
+The fixtures (`caught-suspend` in the staged controller and OpenSSH differential
+tests) now run under the modern test Bash with an absolute path (the reference
+sshd's PATH resolves `bash` to 3.2), retry an interrupted `read`, and send the
+line only after the handler's output (`sendTTYInput`); the controller test checks
+handler and line in order, since the echo now falls between them. Both tests
+then passed 30 consecutive runs (`-count=30`), followed by the full race suite.
+This does not test Bash 3.2 as a remote shell; the Pi's shell is Bash 5.2.37.
+
+`openSSHDump`/`compareDump` moved from the Unix-only `match_test.go` to the
+portable `openssh_dump_test.go`: the Windows test build had failed since the CLI
+branch (`account_test.go`, `completeness_test.go`). The seven targets now
+compile the tests.
