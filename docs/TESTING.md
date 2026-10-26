@@ -767,3 +767,28 @@ patches 001–037; no signature verification is claimed. Before the fix the
 late-newline case stalled 2/2 with 5.2.37 and passed 3/3 with 5.3; after it,
 3/3 with both. The whole shellbroker and cmd packages pass with 5.2.37, and the
 full race suite with 5.3. That 5.2 build is ephemeral and not used by CI.
+
+## Broker throughput benchmark and data-path regressions — 2026-10-23
+
+`TestShellBrokerThroughputBenchmark` is opt-in. It runs the real broker over a
+local PTY with an order-preserving carrier that delays each direction by half
+the simulated round trip (sends return after local queuing, like WebRTC):
+
+```sh
+PI_SH_BROKER_BENCH=1 PI_SH_BROKER_BENCH_BYTES=262144 PI_SH_BROKER_BENCH_RTT=0,10,40 \
+  go test ./internal/shellbroker -run ThroughputBenchmark -v -timeout 3600s
+```
+
+Results before and after the pipelined data path are in SHELL_BROKER.md
+("Data-path throughput"); both Bash 5.3 and the scratch 5.2.37 were measured.
+New regressions: `TestShellBrokerEarlyCloseWithPipelinedInput` (command closes
+stdin with several input records in flight), `TestShellBrokerPartialOutputIsNotHeldBack`
+(a short prompt reaches the client while the command waits for input),
+`TestBrokerAbortAcceptsCompletionAlreadyInFlight` and
+`TestShellBrokerAbortAfterRemoteCompletion` (cleanup confirmed when `X` was
+already in flight). The cmd/pi-sh synthetic broker now speaks the
+`I seq length hex` record. The shellbroker package passed with Bash 5.3 (under
+`-race`) and 5.2.37; `TestShellBrokerMegabyteStdinCount` including
+`late-newlines` passes with both. Native throughput is unmeasured;
+`scripts/native-broker-throughput.sh` (dry run by default) is the read-only
+procedure.
