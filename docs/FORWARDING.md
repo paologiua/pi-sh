@@ -77,3 +77,21 @@ Primary references: [OpenSSH forwarding options](https://man.openbsd.org/ssh.1),
 The local verified GNU Bash 5.3 source/manual (`redir.c`, `lib/sh/netopen.c`,
 `doc/bashref.texi`) was inspected for redirection/network-open behavior. No source
 is copied or linked into the CLI; these fixtures add only standard-library Go.
+
+## Connector inventory on the Pi — 2026-10-27
+
+Read-only, one pi-sh `-T` command (`command -v`, `readlink -f`, `nc -h | head`,
+`dpkg-query -W`). Present: `nc` and `netcat` → `/usr/bin/nc.openbsd`, "OpenBSD
+netcat (Debian patchlevel 1.229-1)", package `netcat-openbsd 1.229-1`, whose usage
+lists `-N` (shut down the socket after stdin EOF) and `-U`; also `busybox`, `curl`,
+`perl` and `python3` (3.13). Absent: `ncat`, `nc.traditional`, `socat`, `telnet`.
+
+This settles which connector the unmerged forwarding branch
+(`worktree-agent-a2fd792200a64ad6c`, `openbsd-nc` in `internal/fwdbroker`) can use
+on this device without installing anything. It does not yet verify its behavior:
+binary transparency, half-close with a live reader, connect-failure status and
+cleanup still need a native probe. A probe against a loopback service that
+already listens (for example reading a banner) is read-only; a half-close echo
+test needs a temporary remote listener (`nc -l` on 127.0.0.1), which is a new
+remote process and needs the owner's approval of an exact plan first. Python and
+Perl are present but the project avoids them on the remote side.

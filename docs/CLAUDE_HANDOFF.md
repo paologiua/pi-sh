@@ -157,7 +157,10 @@ Resta un ramo, fermato per limite d'uso, incompleto e non verificato:
 
 - `worktree-agent-a2fd792200a64ad6c` (forwarding): parser `forwardspec` (OpenSSH 10.2),
   motore locale `-L`, `-D` SOCKS4/4a/5, `-W`, adattatore Bash multiplexato. Mancano i
-  test dell'adattatore e gli script di sonda in sola lettura da eseguire sul Pi.
+  test dell'adattatore, l'integrazione CLI di `-L/-D/-W` e la sonda nativa. Sul Pi
+  è presente OpenBSD netcat 1.229 con `-N` (FORWARDING.md, 2026-10-27); manca
+  ncat/socat. Una prova half-close richiede un listener temporaneo `nc -l` su
+  loopback: serve un piano approvato dal proprietario.
 
 Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
 opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
@@ -230,7 +233,7 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 
-Forwarding oggi non è implementato. Il candidato Bash `/dev/tcp` è stato
+Forwarding oggi non è implementato in `main`. Il candidato Bash `/dev/tcp` è stato
 dimostrato insufficiente per half-close con lettore vivo; questo esclude quel
 candidato, non ogni soluzione. `nc` funziona nel fixture sul Mac ma dialetto,
 presenza e comportamento sul Pi sono ignoti. Non installarlo e non inventare
