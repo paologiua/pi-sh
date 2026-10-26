@@ -240,10 +240,11 @@ scarti. Ricontrolla con `git status`.
 Ambiente locale usato nell'ultima verifica:
 
 ```sh
-export PATH=/private/tmp/pi-sh-toolchain/go/bin:$PATH
-export GOCACHE=/private/tmp/pi-sh-gocache
-export GOMODCACHE=/private/tmp/pi-sh-gomodcache
-export GOTOOLCHAIN=go1.27.3
+export PATH=$HOME/Library/Caches/pi-sh-go/go-official/bin:$PATH
+export GOCACHE=$HOME/Library/Caches/pi-sh-go/build
+export GOMODCACHE=$HOME/Library/Caches/pi-sh-go/mod
+export GOTOOLCHAIN=local
+export GOPROXY=https://proxy.golang.org,direct
 export PI_SH_TEST_BASH=/private/tmp/bash-5.3/bash
 
 go test -race ./... -timeout=150s
@@ -253,7 +254,10 @@ go vet -C third_party/sftp -stdmethods=false ./...
 go mod verify
 ```
 
-I percorsi in `/private/tmp` sono locali ed effimeri: verificane l'esistenza.
+Dal 2026-10-26 la toolchain è Go 1.27.3 ufficiale (SHA-256 verificato da go.dev)
+in `~/Library/Caches/pi-sh-go`: macOS aveva ripulito `/private/tmp`, danneggiando
+la vecchia toolchain e la cache dei moduli. Bash 5.3 di test resta in `/private/tmp`
+(ricostruibile) e può sparire allo stesso modo: verificane l'esistenza.
 Il binario Go nel PATH risolve il toolchain 1.27.3 dalla cache verificata; senza
 GOMODCACHE il tentativo di download può finire nella directory utente protetta.
 La suite completa richiede PTY, ispezione processi e listener loopback: il sandbox
