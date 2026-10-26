@@ -252,3 +252,33 @@ No package, daemon, configuration, persistent remote file or additional remote
 software requirement was introduced. No credentials or real account output are
 retained. The supervisor/tests are independently authored; existing development
 OpenSSH and creack/pty licence attribution remains applicable.
+
+## Login shell — 2026-10-23
+
+`pi-sh [options] device` without a command now runs the account's login shell
+through the same in-memory adapters as commands, as sshd does: with a TTY
+(default on a terminal, `-t`, `-tt`) through the staged TTY adapter, and without
+one (`-T`, `-n`, piped stdin) through the no-TTY broker. The command text is
+`shellbroker.LoginShell`: change to `$HOME` (OpenSSH's "Could not chdir to home
+directory" notice otherwise), then `exec -a "-${SHELL##*/}" "$SHELL"`. Nothing is
+written remotely; the process is replaced. TERM, initial size, resize, escapes,
+`~^Z` and the real exit status therefore behave as for `-tt` commands. The
+previous raw agent shell stream remains available as `--legacy-shell`
+(refused with a command, `-T` or `-n`).
+
+A job-control login shell leaves the controller's process group, so a carrier
+hangup that killed only that group left the shell's jobs running. The controller
+now sends HUP and CONT to its direct command before killing its own group, as
+sshd's session leader receives HUP; Bash forwards HUP to its jobs
+(`TestStagedTTYLoginShellCarrierHangup`: shell, foreground and background job
+all end). The client still reports cleanup as unconfirmed in that case.
+
+Local evidence: `TestStagedTTYLoginShell`, `TestStagedTTYLoginShellEOFLogout`,
+`TestBrokerLoginShellWithoutTTY`, `TestLoginShellMissingHome`,
+`TestLoginShellOpenSSHDifferential` (argv0, cwd and TTY presence against the local
+OpenSSH 10.2p1 sshd) and `TestLoginShellSessionOverWebRTC` (CLI through Pion).
+Differences: the inner exec requires the Bash the adapters already need;
+sshd's environment (SSH_* variables, MOTD, lastlog, `~/.ssh/rc`) is not
+reproduced; the login shell reads the account's startup files exactly as any
+login would. Native evidence: see REAL_DEVICE_TESTS.md;
+`scripts/native-shell-check.sh` is the read-only plan.
