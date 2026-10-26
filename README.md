@@ -36,23 +36,66 @@ requires a fresh login. Prompts use the controlling terminal so command stdin is
 kept separate. Options may precede or follow the exact device/alias until the first command
 word or `--`; later tokens remain command operands.
 
+### Choosing the Raspberry Pi ID account
+
+The Raspberry Pi ID account plays the role of the SSH user. Give it as
+`email::device` (owner decision; `email::device:path` for `pi-cp`/`pi-sftp`),
+with `pi-sh -l email`, as an email `User` in a `-F` file or `-oUser=email`, or
+percent-encoded in a URI (`ssh://me%40example.com@raspberrypi`). Precedence is
+OpenSSH's: the first value obtained on the command line (in order, including
+the destination), then the configuration file. A local non-secret default can be
+set with `PI_SH_ACCOUNT=email` or a one-line file `~/.config/pi-sh/account`
+(`$XDG_CONFIG_HOME/pi-sh/account` when set); pi-sh only reads it.
+
+```sh
+./bin/pi-sh --direct-login me@example.com::raspberrypi
+./bin/pi-sh --direct-login -l me@example.com raspberrypi
+./bin/pi-cp --direct-login ./notes.txt me@example.com::raspberrypi:notes.txt
+./bin/pi-sftp --direct-login me@example.com::raspberrypi
+```
+
+With an account, direct login skips the email prompt and asks only for the
+password and one-time code. `--browser` uses whatever account Chrome is signed
+in to and refuses an explicit account it cannot verify. A Unix-style
+`pi@raspberrypi` is refused: Connect opens the device's fixed agent account.
+See [connection policy](docs/CONNECTION_POLICY.md).
+
 Interactive mode is available with `./bin/pi-sh --direct-login raspberrypi`;
 interactive behavior was previously tested with browser-assisted signaling,
 while the new direct mode's real-device evidence currently covers the command
-above. Linux/Windows and physical iSH runtime remain unverified.
+above. Physical iSH has now passed one non-TTY command via the experimental relay
+workaround below; interactive iSH and native Linux/Windows remain unverified.
 See [direct authentication](docs/DIRECT_LOGIN_PROBE.md) for scope and evidence.
+
+## Testing on iSH
+
+For the physical iSH interface-enumeration blocker and the opt-in experimental
+`GOMAXPROCS=1 PI_SH_ISH_RELAY=1` relay workaround, see
+[iSH investigation and test instructions](docs/ISH_COMPATIBILITY.md).
+The owner verified direct login, WebRTC relay connection and one non-TTY command
+on physical iSH: `ish-ok`, exit status 23. Interactive shell and broader iSH
+runtime behavior remain unverified.
 
 ## Local configuration and aliases
 
 `-F path` loads an explicit local configuration file and bounded `Include` files,
 with `Host`, `HostName`,
-`EscapeChar`, `StdinNull` and `RequestTTY`. CLI settings take precedence; no
+`EscapeChar`, `StdinNull`, `RequestTTY`, `User` (account email), `RemoteCommand`,
+`Match`/`Tag`, logging and connection-policy directives. Every other OpenSSH
+keyword or flag is either accepted only with the value pi-sh always implements
+(for example `Compression no`) or refused with a specific reason, never silently
+ignored. CLI settings take precedence; no
 default SSH or pi-sh files are read. `-G -F path alias` prints the supported
 effective configuration without logging in or connecting. See
 [configuration files](docs/CONFIGURATION.md) for an example, tests and differences.
 Config-file/alias integration has local tests; new real-Pi verification is pending.
 
 ## Experimental file-transfer clients
+
+`pi-cp` now shows [scp-style per-file progress](docs/SCP_PROGRESS.md) in a
+foreground terminal: percent, size, speed and ETA. `-q` disables it; redirected
+stdout stays free of progress lines. Local OpenSSH comparisons pass; physical
+iSH file-transfer/progress verification remains pending.
 
 `pi-sftp` now provides a command console/batch subset and `pi-cp` copies regular
 files and literal directory trees with `-r`, using SFTP over the existing binary Bash broker. They require an existing
@@ -190,9 +233,9 @@ pending. See [command cancellation](docs/COMMAND_CANCELLATION.md).
   experimental SFTP subset, including literal `pi-cp -r` trees tested locally.
   Native content-transfer verification remains pending; see
   [recursive copy limits](docs/SCP_RECURSION.md). Configuration files support only
-  the documented Host/Include/HostName and terminal/stdin subset; Match and most
-  directives remain unimplemented.
-  Unsupported options are rejected.
+  the documented subset (CONFIGURATION.md); SSH keys, host keys, algorithms,
+  compression, binding, address families, environment passing, -f, -N/-s and
+  LocalCommand are refused with specific reasons. Unsupported options are rejected.
 - Interactive stdout/stderr share the Connect PTY. The command broker separates
   them using anonymous pipes and client-defined framing. Native agent status
   remains unverified: ordinary interactive remote close returns **255**;
@@ -201,7 +244,8 @@ pending. See [command cancellation](docs/COMMAND_CANCELLATION.md).
   without companion confirmation; direct mode checks through its own HTTPS
   session. Saved login, automatic reauthentication and ICE renewal are absent.
 - macOS real-device behavior is verified. Linux/Windows and Linux/386 build;
-  native Linux/Windows console and physical iSH testing remain pending.
+  native Linux/Windows console and broader physical iSH testing remain pending;
+  one iSH non-TTY command passed with the explicit relay workaround.
 
 ## Development and evidence
 

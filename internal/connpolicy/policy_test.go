@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"pi-sh/internal/account"
+	"pi-sh/internal/sshdest"
 )
 
 func TestPolicyValuesAndRefusals(t *testing.T) {
@@ -113,6 +116,54 @@ func TestPolicyOpenSSHDifferential(t *testing.T) {
 			if want[k] != v {
 				t.Errorf("%s: %s pi-sh %q, OpenSSH %q", option, k, v, want[k])
 			}
+		}
+	}
+}
+
+// The Raspberry Pi ID account plays the SSH user's role: an email user is
+// accepted from any source, a Unix-style name is refused, and the browser
+// companion refuses an explicit account it cannot select or verify.
+func TestAccountPolicy(t *testing.T) {
+	p, err := FromValues(map[string]string{"user": "me@example.com"})
+	if err != nil || p.Account != "me@example.com" || p.LoginAccount() != "me@example.com" {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err := FromValues(map[string]string{"user": "me@example.com", "port": "22"}); !errors.Is(err, ErrPort) {
+		t.Fatal("port is still refused with an account", err)
+	}
+	for _, user := range []string{"pi", "root", "me@localhost", "me@example.com@pi"} {
+		if _, err := FromValues(map[string]string{"user": user}); !errors.Is(err, ErrUser) || !strings.Contains(err.Error(), "email::device") {
+			t.Errorf("%q: %v", user, err)
+		}
+	}
+	if err := p.Admit(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Admit(false); !errors.Is(err, ErrBrowserAccount) {
+		t.Fatal("browser companion must refuse an explicit account", err)
+	}
+	defaulted := Default()
+	defaulted.DefaultAccount = "default@example.com"
+	if defaulted.LoginAccount() != "default@example.com" || defaulted.Admit(false) != nil {
+		t.Fatal("the local default only prefills direct login and never blocks the companion")
+	}
+	defaulted.Account = "me@example.com"
+	if defaulted.LoginAccount() != "me@example.com" {
+		t.Fatal("an explicit account overrides the local default")
+	}
+	for _, tc := range []struct {
+		d    sshdest.Destination
+		want error
+	}{
+		{sshdest.Destination{Host: "pi"}, nil},
+		{sshdest.Destination{User: "pi", Host: "raspberrypi"}, ErrUser},
+		{sshdest.Destination{User: "me@example.com", Host: "raspberrypi"}, ErrUser},
+		{sshdest.Destination{User: "me@example.com", Host: "pi", Account: true}, nil},
+		{sshdest.Destination{User: "me@local", Host: "pi", Account: true}, account.ErrInvalid},
+		{sshdest.Destination{User: "pi", Host: "pi", URI: true}, nil}, // judged later as a User value
+	} {
+		if err := DestinationUser(tc.d); !errors.Is(err, tc.want) {
+			t.Errorf("%+v: %v", tc.d, err)
 		}
 	}
 }

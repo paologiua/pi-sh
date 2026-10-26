@@ -186,7 +186,14 @@ func Validate(key, value string) error {
 	case "syslogfacility":
 		_, err := diag.ParseFacility(value)
 		return err
+	case "remotecommand":
+		// Raw command text (see RawCommand); "none" selects no command.
+	case "refuseconnection":
+		// Any message; an active RefuseConnection fails the whole load.
 	default:
+		if handled, err := keywordDecision(key, value); handled {
+			return err
+		}
 		return errors.New("unsupported SSH configuration directive")
 	}
 	return nil

@@ -1,5 +1,32 @@
 # Authorized real-device evidence — 2026-10-19/22
 
+## 2026-10-23 Raspberry Pi ID account selection, direct login (owner run)
+
+The owner ran read-only direct-login checks of the merged CLI branch, typing the
+password and one-time code at the local prompts; the email is not recorded here.
+
+| Check | Result |
+| --- | --- |
+| `pi-sh -v --direct-login --experimental-command -nT email::raspberrypi 'exit 23'` | no email prompt, account line shown, exit23; debug1 version and `session:` lines readable (redaction fix verified) |
+| same with `-l email` | exit23 |
+| same with `PI_SH_ACCOUNT` and no account given | exit23 |
+| `-oRemoteCommand='echo %n' email::raspberrypi` | printed `raspberrypi`, exit0 |
+| `pi-sftp --direct-login --read-only -b - email::raspberrypi` (pwd/quit) | first try: login rejected after the password step ("login was not accepted", exit255); later retry passed (see below) |
+
+The last check was the fifth full sign-in within minutes. The prompt reads from
+/dev/tty, so the piped batch did not become the password. Rejection cause is
+unclassified (possible service throttling or a mistyped password); no retry was
+made. The pi-sftp account path remains to be verified natively, later and alone.
+Follow-ups the same day: one attempt failed before login with "web login HTTPS
+request failed (DNS)"; the local router resolver was briefly not answering for
+id.raspberrypi.com (a public resolver answered; resolution recovered within
+minutes). The next attempt signed in and then reported "Connect connection
+establishment timed out before any remote command was sent" (exit255): the owner
+confirmed the Pi had been switched off. Both outcomes are the expected bounded
+failures; With the Pi back online, `pi-sftp --direct-login --read-only -b - email::raspberrypi`
+(pwd/quit) skipped the email prompt, printed the remote home directory and exited0.
+Account selection is now verified natively for pi-sh and pi-sftp.
+
 ## 2026-10-22 native pi-sftp / pi-cp / pi-sh CLI plan (owner approved)
 
 The owner approved docs/NATIVE_CLI_PLAN.md ("Autorizzo il piano CLI e la pulizia")
@@ -597,3 +624,21 @@ console bridge were not used by that process. No Pi package, persistent file,
 configuration or service was modified; the broker source remained in memory.
 Selected ICE route, direct interactive mode, long-session authorization and
 physical iSH behavior were not established by this short test.
+
+## Owner-run iSH relay command, 23 October 2026
+
+The owner ran the provided Go 1.27.3 Linux/386 softfloat, CGO-disabled build with
+`GOMAXPROCS=1 PI_SH_ISH_RELAY=1`, direct login and the experimental non-TTY command
+`printf "ish-ok\n"; exit 23`. The sanitized transcript establishes completed
+password/TOTP login and discovery, the explicit interface-free relay mode,
+ICE/peer connected, a shell data channel opened in 16835 ms, output `ish-ok`,
+and command completion at 23. The owner's immediate `echo $?` also returned 23.
+
+This is one physical iSH end-to-end command through the Connect session's relay.
+No Pi package, configuration, service or persistent file was modified. It does
+not verify interactive shell, transfers, long sessions, cancellation, suspension,
+network transitions or repeated success. App/build, iOS version, device model
+and the installed binary digest were not supplied. The provided build had SHA-256
+`07ff8f6408150ac62057712fe63ddaa443f16692eb3838d807461640cac6612b`.
+See [iSH investigation](ISH_COMPATIBILITY.md) for the preceding interface probe,
+the default-path EINVAL and the local authenticated TURN integration tests.

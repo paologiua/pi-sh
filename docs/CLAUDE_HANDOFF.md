@@ -45,6 +45,17 @@ e verificato sul Pi il 2026-10-22, insieme al piano di trasferimento completo
   Non estenderla ad altri percorsi, carichi o failure injection invasive.
 - Non pubblicare, fare push o contattare Raspberry Pi. La licenza del progetto
   e le verifiche di condizioni del servizio prima della pubblicazione sono aperte.
+  Il 2026-10-26 sono state lette le condizioni di Connect (versione 20 ottobre
+  2026, https://connect.raspberrypi.com/terms). Clausole rilevanti: §2.8(a)(ii)
+  divieto di reverse engineering, salvo le eccezioni di legge per
+  l'interoperabilità; §2.8(e) divieto di aiutare terzi ad accedere in modo
+  diverso da quanto previsto; §11.5 riservatezza, che include i dettagli del
+  servizio e i risultati dei test di prestazioni; §10.3 marchi; §14.3 chiusura
+  dell'account senza preavviso. Indicazioni date al proprietario (non è
+  consulenza legale): chiedere il permesso a Raspberry Pi (lo fa il proprietario),
+  oppure pubblicare senza i documenti di ricerca sul protocollo e senza le
+  misure di prestazioni; aggiungere una licenza; mantenere l'avviso «non
+  ufficiale»; non usare loghi. Il proprietario non ha ancora deciso.
 - Le credenziali Connect e il permesso di controllo Chrome sono due passaggi
   distinti. Nessuno dei due va aggirato; chiedi intervento solo dopo il rifiuto
   effettivo. Non richiedere nuovamente l'autorizzazione alle stesse scritture.
@@ -129,15 +140,35 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 
 ## Correzioni recenti da preservare
 
+### Rami di agenti non ancora integrati (2026-10-23)
+
+Tre agenti si sono fermati per il limite settimanale di utilizzo (ripresa possibile
+dal 25 ottobre alle 14:00, con SendMessage all'agente o rileggendo il ramo). Il lavoro
+è committato nei worktree `.claude/worktrees/agent-*` ma è incompleto e non verificato
+su `main`; ognuno ha ancora 1–2 file non committati. Non unirli senza completare test e verifica.
+
+- `worktree-agent-aeda33dc242b6413b` (terminale): shell interattiva tramite adattatori
+  in memoria, SIGTSTP esterno, HUP alla shell di login su abort, escape rimanenti
+  (`~.` esce 255). Si era fermato aggiornando un test sull'help degli escape.
+- `worktree-agent-a2fd792200a64ad6c` (forwarding): parser `forwardspec` (OpenSSH 10.2),
+  motore locale `-L`, `-D` SOCKS4/4a/5, `-W`, adattatore Bash multiplexato. Mancano i
+  test dell'adattatore e gli script di sonda in sola lettura da eseguire sul Pi.
+- `worktree-agent-a80cb6879808fc633` (broker): benchmark con RTT simulato, input in
+  pipeline, codifica dell'output nei worker, cleanup confermato anche a comando già
+  finito (difetto aperto del 2026-10-22), script di throughput nativo. Stava
+  aggiornando SHELL_BROKER.md.
+
+Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
+opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
+aperte del proprietario: SetEnv/SendEnv (prefisso di assegnazioni validate?),
+AddressFamily/BindAddress (equivalente fattibile, non fatto). Prove native in sola
+lettura del ramo CLI richiedono login diretto (password/TOTP del proprietario).
+
 ### Difetti aperti dalla prova CLI nativa (2026-10-22)
 
-- La redazione della diagnostica è eccessiva: `version=[redacted]` e
-  `session:[redacted]` nei messaggi `-v` (internal/diag).
 - Il run di `pi-sh` fallito per stdin locale (prima della correzione di
   `localio` per /dev/null su macOS) ha riportato cleanup del broker non
   confermato: capire perché l'abort dopo un errore di stdin non riceve `D`.
-- Proposta del proprietario da progettare: `-l email` o `email@device` per
-  scegliere l'account Raspberry Pi ID nel login diretto (CONNECTION_POLICY.md).
 - Per le prove con il companion, Claude in Chrome può eseguire il `fetch`
   nella pagina Devices; non attendere la Promise (resta aperta per tutta la
   sessione) e leggere l'URL dal log subito, senza redirezioni nascoste.
@@ -220,10 +251,11 @@ scarti. Ricontrolla con `git status`.
 Ambiente locale usato nell'ultima verifica:
 
 ```sh
-export PATH=/private/tmp/pi-sh-toolchain/go/bin:$PATH
-export GOCACHE=/private/tmp/pi-sh-gocache
-export GOMODCACHE=/private/tmp/pi-sh-gomodcache
-export GOTOOLCHAIN=go1.27.3
+export PATH=$HOME/Library/Caches/pi-sh-go/go-official/bin:$PATH
+export GOCACHE=$HOME/Library/Caches/pi-sh-go/build
+export GOMODCACHE=$HOME/Library/Caches/pi-sh-go/mod
+export GOTOOLCHAIN=local
+export GOPROXY=https://proxy.golang.org,direct
 export PI_SH_TEST_BASH=/private/tmp/bash-5.3/bash
 
 go test -race ./... -timeout=150s
@@ -233,7 +265,10 @@ go vet -C third_party/sftp -stdmethods=false ./...
 go mod verify
 ```
 
-I percorsi in `/private/tmp` sono locali ed effimeri: verificane l'esistenza.
+Dal 2026-10-26 la toolchain è Go 1.27.3 ufficiale (SHA-256 verificato da go.dev)
+in `~/Library/Caches/pi-sh-go`: macOS aveva ripulito `/private/tmp`, danneggiando
+la vecchia toolchain e la cache dei moduli. Bash 5.3 di test resta in `/private/tmp`
+(ricostruibile) e può sparire allo stesso modo: verificane l'esistenza.
 Il binario Go nel PATH risolve il toolchain 1.27.3 dalla cache verificata; senza
 GOMODCACHE il tentativo di download può finire nella directory utente protetta.
 La suite completa richiede PTY, ispezione processi e listener loopback: il sandbox

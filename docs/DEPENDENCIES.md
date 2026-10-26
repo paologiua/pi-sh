@@ -1,5 +1,13 @@
 # Dependency licence inventory
 
+The scp-style progress display directly imports x/text/width v0.42.0 for Unicode
+column widths (pure Go, no CGO). This was already the version selected by the
+transitive module graph; its source and checksums are now downloaded and pinned
+for the new import. Its root BSD-3-Clause notice is included below/in
+THIRD_PARTY_NOTICES.md. OpenSSH progress source and the local executable are
+behavior references only; the implementation is independently authored. See
+[progress behavior and evidence](SCP_PROGRESS.md).
+
 Recursive downloads and ls -f now use a local ReadDirEach extension to pkg/sftp
 v1.13.11. Regular upload preservation additionally uses a combined handle
 FSETSTAT extension. All65 copied upstream files are unchanged with per-file
@@ -142,6 +150,7 @@ No Connect implementation is vendored.
 | `golang.org/x/net` | `v0.60.0` | BSD-3-Clause | `911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad` |
 | `golang.org/x/sys` | `v0.49.0` | BSD-3-Clause | `911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad` |
 | `golang.org/x/term` | `v0.47.0` | BSD-3-Clause | `911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad` |
+| `golang.org/x/text` | `v0.42.0` | BSD-3-Clause | `911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad` |
 | `golang.org/x/time` | `v0.14.0` | BSD-3-Clause | `911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad` |
 
 Full original notices: [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).

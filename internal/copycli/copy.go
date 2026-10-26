@@ -10,16 +10,22 @@ import (
 	"strings"
 
 	"github.com/pkg/sftp"
+	"pi-sh/internal/account"
 	"pi-sh/internal/connpolicy"
+	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sshdest"
 )
 
-type Operand struct{ Device, Path string }
+// Operand is a local path (Device empty) or a remote device path. Account is
+// the Raspberry Pi ID account from email::device:path or an scp:// user.
+type Operand struct{ Device, Path, Account string }
 
 // Parse follows OpenSSH scp operand syntax: [user@]host:path, [user@][addr]:path
-// and scp://[user@]host[:port][/path]. A user, a port or an address literal
-// has no Connect equivalent and is refused explicitly.
+// and scp://[user@]host[:port][/path], plus the pi-sh account form
+// email::device:path. A Unix-style user, a port or an address literal has no
+// Connect equivalent and is refused explicitly. A URI user is the account
+// when it is an email address (percent-encode '@' as %40).
 func Parse(s string) (Operand, error) {
 	if s == "" || strings.IndexByte(s, 0) >= 0 {
 		return Operand{}, errors.New("empty or invalid copy operand")
@@ -31,8 +37,11 @@ func Parse(s string) (Operand, error) {
 	if !remote {
 		return Operand{Path: s}, nil
 	}
+	if err := connpolicy.DestinationUser(d); err != nil {
+		return Operand{}, err
+	}
 	switch {
-	case d.User != "":
+	case d.User != "" && account.Validate(d.User) != nil:
 		return Operand{}, connpolicy.ErrUser
 	case d.Port != "":
 		return Operand{}, connpolicy.ErrPort
@@ -42,17 +51,20 @@ func Parse(s string) (Operand, error) {
 	if err := connpolicy.Target(d.Host); err != nil {
 		return Operand{}, err
 	}
-	return Operand{Device: d.Host, Path: d.Path}, nil
+	return Operand{Device: d.Host, Path: d.Path, Account: d.User}, nil
 }
 
 type Plan struct {
-	Sources   []Operand
-	Target    Operand
-	Device    string
+	Sources []Operand
+	Target  Operand
+	Device  string
+	// Account is the remote operands' common account, or "" (see Parse).
+	Account   string
 	Upload    bool
 	Preserve  bool
 	Recursive bool
 	Errors    io.Writer
+	Progress  *progress.Display
 }
 
 func New(args []string) (*Plan, error) {
@@ -78,15 +90,15 @@ func New(args []string) (*Plan, error) {
 			return nil, errors.New("local-only and mixed-direction copies are not implemented")
 		}
 		if !p.Upload {
-			if p.Device != "" && p.Device != source.Device {
-				return nil, errors.New("download sources must use the same Connect device/alias")
+			if p.Device != "" && (p.Device != source.Device || p.Account != source.Account) {
+				return nil, errors.New("download sources must use the same Connect device/alias and account")
 			}
-			p.Device = source.Device
+			p.Device, p.Account = source.Device, source.Account
 		}
 		p.Sources = append(p.Sources, source)
 	}
 	if p.Upload {
-		p.Device = p.Target.Device
+		p.Device, p.Account = p.Target.Device, p.Target.Account
 	}
 	// Reject unsupported ~user remote paths before any login.
 	remote := p.Sources
@@ -125,7 +137,7 @@ func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.Fil
 			return errors.New("multiple sources require an existing destination directory")
 		}
 	}
-	console := sftpcli.Console{Client: client, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp"}
+	console := sftpcli.Console{Client: client, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp", Progress: p.Progress}
 	for _, source := range p.Sources {
 		if ctx.Err() != nil {
 			return ctx.Err()

@@ -16,9 +16,9 @@ through `internal/connectsession` and `internal/transport`.
 
 | Tool | Accepted forms (as OpenSSH 10.2p1) | Notes |
 | --- | --- | --- |
-| pi-sh | `host`, `user@host` (split at the last `@`), `ssh://[user[;params]@]host[:port][/]` | Scheme is case-sensitive; URI user/path percent-decoded (`+` is a space); URI host must be domain-style (alphanumeric start; letters, digits, `-`, `_`, `.`; no `..`), optionally bracketed; port 1–65535 or a service name; a URI path is an error. A plain host keeps brackets literally. |
-| pi-cp | `[user@]host:path`, `[user@][addr]:path`, `scp://[user@]host[:port][/path]` | `colon()` rules: a leading `:` or a `/` before the first colon means local; an empty user before `@` is ignored; empty path means `.`; `scp://h/x` is `x`, `scp://h//abs` is `/abs`. Windows `C:\`/`C:/` stays local (project rule). |
-| pi-sftp | `[user@]host[:path]`, `[user@][addr][:path]`, `sftp://[user@]host[:port][/path]` | Without a colon the whole argument is the host (brackets stripped). |
+| pi-sh | `host`, `email::host` (pi-sh account form), `user@host` (split at the last `@`; refused), `ssh://[user[;params]@]host[:port][/]` | Scheme is case-sensitive; URI user/path percent-decoded (`+` is a space); URI host must be domain-style (alphanumeric start; letters, digits, `-`, `_`, `.`; no `..`), optionally bracketed; port 1–65535 or a service name; a URI path is an error. A plain host keeps brackets literally. |
+| pi-cp | `email::host:path`, `[user@]host:path`, `[user@][addr]:path`, `scp://[user@]host[:port][/path]` | `colon()` rules: a leading `:` or a `/` before the first colon means local; an empty user before `@` is ignored; empty path means `.`; `scp://h/x` is `x`, `scp://h//abs` is `/abs`. Windows `C:\`/`C:/` stays local (project rule). |
+| pi-sftp | `email::host[:path]`, `[user@]host[:path]`, `[user@][addr][:path]`, `sftp://[user@]host[:port][/path]` | Without a colon the whole argument is the host (brackets stripped). |
 
 Plain hosts keep their exact case and may contain spaces, because Connect
 device names are free text; OpenSSH lowercases and rejects such hostnames.
@@ -30,23 +30,65 @@ can no longer be given literally; use its ID or a `HostName` alias. An empty
 host (`a@`, `@:x`) is an immediate error rather than a later connection failure.
 `pi-sftp host:path` (initial directory or file) is refused: not implemented.
 
-## Remote user (`user@`, URI user, `-l`, `User`)
+## Account selection (`email::device`, `-l`, `User`, URI user)
 
-Decision: **always refused** before authentication, from any source,
-including `User` in an active configuration block. The Connect agent opens the
-shell as one fixed account. Connect's signaling exposes only device ID/name, so
-the client cannot select a user, and cannot prove before login that a requested
-name matches the agent account. An inactive `User` (another `Host` block) is
-syntax-checked and ignored, so shared configurations remain usable.
+The Raspberry Pi ID account (an email address) takes the role of the SSH
+remote user (owner decision, 2026-10-22, below). Code: `internal/account`
+(syntax and default), `internal/sshdest` (`Account` destinations),
+`internal/connpolicy` (`Policy.Account`, `DestinationUser`, `Admit`).
 
-Match evaluation is unaffected: a CLI or destination user is seeded into the
-configuration context, so `Match user` and `%r` see it exactly as OpenSSH
-would (otherwise the local login name). The refusal happens only after the
-whole configuration, including any final pass, has been evaluated.
+| Source | Form | Notes |
+| --- | --- | --- |
+| Destination | `email::device` (pi-sh), `email::device:path` (pi-cp), `email::device[:path]` (pi-sftp) | Recognized when the text before the first `::` contains `@`; the device part follows the usual host/colon rules and must not contain `@`. `email::device` without `:path` is an error for pi-cp. A slash before the first colon keeps a pi-cp operand local (`./a@b::c:d`). |
+| URI | `ssh://`, `scp://`, `sftp://` userinfo, `%40`-encoded (`ssh://me%40example.com@pi`) | Decision: accepted when the decoded user is an email address; any other URI user is refused. URI syntax requires the `@` to be encoded. |
+| `-l email` | pi-sh only | scp/sftp `-l` is a bandwidth limit (refused there); use `email::` or `-oUser=`. |
+| `User email` | `-o` or `-F` file | A non-email active `User` (for example `User pi`) is refused; inactive blocks are syntax-checked only. |
+| Local default | `PI_SH_ACCOUNT`, else `$XDG_CONFIG_HOME/pi-sh/account` (absolute XDG only), else `~/.config/pi-sh/account` | Lowest precedence. Read only, never created or written. The file holds one email line; blank and `#` lines are allowed. An invalid value, extra account line or non-regular file is an error, never ignored. `PI_SH_ACCOUNT=` (empty) disables the default including the file. |
 
-A possible future "accept only if it provably matches" mode would need a
-remote `id -un` check inside the broker before the user's command; that adds
-a remote command, cannot cover the interactive shell, and is left to the owner.
+Precedence is OpenSSH's first-obtained rule, measured with `ssh -G -F none`:
+command-line sources in order of appearance (`-l a pi`, `pi -l a`,
+`-oUser=c -l a`, URI user before/after `-l`), then the configuration file, then
+the local default (OpenSSH's default is the local login name). The previous
+pi-sh code let `-l` override an earlier destination user and let a later `-l`
+override an earlier one; both now follow ssh.c.
+
+Validation (`account.Validate`): one `@`; a nonempty ASCII local part without
+spaces or `"(),:;<>[\]`, no leading/trailing/double dot; a dotted ASCII domain of
+letters, digits and inner hyphens; at most 254 bytes. Raspberry Pi ID decides
+whether the account exists. Internationalized addresses are not accepted.
+
+Refusals (before any prompt, listener or request): a Unix-style `user@host`
+destination is always refused, even if `-l email` was given earlier, with a
+message naming `email::device` and `-l email`; a non-email `-l`/`User`/URI
+user is refused the same way (`connpolicy.ErrUser`). The Connect agent still
+opens the device's single fixed account, which pi-sh neither selects nor
+verifies; no remote `id -un` check is added.
+
+Direct login: the effective account (explicit, else default) replaces the
+email prompt; the controlling terminal shows `Raspberry Pi ID account: <email>`
+and then asks for the hidden password and one-time code as before. The email is
+not secret but is never logged (diagnostics say only that an account was
+preselected). Password/TOTP are never accepted from options, environment or
+files.
+
+Browser companion: the companion runs in the Chrome profile already signed in
+to Connect, and no observed Connect page or endpoint lets pi-sh choose or read
+that account. An explicit account (any source except the local default) is
+therefore refused with status 255 before the loopback bridge starts
+(`ErrBrowserAccount`). The local default is a convenience for direct login and
+does not block `--browser` (a DEBUG1 line notes it is unused). Verifying the
+Chrome account would require an observed, authorized account-identity source
+on the Connect page; none has been observed, so it is not attempted.
+
+Match: `Match user` and `%r` see the account obtained so far (CLI,
+destination, `User`), else the local default, else the local login name, so
+existing OpenSSH semantics hold when no account is configured. `-G` prints
+`user <email>` when an account (explicit or default) is known and omits the
+line otherwise.
+
+Differences from OpenSSH: `email::device` is not OpenSSH syntax (ssh would read
+user `local-part` and host `domain::device`); a Unix-style user is refused;
+`-G` omits `user` when no account is known.
 
 ## Port (`-p`, scp/sftp `-P`, URI `:port`, `Port`)
 
@@ -125,10 +167,10 @@ exceed the bound by the ICE check interval. The message is not OpenSSH's
 
 ## `-G` output
 
-`-G` additionally prints, after the base, tag and logging fields, `batchmode`, `connectionattempts`, `connecttimeout`,
+`-G` prints `user <email>` first when an account is known, and additionally prints, after the base, tag and logging fields, `batchmode`, `connectionattempts`, `connecttimeout`,
 `serveralivecountmax`, `serveraliveinterval`, `tcpkeepalive` and
-`channeltimeout` in OpenSSH form. `user`, `port` and
-`numberofpasswordprompts` are not printed (no equivalent / differing default).
+`channeltimeout` in OpenSSH form. `port` and `numberofpasswordprompts` are not
+printed (no equivalent / differing default).
 
 ## Evidence (local only)
 
@@ -148,13 +190,24 @@ exceed the bound by the ICE check interval. The message is not OpenSSH's
   default peer remains open.
 - `cmd/*/policy_test.go`: CLI refusals before login, `-G` differentials and
   BatchMode status 255 without a password prompt.
+- Account: `internal/account` (syntax table, env/XDG/home sources, invalid and
+  non-regular files, no writes), `TestAccountDestinations` (sshdest),
+  `TestAccountPolicy` (connpolicy), `TestAccountPrecedenceOpenSSHDifferential`
+  (ten `ssh -G` comparisons of `user` and `Match user`),
+  `TestAccountDestinationPolicy`, `TestDefaultAccount`,
+  `TestBrowserRefusesExplicitAccount` (pi-sh), pi-cp/pi-sftp account tests,
+  and the PTY prompt test `TestCredentialPromptsAndRestoration/account`.
 
 ## Owner decisions — 2026-10-22
 
-1. **Remote user:** refuse every `user@`, URI user, `-l` and `User` before login
-   (current behaviour). No remote `id -un` check is added. The owner suggested
-   exploring a destination form that identifies the Connect account and device,
-   for example `email#device`; that is an open design item, not implemented.
+1. **Remote user / account:** Unix-style users (`user@host`, non-email `-l`,
+   `User`, URI users) stay refused; no remote `id -un` check is added. The owner
+   first suggested a destination form naming the Connect account and device,
+   for example `email#device`, then chose **`email::device`**, together with
+   `-l email` and `User email` with OpenSSH precedence and a local non-secret
+   default (`PI_SH_ACCOUNT` or `~/.config/pi-sh/account`). Implemented as
+   described in "Account selection" above; the browser companion refuses an
+   explicit account because the Chrome account cannot be chosen or verified.
 2. **Stricter limits:** ConnectionAttempts capped at 10 and
    NumberOfPasswordPrompts above 1 refused are confirmed.
 3. **ServerAlive:** using WebRTC/ICE connectivity checks as the equivalent of
