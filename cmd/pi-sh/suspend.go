@@ -18,6 +18,10 @@ func sessionInputActions(tty *terminal.Session, streams *localio.Session) inputA
 				return terminal.SuspendProcess(ctx)
 			})
 		}
+		if streams.Stdin != nil {
+			// Only the session's own stdin endpoint observes this interrupt.
+			actions.interrupt = streams.InterruptRead
+		}
 	}
 	return actions
 }

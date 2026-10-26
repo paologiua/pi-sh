@@ -148,12 +148,36 @@ func (l *Logger) Level() Level {
 	if l == nil {
 		return Quiet
 	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	return l.level
+}
+
+// OnStderr reports whether messages go to the standard-error stream rather
+// than an -E log file or syslog (-y).
+func (l *Logger) OnStderr() bool {
+	if l == nil {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.file == nil && l.sys == nil
+}
+
+// SetLevel changes the level at run time (the ~v/~V escapes), clamped to
+// OpenSSH's range. It is a no-op on a nil Logger.
+func (l *Logger) SetLevel(level Level) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.level = min(max(level, Quiet), Debug3)
 }
 
 // Enabled reports whether a message at level would be emitted.
 func (l *Logger) Enabled(level Level) bool {
-	return l != nil && level > Quiet && level <= l.level
+	return l != nil && level > Quiet && level <= l.Level()
 }
 
 // Log emits one sanitized line. Debug lines use OpenSSH's "debugN: " prefix;

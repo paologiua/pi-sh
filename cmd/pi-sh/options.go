@@ -17,14 +17,17 @@ import (
 // local commands are read or executed implicitly.
 type options struct {
 	browser, direct, broker, legacy, dump bool
-	stdinNull                             bool
-	escape                                string
-	tty                                   string
-	args                                  []string
-	configFile, hostname                  string
-	tag                                   string
-	tagSet                                bool
-	inspection, query                     string
+	// legacyShell selects the agent's raw shell stream instead of the login
+	// shell launched through the in-memory TTY/no-TTY adapters.
+	legacyShell          bool
+	stdinNull            bool
+	escape               string
+	tty                  string
+	args                 []string
+	configFile, hostname string
+	tag                  string
+	tagSet               bool
+	inspection, query    string
 	// connection holds first-obtained connection-policy values (User, Port,
 	// BatchMode, timeouts ...); policy is the validated result.
 	connection map[string]string
@@ -70,6 +73,8 @@ func parseOptions(args []string) (options, error) {
 				o.broker = true
 			case "--legacy-command":
 				o.legacy = true
+			case "--legacy-shell":
+				o.legacyShell = true
 			default:
 				return o, errors.New("unsupported pi-sh option")
 			}
@@ -260,8 +265,12 @@ func parseOptions(args []string) (options, error) {
 	if o.legacy && o.tty == "no" {
 		return o, errors.New("legacy command adapter cannot provide no-TTY semantics")
 	}
-	if !command && (o.tty == "no" || o.stdinNull) {
-		return o, errors.New("noninteractive shell requires the command broker and an explicit command")
+	if o.legacyShell && command {
+		return o, errors.New("the legacy shell stream cannot run a command")
+	}
+	// The raw agent shell stream has no TTY policy, stdin EOF or exit status.
+	if o.legacyShell && (o.tty == "no" || o.stdinNull) {
+		return o, errors.New("noninteractive shell requires the in-memory adapter, not the legacy shell stream")
 	}
 	return o, nil
 }
@@ -319,7 +328,8 @@ func (o *options) parseDestination(seen map[string]bool) error {
 }
 
 // Like OpenSSH, a non-forced request is suppressed when stdin is not a terminal
-// or StdinNull is selected. A command's automatic policy requests no TTY.
+// or StdinNull is selected, with a notice whenever a TTY had been wanted. A
+// command's automatic policy requests no TTY; a login shell's requests one.
 func (o options) requestTTY(stdinTerminal bool) (enabled, warning bool) {
 	wanted := o.tty == "force" || o.tty == "yes" || (o.tty == "auto" && !o.broker && !o.legacy)
 	if !wanted {
@@ -329,7 +339,7 @@ func (o options) requestTTY(stdinTerminal bool) (enabled, warning bool) {
 		return true, false
 	}
 	if !stdinTerminal || o.stdinNull {
-		return false, o.tty == "yes"
+		return false, true
 	}
 	return true, false
 }

@@ -77,7 +77,7 @@ func TestSuspendHelpOnlyAdvertisesAvailableAction(t *testing.T) {
 			actions.suspend = func(context.Context) error { return nil }
 		}
 		err := inputWithActions(context.Background(), sender, strings.NewReader("~?~."), '~', actions)
-		if !errors.Is(err, errEscape) || strings.Contains(diagnostic.String(), "~^Z - suspend pi-sh") != available {
+		if !errors.Is(err, errEscape) || strings.Contains(diagnostic.String(), "~^Z  - suspend pi-sh") != available {
 			t.Fatal("help capability mismatch", available, err, diagnostic.String())
 		}
 	}

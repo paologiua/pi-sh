@@ -63,6 +63,7 @@ const (
 	msgTTYCommand   diag.Message = "experimental TTY command; merged stdout/stderr; abnormal remote cleanup remains unverified"
 	msgSessionShell diag.Message = "session: starting interactive shell"
 	msgSessionMode  diag.Message = "session: starting command adapter"
+	msgSessionLogin diag.Message = "session: starting login shell through the in-memory adapter"
 	msgExitStatus   diag.Message = "session: remote command finished"
 )
 

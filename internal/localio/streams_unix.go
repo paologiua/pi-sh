@@ -26,6 +26,10 @@ type unixStreams struct {
 	wakeRead, wakeWrite *os.File
 	wakeFD              int
 	woken               chan struct{}
+	// The interrupt pipe is drained by the Read it wakes; it never signals
+	// cancellation and is not observed by writes.
+	interruptRead, interruptWrite *os.File
+	interruptFD, interruptWriteFD int
 }
 type endpoint struct {
 	owner *unixStreams
@@ -82,14 +86,30 @@ func Open(ctx context.Context, files Files) (*Session, error) {
 		return nil, ErrSetup
 	}
 	u.wakeFD = int(u.wakeRead.Fd())
+	u.interruptRead, u.interruptWrite, err = os.Pipe()
+	if err != nil {
+		u.wakeRead.Close()
+		u.wakeWrite.Close()
+		return nil, ErrSetup
+	}
+	// Fd switches an os.File to blocking mode, so read each descriptor once.
+	u.interruptFD, u.interruptWriteFD = int(u.interruptRead.Fd()), int(u.interruptWrite.Fd())
+	closePipes := func() error {
+		return errors.Join(u.wakeRead.Close(), u.wakeWrite.Close(), u.interruptRead.Close(), u.interruptWrite.Close())
+	}
+	for _, fd := range []int{u.interruptFD, u.interruptWriteFD} {
+		if err := unix.SetNonblock(fd, true); err != nil {
+			_ = closePipes()
+			return nil, ErrSetup
+		}
+	}
 	for _, l := range u.leases {
 		if l.flags&unix.O_NONBLOCK != 0 {
 			continue
 		}
 		if _, err := unix.FcntlInt(uintptr(l.fd), unix.F_SETFL, l.flags|unix.O_NONBLOCK); err != nil {
 			restore := u.restore()
-			u.wakeRead.Close()
-			u.wakeWrite.Close()
+			_ = closePipes()
 			return nil, errors.Join(ErrSetup, restore)
 		}
 		l.changed = true
@@ -115,7 +135,15 @@ func Open(ctx context.Context, files Files) (*Session, error) {
 			}
 		}()
 		err := u.restore()
-		return errors.Join(err, u.wakeRead.Close(), u.wakeWrite.Close())
+		return errors.Join(err, closePipes())
+	}
+	s.interrupt = func() {
+		// A full pipe already holds a pending request; nothing else to record.
+		u.operations.RLock()
+		defer u.operations.RUnlock()
+		if u.ctx.Err() == nil {
+			_, _ = unix.Write(u.interruptWriteFD, []byte{1})
+		}
 	}
 	s.suspend = func(action func() error) (result error) {
 		// The input filter calls between reads. Writer preference prevents new
@@ -183,15 +211,39 @@ func (u *unixStreams) restore() error {
 	return result
 }
 
+// takeInterrupt drains pending InterruptRead requests and reports whether any
+// existed. Only reads consume them.
+func (u *unixStreams) takeInterrupt() bool {
+	var buffer [64]byte
+	taken := false
+	for {
+		n, err := unix.Read(u.interruptFD, buffer[:])
+		if n > 0 {
+			taken = true
+			continue
+		}
+		if err == unix.EINTR {
+			continue
+		}
+		return taken
+	}
+}
+
 func (e *endpoint) wait(events int16) error {
 	for {
 		if err := e.owner.ctx.Err(); err != nil {
 			return err
 		}
+		if events == unix.POLLIN && e.owner.takeInterrupt() {
+			return ErrInterrupted
+		}
 		if e.unpollable {
 			return nil
 		}
 		fds := []unix.PollFd{{Fd: int32(e.fd), Events: events}, {Fd: int32(e.owner.wakeFD), Events: unix.POLLIN}}
+		if events == unix.POLLIN {
+			fds = append(fds, unix.PollFd{Fd: int32(e.owner.interruptFD), Events: unix.POLLIN})
+		}
 		_, err := unix.Poll(fds, -1)
 		if err == unix.EINTR {
 			continue

@@ -669,3 +669,30 @@ the fix once, not that every interleaving is covered (the local regressions do).
 `scripts/native-broker-throughput.sh` was not used as-is: its stderr step pipes
 pi-sh's stderr, including the companion instruction, into the timer. The steps
 were run individually with the same commands.
+
+## Native login shell through the adapters, 26 October 2026
+
+Read-only, browser companion, branch `worktree-agent-aeda33dc242b6413b` built on
+this Mac. Each line is one pi-sh session; interactive shells ran `unset HISTFILE`
+first. Steps A1–A3 and M1–M2 follow `scripts/native-shell-check.sh`; the
+interactive part was driven by a local PTY running an interactive Bash (so `~^Z`
+and the external stop act on a normal, non-orphaned job), and only markers were
+kept.
+
+| Step | Result |
+| --- | --- |
+| A1 `-T`, script on stdin | `argv0=-bash home=yes tty=no`, exit 23 |
+| A2 `-n`, stdin /dev/null | pseudo-terminal notice, no output, exit 0 |
+| A3 `-tt`, piped keystrokes, TERM=xterm-256color | `tty=yes term=xterm-256color`, `stty size` 0 0, exit 23 |
+| M1 interactive (local PTY 30×100) | `$0`=-bash, TERM forwarded, size 30 100, resize to 40 120 seen by `stty size`; remote `sleep 30` + Ctrl-Z → Stopped, `jobs; kill %1` ended it; `~? ~v ~V ~# ~B ~R ~& ~C` each printed its local notice; `~^Z` stopped pi-sh to the local prompt and `fg` resumed the session; `kill -TSTP` from outside did the same |
+| M2 `~.` | exit 255 |
+| Interactive `exit 23` | exit 23 |
+| Afterwards, `ps -u` through pi-sh | only systemd user services and the listing session's own processes: nothing left by the sessions above |
+
+Not covered: M3 (network loss while `sleep` runs) needs the owner to disable the
+Mac's network; long sessions; nested job suites beyond one stopped job. Two
+earlier M1 attempts ended, through a driver pattern bug, after the remote prompt
+appeared but before `unset HISTFILE`; no command was typed in them, so Bash had
+no new history lines to save, but on hangup it may still have rewritten the
+account's history file as on any interrupted login (as does the official Remote
+shell page opened for the recent-sign-in step). Single runs.

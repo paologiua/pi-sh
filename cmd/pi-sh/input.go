@@ -9,7 +9,9 @@ import (
 	"os"
 	"unicode/utf8"
 
+	"pi-sh/internal/diag"
 	"pi-sh/internal/localio"
+	"pi-sh/internal/terminal"
 	"pi-sh/internal/transport"
 )
 
@@ -28,6 +30,57 @@ func input(ctx context.Context, ch textSender, r io.Reader, escape rune, diagnos
 type inputActions struct {
 	diagnostic io.Writer
 	suspend    func(context.Context) error
+	// interrupt makes the pending stdin Read return localio.ErrInterrupted.
+	// With suspend, it lets an external SIGTSTP use the same handoff as ~^Z.
+	interrupt func() bool
+}
+
+// suspendingReader performs external suspension requests at the read boundary,
+// where no Read is pending. It never returns ErrInterrupted to its caller.
+type suspendingReader struct {
+	ctx     context.Context
+	reader  io.Reader
+	suspend func(context.Context) error
+}
+
+func (r suspendingReader) Read(p []byte) (int, error) {
+	for {
+		n, err := r.reader.Read(p)
+		if !errors.Is(err, localio.ErrInterrupted) {
+			return n, err
+		}
+		if err := r.suspend(r.ctx); err != nil {
+			if cause := r.ctx.Err(); cause != nil {
+				return 0, cause
+			}
+			return 0, err
+		}
+	}
+}
+
+// watchExternalSuspend routes SIGTSTP to the input boundary while this loop
+// can perform the handoff. Outside that window the default stop action applies.
+func watchExternalSuspend(ctx context.Context, actions inputActions) func() {
+	if actions.suspend == nil || actions.interrupt == nil || !terminal.CanSuspend() {
+		return func() {}
+	}
+	signals, stop := terminal.WatchSuspendSignals()
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		for {
+			select {
+			case <-signals:
+				actions.interrupt()
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return func() { stop(); close(done); <-finished }
 }
 
 func writeEscapeDiagnostic(ctx context.Context, writer io.Writer, message string) error {
@@ -57,6 +110,10 @@ func inputWithActions(ctx context.Context, ch textSender, r io.Reader, escape ru
 			result = localCleanupResult(result, streams.Close())
 		}()
 		r = streams.Stdin
+	}
+	if actions.suspend != nil && actions.interrupt != nil {
+		defer watchExternalSuspend(ctx, actions)()
+		r = suspendingReader{ctx: ctx, reader: r, suspend: actions.suspend}
 	}
 	reader := bufio.NewReader(r)
 	// Coalesce only characters already available locally. One message per rune
@@ -117,7 +174,7 @@ func inputWithActions(ctx context.Context, ch textSender, r io.Reader, escape ru
 		}
 		if prefix {
 			prefix = false
-			if c == '.' || c == '?' || c == 26 {
+			if c == '.' || c == '?' || c == 26 || localEscapes[c] {
 				if err := flush(); err != nil {
 					return err
 				}
@@ -127,16 +184,24 @@ func inputWithActions(ctx context.Context, ch textSender, r io.Reader, escape ru
 			}
 			if c == '?' {
 				label := escapeLabel(escape)
-				help := fmt.Sprintf("%s?\r\nSupported escape sequences:\r\n %s. - disconnect\r\n %s? - this message\r\n", label, label, label)
+				help := fmt.Sprintf("%s?\r\nSupported escape sequences:\r\n %s.   - disconnect\r\n %sV/v - decrease/increase verbosity (LogLevel)\r\n", label, label, label)
 				if actions.suspend != nil {
-					help += fmt.Sprintf(" %s^Z - suspend pi-sh\r\n", label)
+					help += fmt.Sprintf(" %s^Z  - suspend pi-sh\r\n", label)
 				}
-				help += fmt.Sprintf(" %s%s - send a literal escape character\r\nEscapes apply at the start of a line.\r\n", label, label)
+				help += fmt.Sprintf(" %s#   - list open connections\r\n %s?   - this message\r\n %s%s  - send the escape character by typing it twice\r\n", label, label, label, label)
+				help += fmt.Sprintf(" %sB %sC %sR %s& - refused: no equivalent over Connect\r\n", label, label, label, label)
+				help += "(Note that escapes are only recognized immediately after newline.)\r\n"
 				if err := writeEscapeDiagnostic(ctx, actions.diagnostic, help); err != nil {
 					return err
 				}
 				// Local actions consume no remote byte and preserve line-start
 				// state, so another escape can immediately follow the help.
+				continue
+			}
+			if localEscapes[c] {
+				if err := writeEscapeDiagnostic(ctx, actions.diagnostic, localEscape(ctx, escape, c)); err != nil {
+					return err
+				}
 				continue
 			}
 			if c == 26 {
@@ -170,5 +235,42 @@ func inputWithActions(ctx context.Context, ch textSender, r io.Reader, escape ru
 			return err
 		}
 		lineStart = c == '\n' || c == '\r'
+	}
+}
+
+// localEscapes are consumed locally like OpenSSH's. Those without a Connect
+// equivalent are refused with a notice instead of being sent as text.
+var localEscapes = map[rune]bool{'B': true, 'C': true, 'R': true, 'V': true, 'v': true, '#': true, '&': true}
+
+// localEscape performs ~V/~v/~# and returns the notice for every local action.
+func localEscape(ctx context.Context, escape, c rune) string {
+	label := escapeLabel(escape)
+	switch c {
+	case 'V', 'v':
+		log := diag.From(ctx)
+		if !log.OnStderr() {
+			return fmt.Sprintf("%s%c [Logging to syslog or file]\r\n", label, c)
+		}
+		level := log.Level()
+		if c == 'V' && level > diag.Quiet {
+			level--
+		}
+		if c == 'v' && level < diag.Debug3 {
+			level++
+		}
+		log.SetLevel(level)
+		return fmt.Sprintf("%s%c [LogLevel %s]\r\n", label, c, level)
+	case '#':
+		// pi-sh has exactly one channel: the session. No forwarding exists.
+		return fmt.Sprintf("%s#\r\nThe following connections are open:\r\n  #0 client-session (Connect shell channel)\r\n", label)
+	case 'C':
+		// As OpenSSH with its default EnableEscapeCommandline=no.
+		return "commandline disabled\r\n"
+	case 'B':
+		return fmt.Sprintf("%sB [BREAK is not supported: Connect has no break request]\r\n", label)
+	case 'R':
+		return fmt.Sprintf("%sR [rekeying is not supported: Connect DTLS has no client rekey request]\r\n", label)
+	default: // '&'
+		return fmt.Sprintf("%s& [backgrounding is not supported: pi-sh cannot fork]\r\n", label)
 	}
 }
