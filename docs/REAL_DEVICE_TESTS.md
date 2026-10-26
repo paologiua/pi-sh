@@ -1,5 +1,32 @@
 # Authorized real-device evidence — 2026-10-19/22
 
+## 2026-10-23 Raspberry Pi ID account selection, direct login (owner run)
+
+The owner ran read-only direct-login checks of the merged CLI branch, typing the
+password and one-time code at the local prompts; the email is not recorded here.
+
+| Check | Result |
+| --- | --- |
+| `pi-sh -v --direct-login --experimental-command -nT email::raspberrypi 'exit 23'` | no email prompt, account line shown, exit23; debug1 version and `session:` lines readable (redaction fix verified) |
+| same with `-l email` | exit23 |
+| same with `PI_SH_ACCOUNT` and no account given | exit23 |
+| `-oRemoteCommand='echo %n' email::raspberrypi` | printed `raspberrypi`, exit0 |
+| `pi-sftp --direct-login --read-only -b - email::raspberrypi` (pwd/quit) | first try: login rejected after the password step ("login was not accepted", exit255); later retry passed (see below) |
+
+The last check was the fifth full sign-in within minutes. The prompt reads from
+/dev/tty, so the piped batch did not become the password. Rejection cause is
+unclassified (possible service throttling or a mistyped password); no retry was
+made. The pi-sftp account path remains to be verified natively, later and alone.
+Follow-ups the same day: one attempt failed before login with "web login HTTPS
+request failed (DNS)"; the local router resolver was briefly not answering for
+id.raspberrypi.com (a public resolver answered; resolution recovered within
+minutes). The next attempt signed in and then reported "Connect connection
+establishment timed out before any remote command was sent" (exit255): the owner
+confirmed the Pi had been switched off. Both outcomes are the expected bounded
+failures; With the Pi back online, `pi-sftp --direct-login --read-only -b - email::raspberrypi`
+(pwd/quit) skipped the email prompt, printed the remote home directory and exited0.
+Account selection is now verified natively for pi-sh and pi-sftp.
+
 ## 2026-10-22 native pi-sftp / pi-cp / pi-sh CLI plan (owner approved)
 
 The owner approved docs/NATIVE_CLI_PLAN.md ("Autorizzo il piano CLI e la pulizia")
@@ -597,3 +624,48 @@ console bridge were not used by that process. No Pi package, persistent file,
 configuration or service was modified; the broker source remained in memory.
 Selected ICE route, direct interactive mode, long-session authorization and
 physical iSH behavior were not established by this short test.
+
+## Owner-run iSH relay command, 23 October 2026
+
+The owner ran the provided Go 1.27.3 Linux/386 softfloat, CGO-disabled build with
+`GOMAXPROCS=1 PI_SH_ISH_RELAY=1`, direct login and the experimental non-TTY command
+`printf "ish-ok\n"; exit 23`. The sanitized transcript establishes completed
+password/TOTP login and discovery, the explicit interface-free relay mode,
+ICE/peer connected, a shell data channel opened in 16835 ms, output `ish-ok`,
+and command completion at 23. The owner's immediate `echo $?` also returned 23.
+
+This is one physical iSH end-to-end command through the Connect session's relay.
+No Pi package, configuration, service or persistent file was modified. It does
+not verify interactive shell, transfers, long sessions, cancellation, suspension,
+network transitions or repeated success. App/build, iOS version, device model
+and the installed binary digest were not supplied. The provided build had SHA-256
+`07ff8f6408150ac62057712fe63ddaa443f16692eb3838d807461640cac6612b`.
+See [iSH investigation](ISH_COMPATIBILITY.md) for the preceding interface probe,
+the default-path EINVAL and the local authenticated TURN integration tests.
+
+## Native broker throughput and abort cleanup, 26 October 2026
+
+Read-only, browser companion, after merging the pipelined broker data path
+(`main` 2cd2d3a). The first attempt reported Connect's recent-sign-in requirement;
+opening the official Remote shell page succeeded without a password prompt and
+was closed without input. Each step was one pi-sh session (`-T`); timing started
+at a remote marker line, so login and the companion step are excluded. pi-sh
+diagnostics went to a separate local file; no stream contents were retained
+beyond counts.
+
+| Step | Remote command (read-only) | Result |
+| --- | --- | --- |
+| Upload | 1 MiB of every byte value into `LC_ALL=C wc -c` | count 1048576, exit 0, 5.5 s (≈186 KiB/s) |
+| Download | `head -c 1048576 /dev/zero` | 1048576 NUL bytes, exit 0, 56.8 s (≈18 KiB/s) |
+| Download | `head -c 1048576 /dev/urandom` | 1048576 bytes, exit 0, 57.1 s (≈18 KiB/s) |
+| Stderr | `head -c 262144 /dev/zero >&2` | 262144 NUL bytes, exit 0, 14.1 s (≈18 KiB/s) |
+| Abort | `exit 0` with local stdin a directory | `local stdin read failed`, exit 255, no "cleanup was not confirmed" |
+
+Single runs, not load bounds. Before the change native transfers ran at about
+11 KiB/s each way. Upload is now about 17 times faster; output is bound by the
+per-byte Bash read loop (SHELL_BROKER.md) on the Pi's CPU, about a sixth of
+the local rate. The abort row is one run of a race-dependent path: it confirms
+the fix once, not that every interleaving is covered (the local regressions do).
+`scripts/native-broker-throughput.sh` was not used as-is: its stderr step pipes
+pi-sh's stderr, including the companion instruction, into the timer. The steps
+were run individually with the same commands.

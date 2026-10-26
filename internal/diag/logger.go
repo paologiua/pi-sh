@@ -37,6 +37,11 @@ func Elapsed(key string, d time.Duration) Field {
 // level name). Values that are not short identifier tokens are redacted.
 func State(key, value string) Field { return Field{fieldKey(key), stateToken(value)} }
 
+// Version records a locally built version string (client release, Go
+// toolchain). It admits '+' build metadata and pseudo-version hashes that
+// State would redact; anything outside version syntax is still redacted.
+func Version(key, value string) Field { return Field{fieldKey(key), versionToken(value)} }
+
 // Config selects one destination: Stderr by default, File for -E (append,
 // created 0600) or Syslog for -y. Both File and Syslog is an error, as in ssh.
 type Config struct {
@@ -182,15 +187,21 @@ func (l *Logger) Log(level Level, m Message, fields ...Field) {
 	if !l.Enabled(level) {
 		return
 	}
+	// Structural redaction: the constant message is sanitized (its phase
+	// prefix kept), while fields were already restricted by their typed
+	// constructors and only get control-character cleanup and the line bound.
+	// Running Sanitize over the whole line produced false positives such as
+	// "session:[redacted]" and long version strings as "[redacted-token]".
 	var b strings.Builder
-	b.WriteString(string(m))
+	b.WriteString(l.prefix(level))
+	b.WriteString(sanitizeMessage(string(m)))
 	for _, f := range fields {
 		b.WriteByte(' ')
 		b.WriteString(f.key)
 		b.WriteByte('=')
 		b.WriteString(f.value)
 	}
-	l.emit(level, b.String())
+	l.write(level, clean(b.String()))
 }
 
 // Failure logs an error's text after redaction. Error text is produced locally
@@ -199,24 +210,25 @@ func (l *Logger) Failure(level Level, err error) {
 	if err == nil || !l.Enabled(level) {
 		return
 	}
-	l.emit(level, err.Error())
+	l.write(level, Sanitize(l.prefix(level)+err.Error()))
 }
 
-func (l *Logger) emit(level Level, text string) {
-	var prefix string
+func (l *Logger) prefix(level Level) string {
 	switch level {
 	case Debug1:
-		prefix = "debug1: "
+		return "debug1: "
 	case Debug2:
-		prefix = "debug2: "
+		return "debug2: "
 	case Debug3:
-		prefix = "debug3: "
-	default:
-		if l.program != "" {
-			prefix = l.program + ": "
-		}
+		return "debug3: "
 	}
-	line := Sanitize(prefix + text)
+	if l.program != "" {
+		return l.program + ": "
+	}
+	return ""
+}
+
+func (l *Logger) write(level Level, line string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.sys != nil {

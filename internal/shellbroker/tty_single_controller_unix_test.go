@@ -30,7 +30,7 @@ func TestStagedTTYControllerAcrossCarriers(t *testing.T) {
 		{"self-stop-resume", `parent=$$; (sleep 0.2; kill -CONT "$parent") & kill -STOP $$; wait; printf resumed; exit 23`, "resumed", nil, 23, false},
 		{"terminal-suspend", `printf 'fixture-ready\n'; IFS= read -r x; printf 'seen:%s\n' "$x"; exit 23`, "seen:x", []byte{26, 'x', '\r'}, 23, false},
 		{"caught-self-tstp", `trap 'printf caught-suspend' TSTP; kill -TSTP $$; printf resumed; exit 23`, "caught-suspendresumed", nil, 23, false},
-		{"caught-suspend", `trap 'printf caught-suspend' TSTP; printf 'fixture-ready\n'; IFS= read -r x; printf 'seen:%s\n' "$x"; exit 23`, "caught-suspendseen:x", []byte{26, 'x', '\r'}, 23, false},
+		{"caught-suspend", `exec bash -c 'trap "printf caught-suspend" TSTP; printf "fixture-ready\n"; until IFS= read -r x; do :; done; printf "seen:%s\n" "$x"; exit 23'`, "caught-suspend\x00seen:x", []byte{26, 'x', '\r'}, 23, false},
 		{"ordinary143", `exit 143`, "", nil, 143, false},
 		{"self-int", `printf first; kill -INT $$`, "first", nil, 255, false},
 		{"self-term", `printf first; kill -TERM $$`, "first", nil, 255, false},
@@ -42,12 +42,25 @@ func TestStagedTTYControllerAcrossCarriers(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(carrier+"/"+tc.name, func(t *testing.T) {
 				code, out, err := runStagedTTYPlan(t, carrier, mustTTYPlan(t, tc.text), tc.input, tc.resize)
-				if err != nil || code != tc.code || !strings.Contains(out, tc.want) {
+				if err != nil || code != tc.code || !containsInOrder(out, strings.Split(tc.want, "\x00")) {
 					t.Fatalf("code%d want%d err=%v out=%q", code, tc.code, err, out)
 				}
 			})
 		}
 	}
+}
+
+// containsInOrder reports whether parts occur in s in order. The ^Z handler
+// output precedes the echo of the line typed after it, so they are not adjacent.
+func containsInOrder(s string, parts []string) bool {
+	for _, part := range parts {
+		i := strings.Index(s, part)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(part):]
+	}
+	return true
 }
 
 func TestStagedTTYControllerCleanupBeforeCarrierClose(t *testing.T) {

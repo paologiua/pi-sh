@@ -12,6 +12,8 @@ import (
 )
 
 // Destination is one parsed target. Empty User/Port mean "not specified".
+// Account is true when User came from the pi-sh account form "email::device"
+// (a Raspberry Pi ID account), as opposed to an OpenSSH "user@host" user.
 type Destination struct {
 	User    string
 	Host    string
@@ -19,7 +21,23 @@ type Destination struct {
 	Path    string
 	HasPath bool
 	URI     bool
+	Account bool
 }
+
+// accountSplit recognizes the pi-sh account form "email::rest", where the
+// part before the first "::" contains '@'. It is not OpenSSH syntax (ssh
+// would read a user "local-part" and a host "domain::rest"); the owner chose
+// it so a Raspberry Pi ID email can name the account as an SSH user would.
+func accountSplit(arg string) (account, rest string, ok bool) {
+	i := strings.Index(arg, "::")
+	if i <= 0 || !strings.Contains(arg[:i], "@") {
+		return "", "", false
+	}
+	return arg[:i], arg[i+2:], true
+}
+
+// errAccountHost covers "email::" without a device and devices containing '@'.
+var errAccountHost = errors.New("account destination needs a device after '::' (email::device), and the device must not contain '@'")
 
 // SSH parses an ssh(1) destination: ssh://[user@]host[:port][/] or
 // [user@]host. As in OpenSSH 10.2p1, the URI scheme is case-sensitive, the
@@ -34,6 +52,12 @@ func SSH(arg string) (Destination, error) {
 			return Destination{}, errors.New("ssh:// destination must not contain a path")
 		}
 		return d, nil
+	}
+	if account, host, ok := accountSplit(arg); ok {
+		if host == "" || strings.Contains(host, "@") {
+			return Destination{}, errAccountHost
+		}
+		return Destination{User: account, Host: host, Account: true}, nil
 	}
 	var d Destination
 	if i := strings.LastIndexByte(arg, '@'); i >= 0 {
@@ -70,6 +94,21 @@ func Copy(arg string) (d Destination, remote bool, err error) {
 	if i < 0 {
 		return Destination{}, false, nil
 	}
+	if account, rest, ok := accountSplit(arg); ok && i == len(account) {
+		// email::device:path; the device:path part follows scp's colon rules.
+		j := colon(rest)
+		if j < 0 {
+			return Destination{}, false, errors.New("account copy operand needs a device and a path: email::device:path")
+		}
+		d = Destination{User: account, Host: cleanHost(rest[:j]), Path: rest[j+1:], HasPath: true, Account: true}
+		if d.Path == "" {
+			d.Path = "."
+		}
+		if d.Host == "" || strings.Contains(d.Host, "@") {
+			return Destination{}, false, errAccountHost
+		}
+		return d, true, nil
+	}
 	d.Path, d.HasPath = arg[i+1:], true
 	if d.Path == "" {
 		d.Path = "."
@@ -93,6 +132,19 @@ func SFTP(arg string) (Destination, error) {
 		return parseURI(arg[len("sftp://"):])
 	}
 	var d Destination
+	if account, rest, ok := accountSplit(arg); ok && colon(arg) == len(account) {
+		d.User, d.Account = account, true
+		host := rest
+		if j := colon(rest); j >= 0 {
+			host, d.Path = rest[:j], rest[j+1:]
+			d.HasPath = d.Path != ""
+		}
+		d.Host = cleanHost(host)
+		if d.Host == "" || strings.Contains(d.Host, "@") {
+			return Destination{}, errAccountHost
+		}
+		return d, nil
+	}
 	host := arg
 	if i := colon(arg); i >= 0 {
 		host, d.Path = arg[:i], arg[i+1:]

@@ -1,5 +1,22 @@
 # Development status — 2026-10-22
 
+Update, 23 October 2026: pi-cp now displays per-file scp-style progress, with
+sticky -q, foreground stdout/redirect behavior, rate, ETA, stall and completion
+formatting. Fourteen local OpenSSH PTY comparisons and the affected packages'
+race tests pass. Recursive binary copies and short-write accounting are tested
+locally. macOS and Linux/386 softfloat binaries are built; Linux/386 tests
+compile, and Windows cross-build passes. Physical Pi/iSH progress and transfer
+verification is pending. See [progress behavior](SCP_PROGRESS.md).
+
+Update, 23 October 2026: the owner verified one non-TTY command on physical iSH
+using Go 1.27.3 Linux/386 softfloat with `GOMAXPROCS=1 PI_SH_ISH_RELAY=1`.
+Direct password/TOTP login, discovery, official-session relay WebRTC and broker
+completion passed: `ish-ok`, exit 23; channel setup took 16835 ms. The normal
+transport is blocked by interface enumeration returning EINVAL; the explicit
+relay adapter avoids that dependency. Interactive shell, broader runtime tests,
+exact app/iOS versions and the installed hash remain outstanding. See
+[iSH investigation](ISH_COMPATIBILITY.md) for evidence and remaining limits.
+
 Later the same day four parallel engineering branches were merged (local evidence
 only; no Pi verification yet): diagnostics -v/-q/-E/-y with structural redaction
 (DIAGNOSTICS.md), ssh_config Match/Tag/-P (CONFIGURATION.md), destination parsing

@@ -26,7 +26,7 @@ func app() int {
 	var fromConfig configError
 	if err != nil && !errors.As(err, &fromConfig) {
 		fmt.Fprintln(os.Stderr, "pi-sh:", err)
-		fmt.Fprintln(os.Stderr, "usage: pi-sh (--browser|--direct-login) [options] [device-or-alias]\n       pi-sh (--browser|--direct-login) --experimental-command [options] device-or-alias command [arguments...]\n       pi-sh -G [-F path|none] [-o option] [device-or-alias]\n       pi-sh -V\n       pi-sh -Q query")
+		fmt.Fprintln(os.Stderr, "usage: pi-sh (--browser|--direct-login) [options] [-l email] [email::]device-or-alias\n       pi-sh (--browser|--direct-login) --experimental-command [options] [email::]device-or-alias command [arguments...]\n       pi-sh -G [-F path|none] [-o option] [-l email] [[email::]device-or-alias]\n       pi-sh -V\n       pi-sh -Q query")
 		return 255
 	}
 	if err == nil && opts.inspection != "" {

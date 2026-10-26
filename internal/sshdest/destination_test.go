@@ -101,3 +101,58 @@ func TestAddressLiteralsAndPorts(t *testing.T) {
 		}
 	}
 }
+
+// The account form email::device is pi-sh syntax, not OpenSSH's: ssh would
+// read the user as the email's local part and the host as "domain::device".
+// It applies only when the text before the first "::" contains '@'.
+func TestAccountDestinations(t *testing.T) {
+	for _, tc := range []struct{ in, user, host string }{
+		{"me@example.com::pi", "me@example.com", "pi"},
+		{"me@example.com::Pi #1", "me@example.com", "Pi #1"},
+		{"me@example.com::a::b", "me@example.com", "a::b"},
+		{"pi::dev", "", "pi::dev"}, {"fe80::1", "", "fe80::1"},
+	} {
+		d, err := SSH(tc.in)
+		if err != nil || d.User != tc.user || d.Host != tc.host || d.Account != (tc.user != "") {
+			t.Errorf("ssh %q: %+v %v", tc.in, d, err)
+		}
+	}
+	for _, in := range []string{"me@example.com::", "me@example.com::x@pi"} {
+		if d, err := SSH(in); err == nil {
+			t.Errorf("ssh %q accepted: %+v", in, d)
+		}
+	}
+	for _, tc := range []struct{ in, user, host, path string }{
+		{"me@example.com::pi:x", "me@example.com", "pi", "x"},
+		{"me@example.com::pi:", "me@example.com", "pi", "."},
+		{"me@example.com::[pi]:/abs:x", "me@example.com", "pi", "/abs:x"},
+		{"pi::x", "", "pi", ":x"}, // OpenSSH scp: host "pi", path ":x"
+	} {
+		d, remote, err := Copy(tc.in)
+		if err != nil || !remote || d.User != tc.user || d.Host != tc.host || d.Path != tc.path || d.Account != (tc.user != "") {
+			t.Errorf("scp %q: %+v %v %v", tc.in, d, remote, err)
+		}
+	}
+	for _, in := range []string{"me@example.com::pi", "me@example.com:::x", "me@example.com::x@pi:p"} {
+		if d, remote, err := Copy(in); err == nil {
+			t.Errorf("scp %q accepted: %+v %v", in, d, remote)
+		}
+	}
+	if _, remote, err := Copy("./me@example.com::pi:x"); remote || err != nil {
+		t.Errorf("a slash before the first colon keeps the operand local: %v %v", remote, err)
+	}
+	for _, tc := range []struct{ in, user, host, path string }{
+		{"me@example.com::pi", "me@example.com", "pi", ""},
+		{"me@example.com::pi:dir", "me@example.com", "pi", "dir"},
+	} {
+		d, err := SFTP(tc.in)
+		if err != nil || d.User != tc.user || d.Host != tc.host || d.Path != tc.path || !d.Account {
+			t.Errorf("sftp %q: %+v %v", tc.in, d, err)
+		}
+	}
+	for _, in := range []string{"me@example.com::", "me@example.com::a@pi"} {
+		if d, err := SFTP(in); err == nil {
+			t.Errorf("sftp %q accepted: %+v", in, d)
+		}
+	}
+}

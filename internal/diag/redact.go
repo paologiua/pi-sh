@@ -42,6 +42,12 @@ func Sanitize(s string) string {
 		}
 		return t
 	})
+	return clean(s)
+}
+
+// clean replaces control and formatting characters (escape sequences, bidi
+// controls, invalid UTF-8) with '?' and bounds the result to MaxLine bytes.
+func clean(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
 		r, n := utf8.DecodeRuneInString(s[i:])
@@ -57,10 +63,49 @@ func Sanitize(s string) string {
 	return b.String()
 }
 
+// phases are the fixed "phase: " prefixes of Message constants. A phase word
+// such as "session" is also a credential key in pairPattern, so Sanitize would
+// turn "session: starting interactive shell" into "session:[redacted] ...".
+// Only the prefix is exempt; the rest of the message is still sanitized.
+var phases = []string{"authentication: ", "broker: ", "configuration: ", "connection: ",
+	"discovery: ", "session: ", "signaling: ", "transport: "}
+
+// sanitizeMessage applies Sanitize to a message, keeping a known phase prefix.
+func sanitizeMessage(m string) string {
+	for _, phase := range phases {
+		if rest, ok := strings.CutPrefix(m, phase); ok {
+			return phase + Sanitize(rest)
+		}
+	}
+	return Sanitize(m)
+}
+
 // stateToken admits only short enumerated identifiers such as WebRTC state
-// names or login stage constants; anything else is redacted.
+// names or login stage constants; anything else is redacted. Field values are
+// not passed through Sanitize again, so long digit-bearing tokens that the
+// opaque-token rule would remove are redacted here.
 func stateToken(s string) string {
-	if tokenSyntax.MatchString(s) {
+	if tokenSyntax.MatchString(s) && !opaqueToken(s) {
+		return s
+	}
+	return "[redacted]"
+}
+
+func opaqueToken(s string) bool {
+	for _, t := range opaque.FindAllString(s, -1) {
+		if strings.ContainsAny(t, "0123456789") {
+			return true
+		}
+	}
+	return false
+}
+
+// versionSyntax admits build version strings such as Go module versions
+// (v0.0.0-20261022173218-2f40b725627d+dirty) and toolchain names.
+var versionSyntax = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+\-]{0,159}$`)
+
+func versionToken(s string) string {
+	if versionSyntax.MatchString(s) {
 		return s
 	}
 	return "[redacted]"
