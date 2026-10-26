@@ -351,14 +351,28 @@ func (s *stream) signal() {
 func (s *stream) openError() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	detail := strings.TrimSpace(string(s.stderr))
-	if i := strings.LastIndexByte(detail, '\n'); i >= 0 {
-		detail = detail[i+1:]
+	return &forward.OpenError{Detail: classify(string(s.stderr), s.status)}
+}
+
+// Remote connector text is not echoed into local diagnostics; only these
+// recognized system reasons (the ones ssh's server-side reason would carry)
+// are reported.
+var reasons = []string{
+	"Connection refused", "Connection timed out", "No route to host", "Network is unreachable",
+	"Name or service not known", "Temporary failure in name resolution", "No address associated with hostname",
+	"No such file or directory", "Permission denied", "Connection reset by peer",
+}
+
+func classify(stderr string, status int) string {
+	for _, r := range reasons {
+		if strings.Contains(stderr, r) {
+			return r
+		}
 	}
-	if detail == "" {
-		detail = fmt.Sprintf("remote connector exited with status %d", s.status)
+	if status == 127 {
+		return "remote connector program not found"
 	}
-	return &forward.OpenError{Detail: detail}
+	return fmt.Sprintf("remote connector exited with status %d", status)
 }
 
 // Read delivers remote output; each block is acknowledged once fully read.
