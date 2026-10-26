@@ -1,5 +1,124 @@
 # iSH compatibility investigation
 
+The new pi-cp progress meter is pure Go, with 64-bit counters, a single joined
+renderer per active file and the existing fixed 32 KiB transfer buffer. x/text
+provides Unicode width tables; macOS/Linux use TIOCGPGRP/Getpgrp for foreground
+output and SIGWINCH for resize. These operations, actual progress output and
+file transfers still require physical iSH verification; the successful iSH shell
+and non-TTY command below do not establish them. See SCP_PROGRESS.md.
+
+## Experimental relay workaround
+
+`PI_SH_ISH_RELAY=1` selects an explicit local transport workaround in `pi-sh`
+(also shared by pi-cp/pi-sftp). `0` or an unset variable keeps the normal path;
+other nonempty values fail without echoing their contents. Keep the observed
+`GOMAXPROCS=1` startup workaround as well:
+
+```sh
+GOMAXPROCS=1 PI_SH_ISH_RELAY=1 /root/bin/pi-sh -vvv \
+  --direct-login --experimental-command raspberrypi 'printf "ish-ok\n"; exit 23'
+echo $?
+```
+
+The owner verified this command on physical iSH on 23 October 2026: the official
+Connect session reached ICE/peer connected, opened the shell data channel in
+16835 ms, printed `ish-ok` and returned status 23. This establishes one successful
+non-TTY command through the configured relay, not full iSH compatibility.
+Interactive shell, sustained traffic, terminal controls/restoration, transfers,
+suspension, network transitions and repeatability remain unverified. App/build,
+iOS version, device model and installed binary hash were not supplied.
+
+The adapter gives Pion an empty interface list with standard-library socket and
+DNS operations, requires authenticated TURN in the supplied session configuration,
+forces relay-only ICE and disables mDNS. Pion binds wildcard sockets and lets
+the OS route traffic to the configured TURN server. It invents no local interface
+or IP address, adds no external relay and changes no TLS/DTLS verification.
+Direct host/server-reflexive candidates are unavailable in this mode; lack of a
+relay candidate is an explicit error before signaling an unusable offer. This
+requires ordinary reachability of the authorized relay; it cannot make blocked
+UDP/TCP or unsupported local socket operations work. No remote package, service,
+configuration or persistent file change is involved.
+
+The implementation relies on pinned Pion stdnet.Net zero-value socket delegation,
+wrapped through transport.Net so ICE does not refresh interfaces through Netlink.
+Dependency updates must retain this behavior or replace the adapter. No dependency
+versions were added/upgraded; ice/v4 and turn/v5 are now direct imports for the
+adapter and local integration test respectively.
+
+`TestDefaultTransportReportsDeniedInterfaces` reproduces the observed
+`create-offer errno=22` using an interface-enumeration failure. Before the fix,
+`TestRelayWithoutInterfacesEncryptedSession` failed with that same error; after
+the fix it creates a relay-only offer and sends/receives payloads over DTLS/SCTP
+through a loopback-only authenticated TURN server. It uses no Connect session or
+Pi. Additional tests require authenticated TURN, reject a missing relay candidate,
+and check explicit environment selection. Local transport/session race tests pass;
+these tests are evidence for the workaround design, not iSH runtime support.
+
+## Owner-run iSH observations, 23 October 2026
+
+The owner tested Linux/386 softfloat, CGO-disabled Go 1.27.3 binary
+`pi-sh_v0.0.0-20261023072210-d67e88eed6aa` on physical iSH. App/build, iOS
+version and device model were not supplied. Without GOMAXPROCS, `-V` emitted
+no initialization traces before an explicit 30-second SIGKILL timeout (137).
+With `GOMAXPROCS=1`, initialization completed, `-V` printed the version and
+returned 0. This is a per-process diagnostic workaround, not a proven runtime fix.
+
+The owner subsequently completed password/TOTP direct login and device discovery
+(two ICE servers). The command test failed with status 255 after the local-offer
+phase message, before any answer-phase message or command output. The `closed`
+state can be failure cleanup; it does not identify the original error. At this
+stage no successful iSH shell or command had been established. Peer-operation diagnostics
+now retain a fixed operation name and a numeric syscall errno when available,
+never the original Pion/network error text. The diagnostic build subsequently
+reported `operation=create-offer errno=22`.
+
+The owner then ran the isolated `ish-net-probe v1` (Go 1.27.3, Linux/386
+softfloat, CGO disabled; SHA-256
+`b910e7b8fbf278b750be19095e25dc70d58927bc103fdc7e616a6fd920a92b5f`):
+
+```text
+timeout -s KILL 30 env GOMAXPROCS=1 /root/bin/ish-net-probe
+ish-net-probe v1 go1.27.3 linux/386 GOMAXPROCS=1
+BEGIN net.Interfaces
+FAIL net.Interfaces errno=22
+BEGIN net.InterfaceAddrs
+FAIL net.InterfaceAddrs errno=22
+DONE
+```
+
+The exit status was 1, not a timeout. This reproduces local interface enumeration
+failure independently of authentication, Pion, remote sessions or the Pi.
+Source inspection of the pinned dependencies connects CreateOffer to
+GetLocalParameters/createAgent, ICE stdnet.NewNet/UpdateInterfaces and anet's
+Linux wrapper around net.Interfaces. Go's Linux implementation uses Netlink.
+The exact failing syscall has not been traced on the owner's app, but interface
+enumeration is now a demonstrated compatibility blocker. Native Mac execution
+of the same probe succeeds; that does not establish an iSH workaround. The
+experimental relay adapter described above subsequently passed one physical
+command test. Disabling mDNS alone does not replace the required interface
+enumeration in the normal transport path.
+
+The successful owner-run relay test used the `+dirty` build of the version above
+with `GOMAXPROCS=1 PI_SH_ISH_RELAY=1`. The provided build's SHA-256 was
+`07ff8f6408150ac62057712fe63ddaa443f16692eb3838d807461640cac6612b`;
+the owner did not report a hash check of the installed file. Sanitized key output:
+
+```text
+transport: experimental iSH relay mode enabled; local interface discovery disabled
+transport: ICE connection state state=connected
+transport: peer connection state state=connected
+transport: shell data channel open elapsed=16835ms
+session: starting command adapter adapter=broker-no-tty
+ish-ok
+session: remote command finished exit_status=23
+```
+
+The owner's immediate `echo $?` returned 23. This used an output-only command,
+with no Pi installation, configuration change or file-transfer write test.
+
+Earlier statements of untested runtime below describe the prior investigations;
+these partial observations do not establish full iSH compatibility.
+
 The GNU stty correction adds no local syscall, CGO or remote executable. Its
 fresh remote snapshot is bounded to1024 bytes/36 fields, and ARM/x86 Linux
 layout guards are about the destination, independent of the iSH client's386

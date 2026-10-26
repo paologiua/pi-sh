@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/sftp"
 	"pi-sh/internal/account"
 	"pi-sh/internal/connpolicy"
+	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sshdest"
 )
@@ -63,6 +64,7 @@ type Plan struct {
 	Preserve  bool
 	Recursive bool
 	Errors    io.Writer
+	Progress  *progress.Display
 }
 
 func New(args []string) (*Plan, error) {
@@ -135,7 +137,7 @@ func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.Fil
 			return errors.New("multiple sources require an existing destination directory")
 		}
 	}
-	console := sftpcli.Console{Client: client, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp"}
+	console := sftpcli.Console{Client: client, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp", Progress: p.Progress}
 	for _, source := range p.Sources {
 		if ctx.Err() != nil {
 			return ctx.Err()

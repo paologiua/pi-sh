@@ -17,18 +17,21 @@ import (
 
 	"github.com/pkg/sftp"
 	"pi-sh/internal/pathglob"
+	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpclient"
 )
 
 type Console struct {
-	Client              *sftp.Client
-	Input               io.Reader
-	Output, Errors      io.Writer
-	Batch               bool
-	Flush               bool
-	Resume              bool
-	Preserve            bool
-	Program             string
+	Client         *sftp.Client
+	Input          io.Reader
+	Output, Errors io.Writer
+	Batch          bool
+	Flush          bool
+	Resume         bool
+	Preserve       bool
+	Program        string
+	// Progress is optional; pi-cp supplies scp's per-file terminal meter.
+	Progress            *progress.Display
 	RemoteDir, LocalDir string
 	// RemoteUmask comes from sftpclient's private-creation setup. Nil is for
 	// embedding with an ordinary server and uses conservative chmod intersection.
@@ -487,7 +490,7 @@ func (c *Console) get(remote, local string, options transferOptions) (result err
 			return errors.Join(err, target.Close())
 		}
 	}
-	n, err := copyFileData(target, source)
+	n, err := c.copyData(target, source, path.Base(remote), info.Size(), offset)
 	if resume && err != nil {
 		err = errors.Join(err, target.Truncate(offset+n))
 	}
@@ -577,7 +580,7 @@ func (c *Console) put(local, remote string, options transferOptions) (result err
 			return errors.Join(err, target.Close())
 		}
 	}
-	n, err := copyFileData(target, source)
+	n, err := c.copyData(target, source, filepath.Base(local), info.Size(), offset)
 	if resume && err != nil {
 		err = errors.Join(err, target.Truncate(offset+n))
 	}

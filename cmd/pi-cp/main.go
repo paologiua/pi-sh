@@ -13,6 +13,7 @@ import (
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/copycli"
 	"pi-sh/internal/diag"
+	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
 	"pi-sh/internal/sshconfig"
@@ -33,8 +34,9 @@ func app() int {
 	config := f.String("F", "none", "explicit configuration file, or none")
 	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
 	var verbosity diag.Verbosity
+	var quietProgress bool
 	f.Var(verbosity.VerboseFlag(), "v", "verbose connection diagnostics; repeat for more (maximum DEBUG3)")
-	f.Var(verbosity.QuietFlag(), "q", "quiet: suppress connection notices, warnings and diagnostics")
+	f.Var(progressQuietFlag{verbosity.QuietFlag(), &quietProgress}, "q", "quiet: disable progress and suppress connection notices, warnings and diagnostics")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	batch := f.Bool("B", false, "batch mode (BatchMode yes): fails before any prompt, since Connect sign-in always needs a person")
@@ -69,6 +71,7 @@ func app() int {
 	}
 	plan.Preserve, plan.Errors = *preserve, os.Stderr
 	plan.Recursive = *recursive
+	plan.Progress = progress.NewTerminal(os.Stdout, quietProgress)
 	if _, err = sftpclient.ServerCommand(*server); err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
 		return 1
@@ -83,7 +86,8 @@ func app() int {
 		return 1
 	}
 	// As with scp/sftp passing -v/-q/-o LogLevel to ssh, these control only
-	// the connection layer; file errors are always reported. The browser
+	// the connection layer; -q also separately disables progress, even after -v.
+	// File errors are always reported. The browser
 	// companion instruction is never suppressed.
 	level, _ := verbosity.Resolve(settings["loglevel"])
 	log, _ := diag.Open(diag.Config{Program: "pi-cp", Level: level, Stderr: os.Stderr})

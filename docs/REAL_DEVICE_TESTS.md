@@ -624,3 +624,21 @@ console bridge were not used by that process. No Pi package, persistent file,
 configuration or service was modified; the broker source remained in memory.
 Selected ICE route, direct interactive mode, long-session authorization and
 physical iSH behavior were not established by this short test.
+
+## Owner-run iSH relay command, 23 October 2026
+
+The owner ran the provided Go 1.27.3 Linux/386 softfloat, CGO-disabled build with
+`GOMAXPROCS=1 PI_SH_ISH_RELAY=1`, direct login and the experimental non-TTY command
+`printf "ish-ok\n"; exit 23`. The sanitized transcript establishes completed
+password/TOTP login and discovery, the explicit interface-free relay mode,
+ICE/peer connected, a shell data channel opened in 16835 ms, output `ish-ok`,
+and command completion at 23. The owner's immediate `echo $?` also returned 23.
+
+This is one physical iSH end-to-end command through the Connect session's relay.
+No Pi package, configuration, service or persistent file was modified. It does
+not verify interactive shell, transfers, long sessions, cancellation, suspension,
+network transitions or repeated success. App/build, iOS version, device model
+and the installed binary digest were not supplied. The provided build had SHA-256
+`07ff8f6408150ac62057712fe63ddaa443f16692eb3838d807461640cac6612b`.
+See [iSH investigation](ISH_COMPATIBILITY.md) for the preceding interface probe,
+the default-path EINVAL and the local authenticated TURN integration tests.

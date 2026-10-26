@@ -10,6 +10,11 @@ Pi or Connect session was used for this increment; native verification is pendin
 
 ## Controls
 
+`pi-cp -q` also disables its [scp-style progress meter](SCP_PROGRESS.md),
+independently of connection diagnostics. Any `-q` keeps progress off after later
+`-v` flags; `-oLogLevel=QUIET` alone does not turn it off. The meter goes to
+foreground terminal stdout, not the diagnostic stderr/log destination.
+
 | Control | pi-sh | pi-cp / pi-sftp |
 | --- | --- | --- |
 | `-v`, `-vv`, `-vvv` | First `-v` selects DEBUG1 from any level, each further `-v` increments the current level up to DEBUG3 (`-vvvv` = DEBUG3) | Same accumulation, applied to the connection layer, as scp/sftp pass `-v` to ssh |

@@ -5,8 +5,11 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pion/logging"
@@ -31,19 +34,35 @@ const (
 )
 
 var (
-	ErrClosed          = errors.New("WebRTC transport closed")
-	ErrPeer            = errors.New("WebRTC peer operation failed")
-	ErrDescription     = errors.New("invalid WebRTC session description")
-	ErrChannelLimit    = errors.New("WebRTC channel limit exceeded")
-	ErrMessageSize     = errors.New("WebRTC message exceeds local limit")
-	ErrReceiveOverflow = errors.New("WebRTC receive queue exhausted")
+	ErrClosed           = errors.New("WebRTC transport closed")
+	ErrPeer             = errors.New("WebRTC peer operation failed")
+	ErrDescription      = errors.New("invalid WebRTC session description")
+	ErrChannelLimit     = errors.New("WebRTC channel limit exceeded")
+	ErrMessageSize      = errors.New("WebRTC message exceeds local limit")
+	ErrReceiveOverflow  = errors.New("WebRTC receive queue exhausted")
+	ErrRelayRequired    = errors.New("experimental iSH relay mode requires an authenticated TURN server from session configuration")
+	ErrRelayUnavailable = errors.New("experimental iSH relay mode gathered no relay candidate")
 )
+
+// operation is a local constant. Never retain the underlying error: Pion and
+// network errors may contain session descriptions, addresses or credentials.
+// Numeric syscall errors are safe and useful on partially implemented kernels.
+func peerOperationError(operation string, cause error) error {
+	var errno syscall.Errno
+	if errors.As(cause, &errno) {
+		return fmt.Errorf("%w (operation=%s errno=%d)", ErrPeer, operation, uint64(errno))
+	}
+	return fmt.Errorf("%w (operation=%s)", ErrPeer, operation)
+}
 
 // Config contains only transport configuration. ICE servers must come from an
 // authorised source; none are hard-coded. Credentials are used in memory only.
 type Config struct {
 	ICEServers []webrtc.ICEServer
 	RelayOnly  bool
+	// RelayWithoutInterfaces is an experimental path for environments such as
+	// iSH that cannot enumerate interfaces. It requires authenticated TURN.
+	RelayWithoutInterfaces bool
 	// DeadPeerTimeout, when positive, is how long the peer may stay silent
 	// before the connection fails and Close runs. ICE consent checks (STUN
 	// binding requests authenticated with the negotiated ICE credentials) are
@@ -53,12 +72,13 @@ type Config struct {
 }
 
 type Peer struct {
-	pc       *webrtc.PeerConnection
-	done     chan struct{}
-	incoming chan *Channel
-	once     sync.Once
-	mu       sync.Mutex
-	channels []*Channel
+	pc                     *webrtc.PeerConnection
+	relayWithoutInterfaces bool
+	done                   chan struct{}
+	incoming               chan *Channel
+	once                   sync.Once
+	mu                     sync.Mutex
+	channels               []*Channel
 }
 
 func settings() webrtc.SettingEngine {
@@ -72,6 +92,13 @@ func settings() webrtc.SettingEngine {
 }
 
 func New(ctx context.Context, cfg Config) (*Peer, error) {
+	switch os.Getenv("PI_SH_ISH_RELAY") {
+	case "", "0":
+	case "1":
+		cfg.RelayWithoutInterfaces = true
+	default:
+		return nil, errors.New("PI_SH_ISH_RELAY must be 0 or 1")
+	}
 	return newPeer(ctx, cfg, settings())
 }
 
@@ -79,19 +106,26 @@ func newPeer(ctx context.Context, cfg Config, s webrtc.SettingEngine) (*Peer, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if cfg.RelayWithoutInterfaces {
+		if !authenticatedTURN(cfg.ICEServers) {
+			return nil, ErrRelayRequired
+		}
+		configureInterfaceFreeRelay(&s)
+		diag.From(ctx).Info("transport: experimental iSH relay mode enabled; local interface discovery disabled")
+	}
 	if t := cfg.DeadPeerTimeout; t > 0 {
 		disconnected := min(5*time.Second, t/2)
 		s.SetICETimeouts(disconnected, t-disconnected, max(min(2*time.Second, t/4), time.Millisecond))
 	}
 	c := webrtc.Configuration{ICEServers: cfg.ICEServers}
-	if cfg.RelayOnly {
+	if cfg.RelayOnly || cfg.RelayWithoutInterfaces {
 		c.ICETransportPolicy = webrtc.ICETransportPolicyRelay
 	}
 	pc, err := webrtc.NewAPI(webrtc.WithSettingEngine(s)).NewPeerConnection(c)
 	if err != nil {
-		return nil, ErrPeer
+		return nil, peerOperationError("new-peer", err)
 	}
-	p := &Peer{pc: pc, done: make(chan struct{}), incoming: make(chan *Channel, maxChannels)}
+	p := &Peer{pc: pc, relayWithoutInterfaces: cfg.RelayWithoutInterfaces, done: make(chan struct{}), incoming: make(chan *Channel, maxChannels)}
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		ch, err := p.add(dc)
 		if err != nil {
@@ -165,7 +199,7 @@ func (p *Peer) CreateChannel(label string) (*Channel, error) {
 	}
 	dc, err := p.pc.CreateDataChannel(label, nil)
 	if err != nil {
-		return nil, ErrPeer
+		return nil, peerOperationError("create-data-channel", err)
 	}
 	ch := newChannel(dc)
 	p.channels = append(p.channels, ch)
@@ -197,7 +231,7 @@ func (p *Peer) Offer(ctx context.Context) (webrtc.SessionDescription, error) {
 	}
 	d, err := p.pc.CreateOffer(nil)
 	if err != nil {
-		return webrtc.SessionDescription{}, ErrPeer
+		return webrtc.SessionDescription{}, peerOperationError("create-offer", err)
 	}
 	return p.local(ctx, d)
 }
@@ -214,7 +248,7 @@ func (p *Peer) Answer(ctx context.Context, offer webrtc.SessionDescription) (web
 	}
 	d, err := p.pc.CreateAnswer(nil)
 	if err != nil {
-		return webrtc.SessionDescription{}, ErrPeer
+		return webrtc.SessionDescription{}, peerOperationError("create-answer", err)
 	}
 	return p.local(ctx, d)
 }
@@ -232,7 +266,7 @@ func (p *Peer) ApplyAnswer(answer webrtc.SessionDescription) error {
 func (p *Peer) local(ctx context.Context, d webrtc.SessionDescription) (webrtc.SessionDescription, error) {
 	complete := webrtc.GatheringCompletePromise(p.pc)
 	if err := p.pc.SetLocalDescription(d); err != nil {
-		return webrtc.SessionDescription{}, ErrPeer
+		return webrtc.SessionDescription{}, peerOperationError("set-local-description", err)
 	}
 	select {
 	case <-ctx.Done():
@@ -243,7 +277,10 @@ func (p *Peer) local(ctx context.Context, d webrtc.SessionDescription) (webrtc.S
 	case <-complete:
 		d := p.pc.LocalDescription()
 		if d == nil {
-			return webrtc.SessionDescription{}, ErrPeer
+			return webrtc.SessionDescription{}, peerOperationError("read-local-description", nil)
+		}
+		if p.relayWithoutInterfaces && !hasRelayCandidate(d.SDP) {
+			return webrtc.SessionDescription{}, ErrRelayUnavailable
 		}
 		return *d, nil
 	}

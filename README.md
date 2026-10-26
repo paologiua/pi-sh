@@ -63,8 +63,18 @@ See [connection policy](docs/CONNECTION_POLICY.md).
 Interactive mode is available with `./bin/pi-sh --direct-login raspberrypi`;
 interactive behavior was previously tested with browser-assisted signaling,
 while the new direct mode's real-device evidence currently covers the command
-above. Linux/Windows and physical iSH runtime remain unverified.
+above. Physical iSH has now passed one non-TTY command via the experimental relay
+workaround below; interactive iSH and native Linux/Windows remain unverified.
 See [direct authentication](docs/DIRECT_LOGIN_PROBE.md) for scope and evidence.
+
+## Testing on iSH
+
+For the physical iSH interface-enumeration blocker and the opt-in experimental
+`GOMAXPROCS=1 PI_SH_ISH_RELAY=1` relay workaround, see
+[iSH investigation and test instructions](docs/ISH_COMPATIBILITY.md).
+The owner verified direct login, WebRTC relay connection and one non-TTY command
+on physical iSH: `ish-ok`, exit status 23. Interactive shell and broader iSH
+runtime behavior remain unverified.
 
 ## Local configuration and aliases
 
@@ -81,6 +91,11 @@ effective configuration without logging in or connecting. See
 Config-file/alias integration has local tests; new real-Pi verification is pending.
 
 ## Experimental file-transfer clients
+
+`pi-cp` now shows [scp-style per-file progress](docs/SCP_PROGRESS.md) in a
+foreground terminal: percent, size, speed and ETA. `-q` disables it; redirected
+stdout stays free of progress lines. Local OpenSSH comparisons pass; physical
+iSH file-transfer/progress verification remains pending.
 
 `pi-sftp` now provides a command console/batch subset and `pi-cp` copies regular
 files and literal directory trees with `-r`, using SFTP over the existing binary Bash broker. They require an existing
@@ -229,7 +244,8 @@ pending. See [command cancellation](docs/COMMAND_CANCELLATION.md).
   without companion confirmation; direct mode checks through its own HTTPS
   session. Saved login, automatic reauthentication and ICE renewal are absent.
 - macOS real-device behavior is verified. Linux/Windows and Linux/386 build;
-  native Linux/Windows console and physical iSH testing remain pending.
+  native Linux/Windows console and broader physical iSH testing remain pending;
+  one iSH non-TTY command passed with the explicit relay workaround.
 
 ## Development and evidence
 
