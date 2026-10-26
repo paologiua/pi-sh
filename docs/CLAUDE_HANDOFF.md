@@ -45,6 +45,17 @@ e verificato sul Pi il 2026-10-22, insieme al piano di trasferimento completo
   Non estenderla ad altri percorsi, carichi o failure injection invasive.
 - Non pubblicare, fare push o contattare Raspberry Pi. La licenza del progetto
   e le verifiche di condizioni del servizio prima della pubblicazione sono aperte.
+  Il 2026-10-26 sono state lette le condizioni di Connect (versione 20 ottobre
+  2026, https://connect.raspberrypi.com/terms). Clausole rilevanti: §2.8(a)(ii)
+  divieto di reverse engineering, salvo le eccezioni di legge per
+  l'interoperabilità; §2.8(e) divieto di aiutare terzi ad accedere in modo
+  diverso da quanto previsto; §11.5 riservatezza, che include i dettagli del
+  servizio e i risultati dei test di prestazioni; §10.3 marchi; §14.3 chiusura
+  dell'account senza preavviso. Indicazioni date al proprietario (non è
+  consulenza legale): chiedere il permesso a Raspberry Pi (lo fa il proprietario),
+  oppure pubblicare senza i documenti di ricerca sul protocollo e senza le
+  misure di prestazioni; aggiungere una licenza; mantenere l'avviso «non
+  ufficiale»; non usare loghi. Il proprietario non ha ancora deciso.
 - Le credenziali Connect e il permesso di controllo Chrome sono due passaggi
   distinti. Nessuno dei due va aggirato; chiedi intervento solo dopo il rifiuto
   effettivo. Non richiedere nuovamente l'autorizzazione alle stesse scritture.
