@@ -27,8 +27,10 @@ terminal, while Connect's shell carrier still has a PTY.
 | `-n` | No local stdin reads; no-TTY broker sends EOF; forced TTY stops input without inventing Ctrl-D; auth may still prompt |
 | `-T` | Explicit no-TTY command through the broker; interactive no-TTY shell and legacy adapter reject it |
 | `-t`, `-tt` | Experimental broker command TTY: -t requires terminal stdin without -n; -tt forces it, including pipes/-n; legacy TTY requests rejected |
-| `-o` | HostName, EscapeChar, StdinNull, RequestTTY, LogLevel and SyslogFacility; keywords case-insensitive, values case-sensitive (LogLevel/SyslogFacility values ASCII case-insensitive as in OpenSSH). Connection policy (BatchMode, ConnectTimeout, ConnectionAttempts, ServerAlive*, TCPKeepAlive, ChannelTimeout, NumberOfPasswordPrompts; User/Port always refused) per [CONNECTION_POLICY.md](CONNECTION_POLICY.md) |
-| `-l user`, `-p port` | Parsed and always refused before login: the Connect agent account is fixed and there is no SSH port (pi-sh `-P` is Tag; pi-cp/pi-sftp `-P` is the refused port) |
+| `-o` | HostName, EscapeChar, StdinNull, RequestTTY, LogLevel, SyslogFacility, User (account email), RemoteCommand (raw text) and the inert/refused keywords below; keywords case-insensitive, values case-sensitive (LogLevel/SyslogFacility values ASCII case-insensitive as in OpenSSH). Connection policy (BatchMode, ConnectTimeout, ConnectionAttempts, ServerAlive*, TCPKeepAlive, ChannelTimeout, NumberOfPasswordPrompts; User/Port always refused) per [CONNECTION_POLICY.md](CONNECTION_POLICY.md) |
+| `-l email` | Raspberry Pi ID account, first obtained in command-line order like ssh.c; a non-email user is refused ([CONNECTION_POLICY.md](CONNECTION_POLICY.md)) |
+| `-p port` | Parsed (first obtained) and always refused before login: there is no SSH port (pi-sh `-P` is Tag; pi-cp/pi-sftp `-P` is the refused port) |
+| `-4 -6 -B -b -C -c -f -I -i -K -k -m -N -s` | Refused with a specific reason; see the decision table below |
 | `-F path`, `-Fpath`, `-F none` | Read explicit root/Include files, or disable file loading; no default root config files |
 | `-V` | Offline unofficial build version on stderr; immediate exit before file/auth/network setup |
 | `-Q query`, `-Qquery` | Offline help/namespaced client capabilities on stdout; SSH algorithm queries explicitly refused; LOCAL_INSPECTION.md |
@@ -93,6 +95,55 @@ timed out after 60 seconds before reaching a browser page. No CLI/Pi connection
 was attempted. Native confirmation requires restored DevTools connectivity or an
 owner-run direct-login command; this is a test-access blocker, not an observed
 Connect protocol limitation.
+
+## Option and directive decisions (2026-10-22/23)
+
+Every known OpenSSH 10.2 option and ssh_config keyword now has a decision.
+Accepted values change nothing that pi-sh does not already do; refusals exit
+before authentication with a specific reason (pi-sh 255, pi-cp/pi-sftp 1 like
+scp/sftp usage errors). Code: `internal/sshconfig/keywords.go`,
+`cmd/pi-sh/options.go` (`refusedFlag`), `internal/cliargs/refuse.go`.
+
+| OpenSSH feature | Decision |
+| --- | --- |
+| `-l email`, `User`, `email::device` | Implemented: Raspberry Pi ID account ([CONNECTION_POLICY.md](CONNECTION_POLICY.md)) |
+| `RemoteCommand` | Implemented: raw rest-of-line text (quotes, `#`, backslashes kept), first obtained, `none` = no command; `%%`/`%h`/`%n`/`%r`/`%u`/`%d`/`%i`/`%l`/`%L` expanded (also in `-G`, as ssh does), `%p`/`%C`/`%k`/`%j`/unknown tokens refused, `%h`/`%n`/`%r` with shell metacharacters refused. With a command-line command: `Cannot execute command-line and remote command.` (also `-G`). Running it needs `--experimental-command` like any command. pi-cp/pi-sftp refuse an effective RemoteCommand (it conflicts with the SFTP session, as in ssh). |
+| `RefuseConnection` | Implemented as in OpenSSH 10.2: an obtained value (any single-word message) terminates, also for `-G`; the message is not echoed |
+| `SessionType`, `-N`, `-s` | `default` accepted; `none`/`subsystem`, `-N`, `-s` refused: Connect's shell channel always starts a shell and has no subsystem request (pi-sftp covers SFTP) |
+| `-f`, `ForkAfterAuthentication` | `no` accepted; `-f`/`yes` refused: the in-memory session cannot be handed to a forked process (Go cannot fork); use shell job control |
+| `SetEnv`, `SendEnv` | Refused: Connect has no environment request and there is no AcceptEnv policy point; injecting `export` text into the remote shell was not adopted. Candidate: prefix broker commands with validated assignments (owner decision) |
+| `LocalCommand`, `PermitLocalCommand` | `PermitLocalCommand no` accepted (OpenSSH then never runs LocalCommand); `LocalCommand` and `PermitLocalCommand yes` refused: no implicit local execution apart from Match exec |
+| `-4`, `-6`, `AddressFamily` | `any` accepted; `inet`/`inet6`, `-4`, `-6` refused: not implemented for HTTPS and Pion ICE (possible future work: tcp4/tcp6 dialer plus ICE network types) |
+| `-b`, `-B`, `BindAddress`, `BindInterface` | Refused: not implemented for HTTPS and ICE |
+| `CanonicalizeHostname` family | `CanonicalizeHostname no` accepted; `CanonicalDomains`, `CanonicalizeMaxDots`, `CanonicalizeFallbackLocal` syntax-checked and inert as in OpenSSH while canonicalization is off; `yes`/`always` and `CanonicalizePermittedCNAMEs` refused (ssh -G resolves DNS when permitted CNAMEs are set, observed locally) |
+| `-i`, `-I`, `-K`, `-k`, IdentityFile, CertificateFile, IdentitiesOnly, IdentityAgent, AddKeysToAgent, PKCS11Provider, SecurityKeyProvider, UseKeychain, PubkeyAuthentication, PasswordAuthentication, KbdInteractive*, PreferredAuthentications, ChallengeResponseAuthentication | Refused: SSH authentication does not apply to Connect sign-in. `GSSAPIAuthentication no`, `GSSAPIDelegateCredentials no`, `HostbasedAuthentication no`, `EnableSSHKeysign no` accepted (methods never used) |
+| Known hosts / host keys (StrictHostKeyChecking, UserKnownHostsFile, GlobalKnownHostsFile, HostKeyAlias, HashKnownHosts, VerifyHostKeyDNS, UpdateHostKeys, KnownHostsCommand, RevokedHostKeys, NoHostAuthenticationFor*, FingerprintHash) | Refused: no SSH host key exists; Connect HTTPS and WebRTC DTLS authenticate the path. `CheckHostIP no`, `VisualHostKey no` accepted |
+| `-c`, `-m`, Ciphers, MACs, KexAlgorithms, HostKeyAlgorithms, Pubkey/HostbasedAcceptedAlgorithms, CASignatureAlgorithms, RequiredRSASize, WarnWeakCrypto | Refused: TLS/DTLS negotiation is done by Go/Pion |
+| `-C`, `Compression` | `no` accepted; `-C`/`yes` refused: no compression in the data channel |
+| IPQoS, RekeyLimit, ObscureKeystrokeTiming | `ObscureKeystrokeTiming no` accepted; others refused |
+| VersionAddendum, LogVerbose, EnableEscapeCommandline | Refused (no SSH banner; no per-function debug filters; no `~C`) |
+| IgnoreUnknown | Refused: explicit `-F` files are validated completely so nothing is silently skipped (stricter than OpenSSH) |
+| Obsolete keywords (Protocol, Cipher, RSAAuthentication, CompressionLevel, UseRoaming, ...) | Refused (OpenSSH warns and ignores them) |
+| Forwarding/multiplexing/proxy/X11/agent/tunnel keywords and `-A -a -D -g -J -L -M -O -R -S -W -w -X -x -Y` | Owned by the forwarding work; keywords refused with a generic "not implemented (docs/FORWARDING.md)" reason, flags with the generic unsupported-option error |
+| Unknown keywords | `unsupported SSH configuration directive` (OpenSSH: `Bad configuration option`) |
+
+scp: `-B` maps to `BatchMode yes` (placed before `-o` values) and therefore
+fails with 255 before any prompt; `-s` (SFTP protocol) and `-T` (no effect in
+scp's SFTP mode) are accepted; `-3`/`-R` remote-to-remote, `-O` legacy
+protocol, `-4`/`-6`, `-C`, `-c`, `-i`, `-l` bandwidth, `-D`/`-S` program
+overrides and `-X` tuning are refused with reasons; `-A`/`-J` are forwarding.
+sftp: `-4`/`-6`, `-C`, `-N`, `-r` (recursive console transfers), `-B`/`-R`/`-X`
+tuning, `-c`, `-i`, `-l`, `-D`/`-S` are refused with reasons; `-A`/`-J` are
+forwarding. Go's flag package prints the reason (`invalid boolean flag C:
+not supported: ...`).
+
+Evidence: `TestCompletenessOpenSSHDifferential` (seven `ssh -G` comparisons of
+accepted inert keywords, raw/expanded RemoteCommand and inactive
+RefuseConnection, plus four shared rejections), `TestCompletenessRefusals`
+(41 flag/keyword refusals), `TestRemoteCommandExecution`,
+`internal/sshconfig` `TestKeywordDecisions`/`TestExpandCommand`,
+`TestSCPOptionDecisions` and `TestSFTPOptionDecisions`. All local; none needs a
+device, and RemoteCommand execution on the Pi is unverified.
 
 ## Diagnostics
 

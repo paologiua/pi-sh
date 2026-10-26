@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -27,6 +29,33 @@ func localPeer(t *testing.T, ctx context.Context) *Peer {
 	}
 	t.Cleanup(func() { _ = p.Close() })
 	return p
+}
+
+func TestOfferFailureIdentifiesOperation(t *testing.T) {
+	p := localPeer(t, context.Background())
+	_ = p.Close()
+	_, err := p.Offer(context.Background())
+	if !errors.Is(err, ErrPeer) || !strings.Contains(err.Error(), "operation=create-offer") {
+		t.Fatalf("offer failure lacks safe operation context: %v", err)
+	}
+}
+
+func TestPeerFailureDoesNotExposeUnderlyingError(t *testing.T) {
+	for _, cause := range []error{
+		errors.New("private session description password=secret"),
+		fmt.Errorf("private session description password=secret: %w", syscall.ENOSYS),
+	} {
+		err := peerOperationError("create-offer", cause)
+		if !errors.Is(err, ErrPeer) || strings.Contains(err.Error(), "private") || strings.Contains(err.Error(), "secret") {
+			t.Fatalf("unsafe peer error: %v", err)
+		}
+		if errors.Unwrap(err) != ErrPeer {
+			t.Fatal("underlying sensitive error retained")
+		}
+		if errors.Is(cause, syscall.ENOSYS) && !strings.Contains(err.Error(), fmt.Sprintf("errno=%d", uint64(syscall.ENOSYS))) {
+			t.Fatalf("syscall error code missing: %v", err)
+		}
+	}
 }
 
 func negotiate(t *testing.T, ctx context.Context, a, b *Peer, modify func(*webrtc.SessionDescription)) {

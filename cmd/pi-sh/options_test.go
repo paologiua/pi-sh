@@ -26,7 +26,8 @@ func TestOptionsBoundariesAndValidation(t *testing.T) {
 		{"--browser", "-oRequestTTY=maybe"}, {"--browser", "-oEscapeChar=ab"},
 		{"--browser", "-oStdinNull=yes extra"}, {"--browser", "-oStdinNull=yes\nLocalCommand=x"},
 		{"--browser", "--direct-login"}, {"--browser", "--experimental-command", "--legacy-command"},
-		{"--browser", "-T", "device"}, {"--browser", "-n", "device"},
+		{"--browser", "--legacy-shell", "-T", "device"}, {"--browser", "--legacy-shell", "-n", "device"},
+		{"--browser", "--legacy-shell", "device", "true"}, {"--browser", "--legacy-shell", "--experimental-command", "device", "true"},
 		{"--browser", "--legacy-command", "-tt", "device", "true"},
 		{"--browser", "--legacy-command", "-T", "device", "true"},
 		{"--browser", "device", "echo"}, {"--browser", "--experimental-command", "device"},
@@ -172,12 +173,20 @@ func TestRequestTTYPolicy(t *testing.T) {
 					o := options{tty: policy, stdinNull: null, broker: command}
 					got, warning := o.requestTTY(terminal)
 					want := policy == "force" || ((policy == "yes" || (policy == "auto" && !command)) && terminal && !null)
-					wantWarning := policy == "yes" && (!terminal || null)
+					// OpenSSH logs the notice whenever a TTY was wanted but suppressed.
+					wantWarning := (policy == "yes" || (policy == "auto" && !command)) && (!terminal || null)
 					if got != want || warning != wantWarning {
 						t.Fatalf("%s terminal=%v null=%v command=%v: %v/%v want %v/%v", policy, terminal, null, command, got, warning, want, wantWarning)
 					}
 				}
 			}
+		}
+	}
+	// A login shell, like ssh without a command, accepts every TTY policy and -n.
+	for _, flags := range [][]string{{}, {"-T"}, {"-n"}, {"-t"}, {"-tt"}, {"-nT"}, {"-oRequestTTY=no"}} {
+		args := append([]string{"--direct-login"}, flags...)
+		if _, err := parseOptions(append(args, "device")); err != nil {
+			t.Fatal("login shell policy rejected", flags, err)
 		}
 	}
 	for _, flags := range [][]string{{"-t"}, {"-tt"}, {"-n", "-oRequestTTY=force"}} {

@@ -369,3 +369,41 @@ func TestShellBrokerSlowConsumer(t *testing.T) {
 		t.Fatalf("slow output: code=%d err=%v out=%d stderr=%q", code, err, out.Len(), stderr.String())
 	}
 }
+
+// Pipelined input: several I records are in flight when the command closes
+// stdin. Records arriving after K must be dropped without a protocol failure.
+func TestShellBrokerEarlyCloseWithPipelinedInput(t *testing.T) {
+	input := bytes.Repeat([]byte{0, 0xff, 'x', '\n'}, 256*1024)
+	var out, stderr bytes.Buffer
+	code, err := runLocal(t, "head -c 5000 >/dev/null; exec 0<&-; printf closed; exit 4", bytes.NewReader(input), &out, &stderr)
+	if err != nil || code != 4 || out.String() != "closed" || stderr.Len() != 0 {
+		t.Fatalf("code=%d err=%v stdout=%q stderr=%q", code, err, out.String(), stderr.String())
+	}
+}
+
+type promptAnswerer struct {
+	bytes.Buffer
+	answer *io.PipeWriter
+	sent   bool
+}
+
+func (w *promptAnswerer) Write(b []byte) (int, error) {
+	n, err := w.Buffer.Write(b)
+	if !w.sent && bytes.Contains(w.Bytes(), []byte("prompt>")) {
+		w.sent = true
+		go func() { _, _ = w.answer.Write([]byte("answer\n")); _ = w.answer.Close() }()
+	}
+	return n, err
+}
+
+// A short partial record must be delivered while the command waits for input;
+// output readers may not hold bytes back to fill a larger record.
+func TestShellBrokerPartialOutputIsNotHeldBack(t *testing.T) {
+	stdin, answer := io.Pipe()
+	out := &promptAnswerer{answer: answer}
+	var stderr bytes.Buffer
+	code, err := runLocal(t, `printf 'prompt>'; printf 'e>' >&2; read x; printf 'got:%s' "$x"`, stdin, out, &stderr)
+	if err != nil || code != 0 || out.String() != "prompt>got:answer" || stderr.String() != "e>" {
+		t.Fatalf("code=%d err=%v stdout=%q stderr=%q", code, err, out.String(), stderr.String())
+	}
+}

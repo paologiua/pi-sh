@@ -767,3 +767,66 @@ patches 001–037; no signature verification is claimed. Before the fix the
 late-newline case stalled 2/2 with 5.2.37 and passed 3/3 with 5.3; after it,
 3/3 with both. The whole shellbroker and cmd packages pass with 5.2.37, and the
 full race suite with 5.3. That 5.2 build is ephemeral and not used by CI.
+
+## Broker throughput benchmark and data-path regressions — 2026-10-23
+
+`TestShellBrokerThroughputBenchmark` is opt-in. It runs the real broker over a
+local PTY with an order-preserving carrier that delays each direction by half
+the simulated round trip (sends return after local queuing, like WebRTC):
+
+```sh
+PI_SH_BROKER_BENCH=1 PI_SH_BROKER_BENCH_BYTES=262144 PI_SH_BROKER_BENCH_RTT=0,10,40 \
+  go test ./internal/shellbroker -run ThroughputBenchmark -v -timeout 3600s
+```
+
+Results before and after the pipelined data path are in SHELL_BROKER.md
+("Data-path throughput"); both Bash 5.3 and the scratch 5.2.37 were measured.
+New regressions: `TestShellBrokerEarlyCloseWithPipelinedInput` (command closes
+stdin with several input records in flight), `TestShellBrokerPartialOutputIsNotHeldBack`
+(a short prompt reaches the client while the command waits for input),
+`TestBrokerAbortAcceptsCompletionAlreadyInFlight` and
+`TestShellBrokerAbortAfterRemoteCompletion` (cleanup confirmed when `X` was
+already in flight). The cmd/pi-sh synthetic broker now speaks the
+`I seq length hex` record. The shellbroker package passed with Bash 5.3 (under
+`-race`) and 5.2.37; `TestShellBrokerMegabyteStdinCount` including
+`late-newlines` passes with both. Native throughput is unmeasured;
+`scripts/native-broker-throughput.sh` (dry run by default) is the read-only
+procedure.
+
+## Intermittent `caught-suspend` diagnosed — 2026-10-26
+
+`TestStagedTTYControllerAcrossCarriers/*/caught-suspend` failed again after the
+broker merge (`seen:` with an empty line). A bare-PTY script with no pi-sh code
+(send `^Z`, wait for the trap's output, then `x\r`) reproduced it with macOS
+`/bin/sh`, Bash 3.2: 3 of 100 runs lost the line, while Bash 5.3 lost 0 of 100.
+The fixtures ran their command under `SHELL=/bin/sh`, so the loss came from
+Bash 3.2 and not from the TTY adapter. A trapped TSTP also interrupts `read` in
+modern Bash (status >128), which made `^Z` and the line in one write racy too.
+
+The fixtures (`caught-suspend` in the staged controller and OpenSSH differential
+tests) now run under the modern test Bash with an absolute path (the reference
+sshd's PATH resolves `bash` to 3.2), retry an interrupted `read`, and send the
+line only after the handler's output (`sendTTYInput`); the controller test checks
+handler and line in order, since the echo now falls between them. Both tests
+then passed 30 consecutive runs (`-count=30`), followed by the full race suite.
+This does not test Bash 3.2 as a remote shell; the Pi's shell is Bash 5.2.37.
+
+`openSSHDump`/`compareDump` moved from the Unix-only `match_test.go` to the
+portable `openssh_dump_test.go`: the Windows test build had failed since the CLI
+branch (`account_test.go`, `completeness_test.go`). The seven targets now
+compile the tests.
+
+## Verification after merging broker and terminal branches — 2026-10-27
+
+On `main` 81df74a: root and fork vet, `go mod verify`, fork race suite and the
+seven CGO-disabled targets (build and test compilation) passed. A first full race
+run, while separate copycli repetitions loaded the Mac, failed three tests:
+`TestRecursiveCopyAgainstLocalSCP` (one regular-file atime; control intact, the
+environmental reader described in SFTP_LISTING.md hits about 65% of files),
+`TestShellBrokerAbortAfterRemoteCompletion` ("cleanup was not confirmed") and
+`TestSFTPMegabyteOverActualBrokerWebRTCAndOpenSSHServer` ("connection lost"),
+with the shellbroker package taking 185 s instead of about 70 s. Rerun without the
+extra load: the recursive differential 6/6, the two broker tests 5/5 under
+`-race`, then the whole race suite passed. The broker pair is load-sensitive:
+abort waits a bounded time for `X`/`D`, and reports cleanup as unconfirmed when
+it does not arrive, which is the honest outcome rather than a false success.

@@ -88,6 +88,7 @@ _pt_run() {
     exec "$_pt_shell" -c "$_pt_command" </dev/tty >/dev/tty 2>/dev/tty
   }
   local command_pid=$_PT_CMD_PID command_in=${_PT_CMD[1]} command_out=${_PT_CMD[0]}
+  _pt_child=$command_pid
   # Readiness follows restored terminal modes; input cannot race stty's flush.
   printf '%sTR\037' "$_pt_prefix" || exit 125
   printf 'start\n' >&$command_in || exit 125
@@ -116,6 +117,7 @@ _pt_run() {
     fi
   done
   wait "$command_pid"; status=$?
+  _pt_child= # reaped: never signal a possibly reused PID
   trap - CHLD
   exec 2>/dev/null 4>&- 5<&- 6>&-
   kill "$metadata_pid" "$idle_pid" 2>/dev/null
@@ -139,11 +141,17 @@ _pt_main() {
   local _pt_columns=$_ps_columns _pt_rows=$_ps_rows
   local -a _pt_modes=("${_ps_modes[@]}")
   local _pt_command=$_ps_command _pt_complete=0 _pt_owner=$$
+  local _pt_child=
   # Bash -im acquired the dedicated carrier group before disabling monitor.
   # Never allow PID 1 to become kill's special process-selection operand -1.
   ((_pt_owner>1)) || exit 125
   _pt_abort() {
     trap - EXIT CHLD HUP TERM
+    # A job-control shell (the login shell) leaves this group. Like sshd's
+    # session leader it gets HUP (and CONT), which it resends to its jobs.
+    if [[ $_pt_child =~ ^[0-9]+$ ]] && ((_pt_child>1)); then
+      kill -HUP -- "$_pt_child" 2>/dev/null; kill -CONT -- "$_pt_child" 2>/dev/null
+    fi
     # This is the fresh carrier's group, not an externally selected process.
     # The self PID fallback terminates the controller if group setup failed.
     kill -KILL -- "-$_pt_owner" "$_pt_owner" 2>/dev/null

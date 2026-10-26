@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"pi-sh/internal/account"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/sshconfig"
@@ -16,19 +17,28 @@ import (
 // local commands are read or executed implicitly.
 type options struct {
 	browser, direct, broker, legacy, dump bool
-	stdinNull                             bool
-	escape                                string
-	tty                                   string
-	args                                  []string
-	configFile, hostname                  string
-	tag                                   string
-	tagSet                                bool
-	inspection, query                     string
+	// legacyShell selects the agent's raw shell stream instead of the login
+	// shell launched through the in-memory TTY/no-TTY adapters.
+	legacyShell          bool
+	stdinNull            bool
+	escape               string
+	tty                  string
+	args                 []string
+	configFile, hostname string
+	tag                  string
+	tagSet               bool
+	inspection, query    string
 	// connection holds first-obtained connection-policy values (User, Port,
 	// BatchMode, timeouts ...); policy is the validated result.
 	connection map[string]string
 	policy     connpolicy.Policy
 	logging    logOptions
+	// remoteCommand is the first obtained RemoteCommand (raw; "none" = no
+	// command); it supplies the command when none is given on the CLI.
+	remoteCommand string
+	// destinationParsed records that the destination's account/port were
+	// seeded at its command-line position (first obtained, as in ssh.c).
+	destinationParsed bool
 }
 
 func parseOptions(args []string) (options, error) {
@@ -45,6 +55,9 @@ func parseOptions(args []string) (options, error) {
 				// OpenSSH resumes option parsing after the destination, until
 				// the first command word or an explicit -- terminates it.
 				o.args = append(o.args, a)
+				if err := o.parseDestination(seen); err != nil {
+					return o, err
+				}
 				continue
 			}
 			o.args = append(o.args, args[i:]...)
@@ -60,6 +73,8 @@ func parseOptions(args []string) (options, error) {
 				o.broker = true
 			case "--legacy-command":
 				o.legacy = true
+			case "--legacy-shell":
+				o.legacyShell = true
 			default:
 				return o, errors.New("unsupported pi-sh option")
 			}
@@ -109,14 +124,18 @@ func parseOptions(args []string) (options, error) {
 					o.escape = value
 					seen["escapechar"] = true
 				case 'l', 'p':
-					// Parsed so the refusal is specific; connpolicy rejects any
-					// explicit user or port after all sources are merged.
+					// First obtained, like ssh.c (and relative to the
+					// destination's position). -l selects the Raspberry Pi ID
+					// account; a non-email user and any port are refused by
+					// connpolicy after all sources are merged.
 					key := map[byte]string{'l': "user", 'p': "port"}[c]
 					if err := connpolicy.Validate(key, value); err != nil {
 						return o, err
 					}
-					o.connection[key] = value
-					seen[key] = true
+					if !seen[key] {
+						o.connection[key] = value
+						seen[key] = true
+					}
 				case 'P':
 					// ssh -P is first-obtained like -o Tag and may be empty.
 					if !seen["tag"] {
@@ -142,6 +161,10 @@ func parseOptions(args []string) (options, error) {
 					}
 				}
 				j = len(a)
+			case '4', '6', 'C', 'f', 'K', 'k', 'N', 's', 'B', 'b', 'c', 'I', 'i', 'm':
+				// Known ssh(1) options with an explicit decision; see
+				// refusedFlag. Their operands, if any, are never interpreted.
+				return o, fmt.Errorf("option -%c is not supported: %s", c, refusedFlag(c))
 			default:
 				if c < 'A' || c > 'z' {
 					return o, errors.New("unsupported SSH option")
@@ -153,23 +176,15 @@ func parseOptions(args []string) (options, error) {
 	if o.logging.syslog && o.logging.useFile {
 		return o, diag.ErrBothDestinations
 	}
-	if len(o.args) > 0 {
-		target, err := sshdest.SSH(o.args[0])
-		if err != nil {
+	if len(o.args) > 0 && !o.destinationParsed {
+		// A destination after an explicit -- follows every option.
+		if err := o.parseDestination(seen); err != nil {
 			return o, err
 		}
-		// -l/-p and earlier -o values take precedence over the destination, as
-		// in OpenSSH; any explicit user or port is refused below either way.
-		for key, value := range map[string]string{"user": target.User, "port": target.Port} {
-			if value != "" && !seen[key] {
-				o.connection[key] = value
-				seen[key] = true
-			}
-		}
-		o.args[0] = target.Host
-		if _, err := sshconfig.Hostname("%h", o.args[0]); err != nil {
-			return o, err
-		}
+	}
+	defaultAccount, err := account.Default()
+	if err != nil {
+		return o, err
 	}
 	if o.configFile != "" && o.configFile != "none" {
 		if len(o.args) == 0 {
@@ -189,7 +204,7 @@ func parseOptions(args []string) (options, error) {
 		}
 		// Match command/sessiontype see the words ssh would join for exec.
 		values, err := sshconfig.LoadContext(o.configFile, sshconfig.Context{
-			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "),
+			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "), DefaultUser: defaultAccount,
 		})
 		if err != nil {
 			return o, configError{err}
@@ -216,10 +231,13 @@ func parseOptions(args []string) (options, error) {
 	if _, err := parseEscape(o.escape); err != nil {
 		return o, err
 	}
-	var err error
+	if err := o.applyRemoteCommand(defaultAccount); err != nil {
+		return o, err
+	}
 	if o.policy, err = connpolicy.FromValues(o.connection); err != nil {
 		return o, err
 	}
+	o.policy.DefaultAccount = defaultAccount
 	if len(o.args) > 0 {
 		if err := connpolicy.Target(o.destination()); err != nil {
 			return o, err
@@ -247,14 +265,71 @@ func parseOptions(args []string) (options, error) {
 	if o.legacy && o.tty == "no" {
 		return o, errors.New("legacy command adapter cannot provide no-TTY semantics")
 	}
-	if !command && (o.tty == "no" || o.stdinNull) {
-		return o, errors.New("noninteractive shell requires the command broker and an explicit command")
+	if o.legacyShell && command {
+		return o, errors.New("the legacy shell stream cannot run a command")
+	}
+	// The raw agent shell stream has no TTY policy, stdin EOF or exit status.
+	if o.legacyShell && (o.tty == "no" || o.stdinNull) {
+		return o, errors.New("noninteractive shell requires the in-memory adapter, not the legacy shell stream")
 	}
 	return o, nil
 }
 
+// applyRemoteCommand follows ssh(1): RemoteCommand together with a
+// command-line command is an error (also for -G); otherwise its %-expanded
+// text becomes the command, which still needs an explicit command adapter.
+// -G prints the expanded text, as ssh -G does.
+func (o *options) applyRemoteCommand(defaultAccount string) error {
+	if o.remoteCommand == "" || o.remoteCommand == "none" {
+		return nil
+	}
+	if len(o.args) > 1 {
+		return errors.New("Cannot execute command-line and remote command.")
+	}
+	if len(o.args) == 0 {
+		return nil
+	}
+	user := o.connection["user"]
+	if user == "" {
+		user = defaultAccount
+	}
+	text, err := sshconfig.ExpandCommand(o.remoteCommand, o.args[0], o.destination(), user)
+	if err != nil {
+		return fmt.Errorf("RemoteCommand: %w", err)
+	}
+	o.remoteCommand = text
+	if !o.dump {
+		o.args = append(o.args, text)
+	}
+	return nil
+}
+
+// parseDestination splits o.args[0] into the target and seeds its account
+// and port where they are first obtained. A plain user@host is refused here,
+// even if -l or -o User was given earlier.
+func (o *options) parseDestination(seen map[string]bool) error {
+	o.destinationParsed = true
+	target, err := sshdest.SSH(o.args[0])
+	if err != nil {
+		return err
+	}
+	if err := connpolicy.DestinationUser(target); err != nil {
+		return err
+	}
+	for key, value := range map[string]string{"user": target.User, "port": target.Port} {
+		if value != "" && !seen[key] {
+			o.connection[key] = value
+			seen[key] = true
+		}
+	}
+	o.args[0] = target.Host
+	_, err = sshconfig.Hostname("%h", o.args[0])
+	return err
+}
+
 // Like OpenSSH, a non-forced request is suppressed when stdin is not a terminal
-// or StdinNull is selected. A command's automatic policy requests no TTY.
+// or StdinNull is selected, with a notice whenever a TTY had been wanted. A
+// command's automatic policy requests no TTY; a login shell's requests one.
 func (o options) requestTTY(stdinTerminal bool) (enabled, warning bool) {
 	wanted := o.tty == "force" || o.tty == "yes" || (o.tty == "auto" && !o.broker && !o.legacy)
 	if !wanted {
@@ -264,7 +339,7 @@ func (o options) requestTTY(stdinTerminal bool) (enabled, warning bool) {
 		return true, false
 	}
 	if !stdinTerminal || o.stdinNull {
-		return false, o.tty == "yes"
+		return false, true
 	}
 	return true, false
 }
@@ -272,6 +347,9 @@ func (o options) requestTTY(stdinTerminal bool) (enabled, warning bool) {
 // Parse only one scalar directive; reject additional tokens instead of silently
 // ignoring local-execution directives or malformed configuration.
 func scalarOption(s string) (string, string, error) {
+	if key, value, ok := sshconfig.RawCommand(s); ok {
+		return key, value, nil
+	}
 	key, args, err := sshconfig.Fields(s)
 	if err != nil {
 		return "", "", err
@@ -306,10 +384,36 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			o.logging.level = value
 		case "syslogfacility":
 			o.logging.facility = value
+		case "remotecommand":
+			o.remoteCommand = value
+		case "refuseconnection":
+			// As in OpenSSH 10.2, an obtained value always terminates.
+			return errors.New("RefuseConnection: connection refused by configuration")
 		}
 		seen[key] = true
 	}
 	return nil
+}
+
+// refusedFlag explains the decision for known ssh(1) flags that have no
+// Connect equivalent. Forwarding/multiplexing flags are documented in
+// docs/FORWARDING.md and keep the generic refusal.
+func refusedFlag(c byte) string {
+	switch c {
+	case '4', '6':
+		return sshconfig.ReasonFamily
+	case 'B', 'b':
+		return sshconfig.ReasonBind
+	case 'C':
+		return sshconfig.ReasonCompress
+	case 'f':
+		return sshconfig.ReasonFork
+	case 'N', 's':
+		return sshconfig.ReasonSession
+	case 'c', 'm':
+		return sshconfig.ReasonCrypto
+	}
+	return sshconfig.ReasonAuth // -i, -I, -K, -k
 }
 
 func (o options) destination() string {
@@ -330,6 +434,13 @@ func (o options) stdin(input io.Reader) io.Reader {
 }
 
 func (o options) writeConfig(w io.Writer) error {
+	// ssh -G prints the effective user; for pi-sh that is the Raspberry Pi
+	// ID account, explicit or the local default, and nothing when unknown.
+	if user := o.policy.LoginAccount(); user != "" {
+		if _, err := fmt.Fprintf(w, "user %s\n", user); err != nil {
+			return err
+		}
+	}
 	if len(o.args) > 0 {
 		if _, err := fmt.Fprintf(w, "hostname %s\n", o.destination()); err != nil {
 			return err
@@ -365,6 +476,11 @@ func (o options) writeConfig(w io.Writer) error {
 	}
 	if o.tagSet {
 		if _, err := fmt.Fprintf(w, "tag %s\n", o.tag); err != nil {
+			return err
+		}
+	}
+	if o.remoteCommand != "" && o.remoteCommand != "none" {
+		if _, err := fmt.Fprintf(w, "remotecommand %s\n", o.remoteCommand); err != nil {
 			return err
 		}
 	}

@@ -108,6 +108,15 @@ func (p *parser) parse(r io.Reader, active, never bool, depth int) error {
 }
 
 func (p *parser) directive(text string, active *bool, never bool, depth int) error {
+	if key, value, ok := RawCommand(text); ok {
+		if err := Validate(key, value); err != nil {
+			return err
+		}
+		if _, exists := p.values[key]; *active && !exists {
+			p.values[key] = value
+		}
+		return nil
+	}
 	key, args, err := Fields(text)
 	if err != nil || key == "" {
 		return err
@@ -177,11 +186,24 @@ func (p *parser) directive(text string, active *bool, never bool, depth int) err
 		}
 		return nil
 	}
+	if MultiValue(key) && len(args) > 1 {
+		for _, arg := range args[1:] {
+			if err := Validate(key, arg); err != nil {
+				return err
+			}
+		}
+		args = args[:1]
+	}
 	if len(args) != 1 {
 		return errors.New("expected one scalar value")
 	}
 	if err := Validate(key, args[0]); err != nil {
 		return err
+	}
+	if key == "refuseconnection" && *active {
+		// OpenSSH 10.2 terminates as soon as an active line is read, even
+		// for ssh -G. The message is configuration text and is not echoed.
+		return errors.New("RefuseConnection: connection refused by configuration")
 	}
 	if _, exists := p.values[key]; *active && !exists {
 		p.values[key] = args[0]

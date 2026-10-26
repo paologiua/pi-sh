@@ -18,6 +18,9 @@ type abortStream struct {
 	closed         bool
 	cancelOnCommit context.CancelFunc
 	commitError    error
+	// completedBeforeAbort models a broker that emitted X and exited before
+	// C arrived: C is never answered, but X is still in flight.
+	completedBeforeAbort bool
 }
 
 func (s *abortStream) Send(ctx context.Context, data []byte) error {
@@ -46,6 +49,9 @@ func (s *abortStream) Send(ctx context.Context, data []byte) error {
 				reply = "A C " + f[1]
 			} else {
 				s.aborted = true
+				if s.completedBeforeAbort {
+					reply = "F O\n" + s.plan.prefix + "F E\n" + s.plan.prefix + "X 0"
+				}
 				if s.ack {
 					reply = "D"
 				}
@@ -56,6 +62,9 @@ func (s *abortStream) Send(ctx context.Context, data []byte) error {
 		case "G":
 			result = s.commitError
 			reply = "R\n" + s.plan.prefix + "O 1 41"
+			if s.completedBeforeAbort {
+				reply = "R"
+			}
 			if s.cancelOnCommit != nil {
 				s.cancelOnCommit()
 			}
@@ -204,5 +213,28 @@ func TestBrokerAbortAfterLocalFailure(t *testing.T) {
 				t.Fatal("abort handshake was not bounded")
 			}
 		})
+	}
+}
+
+type failingInput struct{}
+
+func (failingInput) Read([]byte) (int, error) { return 0, errors.New("synthetic stdin failure") }
+
+// Native 2026-10-22: a local stdin read failure with a trivial `exit 0`
+// reported unconfirmed cleanup. The broker had already sent X and exited, so
+// C was never answered; X proves the command and helpers were reaped.
+func TestBrokerAbortAcceptsCompletionAlreadyInFlight(t *testing.T) {
+	p, err := New("exit 0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &abortStream{plan: p, replies: make(chan []byte, 32), completedBeforeAbort: true}
+	start := time.Now()
+	code, err := p.Run(context.Background(), s, IO{Stdin: failingInput{}})
+	if code != 0 || err == nil || !strings.Contains(err.Error(), "local stdin read failed") || errors.Is(err, ErrCleanupUnconfirmed) || !s.aborted {
+		t.Fatalf("completed broker misreported cleanup: %d %v aborted=%v", code, err, s.aborted)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("abort waited for an acknowledgement that cannot arrive")
 	}
 }

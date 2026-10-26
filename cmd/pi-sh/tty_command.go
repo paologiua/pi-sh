@@ -19,6 +19,7 @@ import (
 type ttyCommandRequest struct {
 	text, term string
 	stdinNull  bool
+	shell      bool // text is shellbroker.LoginShell, not a user command
 }
 
 // runTTYSession owns local terminal state and resize delivery. The adapter owns

@@ -28,8 +28,25 @@ type Session struct {
 	cancel        context.CancelFunc
 	finish        func() error
 	suspend       func(func() error) error
+	interrupt     func()
 	once          sync.Once
 	err           error
+}
+
+// ErrInterrupted is returned by one stdin Read after InterruptRead. No input
+// byte is consumed by that Read, and the session remains usable.
+var ErrInterrupted = errors.New("local stdin read interrupted for a local action")
+
+// InterruptRead makes the pending or next stdin Read return ErrInterrupted, so
+// the single reader can reach an input boundary (for WithSuspended) without
+// cancelling the session. Repeated requests before that Read coalesce. It
+// reports false when the backend cannot interrupt a blocked Read.
+func (s *Session) InterruptRead() bool {
+	if s.interrupt == nil {
+		return false
+	}
+	s.interrupt()
+	return true
 }
 
 // Cancel wakes owned operations without restoring flags or closing caller files.

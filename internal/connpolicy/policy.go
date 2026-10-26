@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"pi-sh/internal/account"
 	"pi-sh/internal/sshdest"
 )
 
@@ -20,10 +21,16 @@ import (
 const MaxConnectionAttempts = 10
 
 var (
-	// ErrUser is returned for any explicit remote user: destination user@,
-	// URI userinfo, -l or User. The Connect agent opens its shell as one fixed
-	// account that the client can neither select nor verify before login.
-	ErrUser = errors.New("remote user selection is not supported: Connect opens its shell as the agent's fixed account, which pi-sh cannot select or verify; remove the user from the destination, -l or User")
+	// ErrUser is returned for a Unix-style remote user: destination user@host
+	// (always), or a URI user, -l or User that is not an email address. The
+	// Connect agent opens its shell as one fixed device account that the
+	// client can neither select nor verify. The SSH user's role is taken by
+	// the Raspberry Pi ID account, written email::device or -l/User email.
+	ErrUser = errors.New("Unix-style remote user selection is not supported: Connect opens the shell as the device's fixed agent account; to choose the Raspberry Pi ID account use email::device, -l email (pi-sh) or User email")
+	// ErrBrowserAccount is returned when an explicit account is combined with
+	// the browser companion, which uses whichever account Chrome is signed in
+	// to; pi-sh has no observed way to select or verify that account.
+	ErrBrowserAccount = errors.New("--browser cannot select or verify the Raspberry Pi ID account (the companion uses the account signed in to Chrome); remove the account (email::, -l, User) or use --direct-login")
 	// ErrPort is returned for any explicit port: URI :port, -p/-P or Port.
 	// Connect reaches devices through its own service, not an SSH port.
 	ErrPort = errors.New("port selection is not supported: Connect reaches the device through its service, not an SSH port; remove the port from the destination, -p/-P or Port")
@@ -48,7 +55,11 @@ func Known(key string) bool {
 // Policy is the effective connection policy. The zero value is not the
 // default; use Default.
 type Policy struct {
-	BatchMode bool
+	// Account is the explicit Raspberry Pi ID account (destination email::,
+	// URI user, -l or User). DefaultAccount is the local default
+	// (PI_SH_ACCOUNT or the account file), used only by direct login.
+	Account, DefaultAccount string
+	BatchMode               bool
 	// PasswordPrompts is 0 (never prompt for a password) or 1 (one attempt).
 	PasswordPrompts int
 	// ConnectTimeoutSeconds is -1 when unset ("none"); 0 means no extra bound.
@@ -125,7 +136,10 @@ func FromValues(values map[string]string) (Policy, error) {
 		}
 		switch key {
 		case "user":
-			return p, ErrUser
+			if account.Validate(value) != nil {
+				return p, ErrUser
+			}
+			p.Account = value
 		case "port":
 			return p, ErrPort
 		case "batchmode":
@@ -164,6 +178,29 @@ func FromValues(values map[string]string) (Policy, error) {
 	return p, nil
 }
 
+// DestinationUser applies the account policy to a parsed destination before
+// precedence: a plain OpenSSH user@host user is always refused (even when it
+// would lose to -l or an earlier -o User), and the email::device form must
+// carry a valid email. URI users are judged later as ordinary User values.
+func DestinationUser(d sshdest.Destination) error {
+	switch {
+	case d.User == "" || d.URI:
+		return nil
+	case !d.Account:
+		return ErrUser
+	}
+	return account.Validate(d.User)
+}
+
+// LoginAccount is the account direct login uses instead of prompting for an
+// email, or "" when the person must type it.
+func (p Policy) LoginAccount() string {
+	if p.Account != "" {
+		return p.Account
+	}
+	return p.DefaultAccount
+}
+
 // Target rejects effective device targets that are network address literals.
 func Target(target string) error {
 	if sshdest.AddressLiteral(target) {
@@ -181,6 +218,9 @@ func (p Policy) Admit(direct bool) error {
 	}
 	if direct && p.PasswordPrompts == 0 {
 		return errors.New("NumberOfPasswordPrompts 0: direct login requires a password prompt; refusing to prompt")
+	}
+	if !direct && p.Account != "" {
+		return ErrBrowserAccount
 	}
 	if !direct && p.ConnectionAttempts > 1 {
 		return errors.New("ConnectionAttempts above 1 requires --direct-login: the browser companion signals only once")

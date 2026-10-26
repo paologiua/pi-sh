@@ -1,4 +1,4 @@
-# Terminal escapes — 2026-10-21
+# Terminal escapes — 2026-10-21, updated 2026-10-26
 
 The text-input filter applies to interactive shells and experimental TTY commands,
 not binary no-TTY stdin. EscapeChar/-e selects ASCII/control notation or none.
@@ -8,22 +8,22 @@ after embedded newlines. Use -e none for literal multiline data containing escap
 
 | Sequence with default prefix | Implementation/evidence | Remaining difference or work |
 | --- | --- | --- |
-| ~. | Local disconnect; existing native Enter/~. check and local Pion/PTY tests | Interactive local0; TTY local0 with unconfirmed-cleanup notice; no remote status is inferred. This status differs from the reference client's disconnect255. |
+| ~. | Local disconnect; existing native Enter/~. check and local Pion/PTY tests | Exits 255 like ssh(1), which has no remote status after a local disconnect (before 2026-10-23 pi-sh exited 0). TTY path still reports unconfirmed cleanup. |
 | ~~ | One literal prefix, with default and custom-prefix short-read tests | Special action precedence still applies if the configured prefix itself is an action character, as in upstream. |
-| ~? | Local stderr help; no remote bytes; leaves session open and line-start intact | Lists only implemented actions. Text/spacing differs from OpenSSH; control prefixes render as readable caret notation. |
-| ~^Z | Implemented on macOS/Linux: drain local writes, hand back flags/modes, stop this client process, reacquire on CONT and force resize | Real Mac subprocess + Pion/PTY TTY session test, terminal process test and cancellation/Close tests; Windows unsupported; native Pi/Linux/iSH unverified; ordinary interactive suspension has separate Mac Pion/PTY evidence. This is not remote Ctrl-Z. |
-| ~# | Not implemented | Forwarding is not enabled; accurate session/channel listing remains work. |
-| ~& | Not implemented | Background lifetime, stdin EOF, auth watcher and forwarding shutdown policy need implementation. |
-| ~C | Not implemented | OpenSSH disables its command line by default; an equivalent enabled command line/config and supported forwarding operations are absent. |
-| ~B | Not implemented | OpenSSH uses a channel BREAK request. No equivalent agent capability has been observed; sending byte0 or a guessed message is not evidence. |
-| ~R | Not implemented | SSH rekey has no implemented Connect equivalent; TLS/DTLS renewal/reconnect needs separate investigation without command replay. |
-| ~v / ~V | Not implemented | Runtime log levels and secret-safe diagnostic controls need implementation. |
+| ~? | Local stderr help in OpenSSH's layout; no remote bytes; leaves session open and line-start intact | Lists ~B/~C/~R/~& on one "refused" line instead of OpenSSH's descriptions; `~^Z` only where suspension exists; control prefixes render as caret notation. |
+| ~^Z | Implemented on macOS/Linux: drain local writes, hand back flags/modes, stop this client process, reacquire on CONT and force resize. An external SIGTSTP now takes the same handoff | Real Mac subprocess + Pion/PTY TTY session test, terminal process test, external-dispatch tests (`TestExternalSuspendDispatch*`) and cancellation/Close tests; Windows unsupported; native Pi/Linux/iSH unverified. This is not remote Ctrl-Z. |
+| ~# | Lists the single session channel (`#0 client-session`) | Accurate while pi-sh has no forwarding; must list forwarded channels once forwarding exists. |
+| ~& | Consumed; refused with a notice | OpenSSH backgrounds only while waiting for forwarded connections to close. pi-sh has no forwarding and the Go client cannot fork; revisit with forwarding. |
+| ~C | Consumed; prints `commandline disabled` | Matches OpenSSH's default EnableEscapeCommandline=no. Enabling the command line (EnableEscapeCommandline yes) is not implemented; its -L/-R/-D/-KL operations need forwarding. |
+| ~B | Consumed; refused with a notice | OpenSSH sends a channel BREAK request. No equivalent agent capability has been observed; sending byte 0 or a guessed message is not evidence. |
+| ~R | Consumed; refused with a notice | SSH rekey has no implemented Connect equivalent; DTLS renewal/reconnect needs separate investigation without command replay. |
+| ~v / ~V | Raise/lower the run-time LogLevel (QUIET..DEBUG3) with OpenSSH's `[LogLevel X]` notice; with file or syslog logging prints `[Logging to syslog or file]` and changes nothing, as OpenSSH does | `TestLocalEscapeActionsAreConsumed`, `TestVerbosityEscapeRespectsLogDestination`. Redaction rules apply at every level (DIAGNOSTICS.md). |
 
-Except for unsupported local suspension, which is consumed and diagnosed locally,
-unimplemented actions currently retain the unknown-escape fallback: the prefix
-and following character are forwarded as ordinary text/control input. They do
-not perform the listed local operation. This is an explicit compatibility gap,
-not evidence that these features are impossible. Literal remote Ctrl-Z without a
+Since 2026-10-23 every OpenSSH escape character is consumed locally, as in
+OpenSSH: ~B/~R/~& print a refusal and ~C the disabled-commandline notice, so none
+of them reaches the remote side (midline sequences still do, as upstream).
+Other characters after the prefix keep the unknown-escape fallback and are
+forwarded with the prefix, as in OpenSSH. Literal remote Ctrl-Z without a
 prefix still reaches the remote terminal; simple default/caught Ctrl-Z and
 whole-group STOP/CONT now have local evidence in TTY_JOB_CONTROL.md. Nested
 job control and native behavior remain open.
@@ -70,7 +70,11 @@ reacquisition. Draining backpressured output can wait for its consumer, as ordin
 output does; context cancellation wakes pollable writes. Only the input boundary
 may initiate the handoff: no other read may be outstanding. Files remain borrowed
 and must stay open. Windows omits the help action and consumes/diagnoses ~^Z.
-External SIGTSTP delivered outside this escape does not run this handoff. Ignored
+Since 2026-10-23 a caught external SIGTSTP (for example `kill -TSTP` from
+another terminal) interrupts the pending stdin read without consuming input
+(`localio` InterruptRead) and runs the same handoff. Because the Go runtime keeps
+its handler once SIGTSTP is caught, a permanent dispatcher emulates the default
+stop, with an orphaned-group check, when no session is active. Ignored
 signals and orphaned process-group behavior follow OS job-control semantics;
 background terminal access/TTIN/TTOU and physical iSH remain unverified.
 

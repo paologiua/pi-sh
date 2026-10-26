@@ -21,8 +21,15 @@ import (
 //go:embed broker.bash
 var source string
 
-const maxRecord = 2304
-const inputChunk = 1024
+// Data records carry at most 2048 bytes (4096 hex digits). Adapter and client
+// ship together, so these values are an internal protocol version, not a
+// negotiated limit. Each direction keeps at most eight records unacknowledged:
+// with two output streams that is about 66 KiB of hex in flight, well inside
+// the transport's 256 KiB receive bound.
+const maxRecord = 4224
+const inputChunk = 2048
+const outputChunk = 2048
+const recordWindow = 8
 
 var ErrProtocol = errors.New("invalid or incomplete shell broker exchange")
 
@@ -316,44 +323,63 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 				}
 			}
 		}()
-		request <- struct{}{}
 	} else {
 		if err = w.send("F"); err != nil {
 			return 0, err
 		}
 	}
-	inSeq, outSeq, errSeq := 0, 0, 0
-	waitingInput, inputDone := false, stdio.Stdin == nil
+	// Input is pipelined: up to recordWindow I records may await A. The
+	// broker queues them in memory and its writer holds one at a time, so
+	// a command that stops reading still backpressures the local reader.
+	inSeq, inAck, outSeq, errSeq := 0, 0, 0, 0
+	reading, inputDone := false, stdio.Stdin == nil
 	var readErr error
 	outEOF, errEOF := false, false
+	pumpInput := func() error {
+		if inputDone || reading {
+			return nil
+		}
+		if readErr != nil {
+			// Report EOF or failure only after every sent block is acknowledged.
+			if inSeq != inAck {
+				return nil
+			}
+			if readErr != io.EOF {
+				return errors.New("local stdin read failed")
+			}
+			inputDone = true
+			return w.send("F")
+		}
+		if inSeq-inAck < recordWindow {
+			reading = true
+			request <- struct{}{}
+		}
+		return nil
+	}
+	if err = pumpInput(); err != nil {
+		return 0, err
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		case r := <-reads:
+			reading = false
 			if inputDone {
 				continue
 			}
-			if waitingInput {
-				return 0, ErrProtocol
-			}
 			if len(r.data) > 0 {
 				inSeq++
-				waitingInput = true
+				encoded := hex.EncodeToString(r.data)
+				if err = w.send(fmt.Sprintf("I %d %d %s", inSeq, len(encoded), encoded)); err != nil {
+					return 0, err
+				}
+			}
+			if r.err != nil {
 				readErr = r.err
-				if err = w.send(fmt.Sprintf("I %d %s", inSeq, hex.EncodeToString(r.data))); err != nil {
-					return 0, err
-				}
-			} else if r.err != nil {
-				if r.err != io.EOF {
-					return 0, errors.New("local stdin read failed")
-				}
-				inputDone = true
-				if err = w.send("F"); err != nil {
-					return 0, err
-				}
-			} else {
-				request <- struct{}{}
+			}
+			if err = pumpInput(); err != nil {
+				return 0, err
 			}
 		case r := <-records:
 			if r.err != nil {
@@ -369,7 +395,7 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 					return 0, ErrProtocol
 				}
 				seq, e := strconv.Atoi(f[1])
-				if e != nil || strconv.Itoa(seq) != f[1] || len(f[2]) > 256 {
+				if e != nil || strconv.Itoa(seq) != f[1] || len(f[2]) > 2*outputChunk {
 					return 0, ErrProtocol
 				}
 				data, e := hex.DecodeString(f[2])
@@ -411,24 +437,15 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 					return 0, ErrProtocol
 				}
 			case "A":
-				if len(f) != 2 || f[1] != strconv.Itoa(inSeq) || !waitingInput || inputDone {
+				if len(f) != 2 || inputDone || inAck >= inSeq || f[1] != strconv.Itoa(inAck+1) {
 					return 0, ErrProtocol
 				}
-				waitingInput = false
-				if readErr != nil {
-					if readErr != io.EOF {
-						return 0, errors.New("local stdin read failed")
-					}
-					inputDone = true
-					if err = w.send("F"); err != nil {
-						return 0, err
-					}
-				} else {
-					request <- struct{}{}
+				inAck++
+				if err = pumpInput(); err != nil {
+					return 0, err
 				}
 			case "K":
 				inputDone = true
-				waitingInput = false
 			case "X":
 				if len(f) != 2 || !outEOF || !errEOF {
 					return 0, ErrProtocol
@@ -473,7 +490,10 @@ func (p *Plan) abort(stream Stream, records <-chan recordResult) error {
 			if r.err != nil {
 				return ErrCleanupUnconfirmed
 			}
-			if r.text == "D" {
+			// The broker emits X/Y only after reaping the command and its
+			// helpers, then exits without reading C. A completion already in
+			// flight when C was sent therefore confirms cleanup as well.
+			if r.text == "D" || strings.HasPrefix(r.text, "X ") || strings.HasPrefix(r.text, "Y ") {
 				return nil
 			}
 		}

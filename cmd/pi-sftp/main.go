@@ -12,9 +12,11 @@ import (
 
 	"pi-sh/internal/cliargs"
 	"pi-sh/internal/connectsession"
+	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
+	"pi-sh/internal/sshconfig"
 	"pi-sh/internal/sshdest"
 )
 
@@ -41,6 +43,19 @@ func app() int {
 	f.Var(verbosity.QuietFlag(), "q", "quiet: suppress connection notices, warnings and diagnostics")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
+	cliargs.Refuse(f, map[string]string{
+		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
+		"A": sshconfig.ReasonForwarding,
+		"N": "pi-sftp's connection layer is not quiet by default; use -v/-q or LogLevel",
+		"r": "recursive console transfers are not implemented; use pi-cp -r",
+	}, map[string]string{
+		"B": "SFTP buffer size tuning is not implemented", "R": "SFTP request count tuning is not implemented",
+		"X": "SFTP buffer and request tuning is not implemented",
+		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": sshconfig.ReasonForwarding,
+		"l": "bandwidth limiting is not implemented",
+		"D": "a local SFTP server program cannot replace the Connect session",
+		"S": "pi-sftp always connects through Raspberry Pi Connect; the transport program cannot be replaced",
+	})
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -48,7 +63,7 @@ func app() int {
 		return 1
 	}
 	if *direct == *browser || f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqv] [-s existing-server] [-b file|-] [-F file|none] [-o option] device-or-alias")
+		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
 		return 1
 	}
 	if _, err := sftpclient.ServerCommand(*server); err != nil {
@@ -56,6 +71,9 @@ func app() int {
 		return 1
 	}
 	parsed, err := sshdest.SFTP(f.Arg(0))
+	if err == nil {
+		err = connpolicy.DestinationUser(parsed)
+	}
 	if err == nil && parsed.HasPath {
 		err = errors.New("an initial remote path in the destination is not implemented; use cd or get after connecting")
 	}

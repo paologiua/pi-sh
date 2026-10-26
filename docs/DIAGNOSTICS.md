@@ -10,6 +10,11 @@ Pi or Connect session was used for this increment; native verification is pendin
 
 ## Controls
 
+`pi-cp -q` also disables its [scp-style progress meter](SCP_PROGRESS.md),
+independently of connection diagnostics. Any `-q` keeps progress off after later
+`-v` flags; `-oLogLevel=QUIET` alone does not turn it off. The meter goes to
+foreground terminal stdout, not the diagnostic stderr/log destination.
+
 | Control | pi-sh | pi-cp / pi-sftp |
 | --- | --- | --- |
 | `-v`, `-vv`, `-vvv` | First `-v` selects DEBUG1 from any level, each further `-v` increments the current level up to DEBUG3 (`-vvvv` = DEBUG3) | Same accumulation, applied to the connection layer, as scp/sftp pass `-v` to ssh |
@@ -55,7 +60,7 @@ severities follow OpenSSH: FATAL→CRIT, ERROR→ERR, INFO/VERBOSE→INFO, DEBUG
 | --- | --- | --- |
 | DEBUG1 | config | `unofficial client version=… go=… os=… arch=…`; `configuration: reading explicit configuration file` / `no configuration file selected` (path never printed) |
 | DEBUG2 | config | `configuration: effective diagnostics loglevel=… syslogfacility=… logfile=… syslog=…` |
-| DEBUG1 | auth | mode selected (browser/direct); `interactive direct login started` / `completed`; `loopback companion bridge listening` (no port/URL) |
+| DEBUG1 | auth | mode selected (browser/direct); `interactive direct login started` / `completed`; `account preselected; email prompt skipped` (the email is never logged); `default account not used by the browser companion`; `loopback companion bridge listening` (no port/URL) |
 | DEBUG1 | auth stage | `authentication: login stage stage=password_required|one_time_code_required|connect_devices_page_observed` |
 | DEBUG1 | discovery | `resolving destination device`; `destination device prepared elapsed=… ice_servers=N` (no name/ID) |
 | DEBUG1/2 | signaling | `requesting session configuration`; DEBUG2 `session configuration received ice_servers=N`; `sending local offer`; `remote answer received` |
@@ -68,8 +73,19 @@ severities follow OpenSSH: FATAL→CRIT, ERROR→ERR, INFO/VERBOSE→INFO, DEBUG
 
 - Messages are typed `diag.Message` constants. `TestNoDynamicMessages` parses all
   production Go files and fails on any conversion of a non-literal to a Message.
-- Fields only carry integers, durations, booleans, or enum tokens matching
-  `[A-Za-z0-9][A-Za-z0-9_.-]{0,47}`; anything else becomes `[redacted]`.
+- Fields only carry integers, durations, booleans, enum tokens matching
+  `[A-Za-z0-9][A-Za-z0-9_.-]{0,47}` without a digit-bearing opaque run of 32+
+  characters, or (`diag.Version`) locally built version strings
+  `[A-Za-z0-9][A-Za-z0-9_.+-]{0,159}`; anything else becomes `[redacted]`.
+- Phase lines are assembled structurally: the constant message passes through
+  `Sanitize` with its fixed phase prefix (`session: `, `transport: `, ...)
+  kept, the typed fields are appended unchanged, and the whole line gets only
+  control-character cleanup and the length bound. Error text (`Failure`) is
+  still sanitized as a whole. This fixed the false positives seen in the
+  2026-10-22 native `-v` run (`version=[redacted]` for a `+dirty` build and
+  `session:[redacted]`, because `session` is also a credential key);
+  `TestNoFalsePositiveRedaction` covers both and that secrets after a phase
+  prefix, in errors and in fields stay redacted.
 - Error text (`Failure`) and every final line pass through `Sanitize`, which
   removes SDP/ICE material, all URLs (including `stun:`/`turn:`), credential-like
   key/value pairs (password, otp/totp/code, token, cookie, session, authorization,

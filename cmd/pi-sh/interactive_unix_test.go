@@ -152,7 +152,7 @@ func TestInteractiveSessionQuiescesBorrowedIO(t *testing.T) {
 			if name == "escape-help" {
 				var output strings.Builder
 				b := make([]byte, 4096)
-				for !strings.Contains(output.String(), "Escapes apply at the start of a line.") {
+				for !strings.Contains(output.String(), "escapes are only recognized immediately after newline.") {
 					waitIOReady(t, masterFD, unix.POLLIN, true)
 					n, err := unix.Read(masterFD, b)
 					if err != nil || n == 0 {

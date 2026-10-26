@@ -43,6 +43,11 @@ config-file invocations have not yet been verified against the Pi.
   trigger another Host evaluation. Wildcards operate on bytes.
 - First obtained value wins within the file. Explicit CLI settings override file
   values. Existing mixed short-flag/`-o` precedence is preserved.
+- RemoteCommand (raw rest of line, `none`, token expansion, CLI conflict) and
+  RefuseConnection, plus keywords accepted only with pi-sh's fixed value
+  (Compression no, AddressFamily any, CanonicalizeHostname no, SessionType
+  default, ...) and explicit refusals for all other known keywords; see the
+  decision table in [CLI_OPTIONS.md](CLI_OPTIONS.md).
 - HostName, EscapeChar, StdinNull and RequestTTY. HostName resolves an alias to an
   exact Connect device name or ID, never to a DNS address or an SSH endpoint.
 - Case-insensitive keywords; case-sensitive values; whitespace or `=` separator;
@@ -59,10 +64,10 @@ config-file invocations have not yet been verified against the Pi.
 - Connection policy: BatchMode, ConnectTimeout, ConnectionAttempts,
   ServerAliveInterval/CountMax, TCPKeepAlive, ChannelTimeout and
   NumberOfPasswordPrompts use OpenSSH value syntax (flags yes/true/no/false
-  case-insensitive, time units, integers). User and Port are syntax-checked
-  everywhere but refused when they apply to the destination; an inactive block
-  may contain them. A CLI/destination user still feeds Match user/%r before
-  the refusal. See [CONNECTION_POLICY.md](CONNECTION_POLICY.md).
+  case-insensitive, time units, integers). `User email` selects the Raspberry
+  Pi ID account; a non-email User and any Port are syntax-checked everywhere but
+  refused when they apply; an inactive block may contain them. See
+  [CONNECTION_POLICY.md](CONNECTION_POLICY.md).
 - `-G` reports hostname when a destination is present, plus escapechar, stdinnull,
   requesttty, loglevel and syslogfacility, plus tag when set, then the
   connection-policy fields. No authentication,
@@ -121,8 +126,9 @@ substitutions to avoid expansion-driven allocation spikes.
 All lines, including inactive blocks and duplicate/overridden values, are
 validated. Unsupported directives fail rather than silently discarding behavior.
 This is stricter than OpenSSH for some inactive directives/values.
-IgnoreUnknown, LocalCommand, ProxyCommand, RemoteCommand, UnusedConnectionTimeout, CanonicalizeHostname
-and all unlisted directives remain unsupported. Apart from Match exec (below),
+IgnoreUnknown, LocalCommand, ProxyCommand, UnusedConnectionTimeout, CanonicalizeHostname
+yes and the other refused keywords (decision table in CLI_OPTIONS.md) fail with a
+specific reason; unknown keywords fail as unsupported. Apart from Match exec (below),
 no local command, shell expansion, general environment expansion, backslash
 syntax, default file search or hostname canonicalization is implemented. Only
 Include supports the documented environment/path expansion; HostName retains
@@ -154,11 +160,11 @@ Match final originalhost pi
   `command`, where `""` matches only an unset tag/empty command.
 - `host` uses the HostName-expanded target at that line; `originalhost` and
   Host blocks use the destination as typed.
-- `user` and `%r` mean what OpenSSH means: the configured SSH user name
-  (User/`-l`, when obtained) or otherwise the local login name. This is only a
-  config evaluation input. A Connect session always runs as the agent's fixed
-  account, which pi-sh neither selects nor verifies. `localuser` and `%u` are
-  the local login name.
+- `user` and `%r` are the Raspberry Pi ID account obtained so far (User/`-l`/
+  `email::`), else the local default account (`PI_SH_ACCOUNT` or
+  `~/.config/pi-sh/account`), else the local login name as in OpenSSH. The
+  device shell still runs as the agent's fixed account. `localuser` and `%u`
+  are the local login name.
 - `localnetwork` takes a CIDR list (no negation, no empty entries, no host bits
   set) and matches addresses of up local interfaces. Scoped (link-local) IPv6
   addresses are skipped, matching OpenSSH's observed behavior. Interface
