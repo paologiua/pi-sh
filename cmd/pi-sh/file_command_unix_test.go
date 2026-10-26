@@ -140,7 +140,11 @@ func (s *syntheticFileBroker) serve(ctx context.Context, ch *transport.Channel) 
 				}
 			}
 		case "I":
-			part, err := hex.DecodeString(f[2])
+			// "I seq length hex": length counts hex digits.
+			if len(f) != 4 || f[2] != strconv.Itoa(len(f[3])) {
+				return errors.New("malformed synthetic input record")
+			}
+			part, err := hex.DecodeString(f[3])
 			if err != nil {
 				return err
 			}

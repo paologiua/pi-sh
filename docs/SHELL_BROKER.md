@@ -34,12 +34,15 @@ The parent alone writes carrier records. Each session uses a random 128-bit
 marker. Hex encoding preserves every byte including NUL and invalid UTF-8 in
 stdio; command text itself must be UTF-8, contain no NUL and be at most 128 KiB.
 Source upload is limited to 32 KiB, startup discard to 64 KiB and individual
-records to 2304 ASCII bytes. These are local policy bounds, not Connect limits.
+records to 4224 ASCII bytes. These are local policy bounds, not Connect limits.
 
-Stdin has one acknowledged block of at most 1024 bytes outstanding. Each output
-has a window of four blocks of at most 128 bytes; Go acknowledges a block after
-the corresponding local writer consumes it. Independent input/output workers
-allow output to drain while a child stops reading input. EOF closes only child
+Since 2026-10-23 (see "Data-path throughput" below) stdin has up to eight
+acknowledged blocks of at most 2048 bytes outstanding; the broker queues them in
+memory and its writer holds one at a time. Each output has a window of eight
+records of at most 2048 bytes, produced by a per-stream reader worker; Go
+acknowledges a record after the corresponding local writer consumes it.
+Independent input/output workers allow output to drain while a child stops
+reading input. EOF closes only child
 stdin; both output streams must finish and be acknowledged before completion.
 The application protocol is pi-sh's own framing inside the evidenced shell
 channel; it is not an observed native agent exec/status protocol.
@@ -95,7 +98,8 @@ This is a useful shell-only implementation, not universal OpenSSH parity:
 - Blocking stdin readers/output writers remain caller-owned and must be
   cancellable in an embedding application. CLI cleanup coordination is bounded.
 - Direct in-memory login and a documented config subset are implemented;
-  forwarding, SCP and SFTP remain unfinished. Small hex frames cost throughput.
+  forwarding, SCP and SFTP remain unfinished. Hex framing and per-byte output
+  reads in Bash cost throughput (see "Data-path throughput").
 - Linux/Windows and Linux/386 compilation is separate from native runtime
   validation. Physical iSH testing remains pending.
 
@@ -155,3 +159,98 @@ counted 1048576 bytes and exited 23 (REAL_DEVICE_TESTS.md). The full approved tr
 including the previously stalled 1MiB SFTP upload, then passed once with verified
 cleanup. Single runs are not stress bounds. Local passes do not establish that every earlier native failure
 had this cause; the original stalled run left no record-level trace.
+
+## Data-path throughput — 2026-10-23
+
+Native 1MiB transfers ran at about 11KiB/s in each direction. Local profiling
+(Bash micro-benchmarks on this Mac, both 5.3 and 5.2.37) attributed the time to:
+
+| Cost, per KiB moved | Old | New |
+| --- | --- | --- |
+| Input: parent line read of a 2 KiB hex record (one `read` syscall per byte) | ~0.4 ms | `read -N` exact length: ~0.035 ms |
+| Input: writer line re-read | ~0.4 ms | `read -N`: ~0.035 ms |
+| Input: per-pair `\x` escape loop | 5–7 ms | one `${hex//??/\\x&}` (Bash >=5.2): ~0.16 ms |
+| Output: per-byte poll + `read -n1` | ~6 ms | unchanged (see below), now in a worker per stream |
+| Output: per-byte `printf -v %02x` + append | ~4 ms | one `printf %02x` over the record: ~0.4 ms |
+| Round trips | 1 per 1 KiB input; 1 per 512 B output | 8×2 KiB windows each way |
+
+**Changes** (client and adapter ship together, so the record format is an
+internal version, not negotiated):
+
+- `I seq length hex`: up to eight unacknowledged 2048-byte input records. The
+  parent reads the record body with an untimed `read -N` of its declared length,
+  queues it in a Bash array, and forwards one record at a time to the writer,
+  which still acknowledges only after writing to the command. A command that
+  stops reading therefore still backpressures the local reader (at most eight
+  records plus the writer's one). Records arriving after `K` are validated and
+  dropped; `F` is sent only after every block is acknowledged.
+- Bash >=5.2 escapes hex with one pattern substitution (`patsub_replacement`).
+  Bash 4.3–5.1 keep the previous loop, selected by `BASH_VERSINFO`; that path
+  is unchanged code but was not run locally on a 4.3–5.1 build.
+- Output: one reader coprocess per stream receives one newline token per
+  permitted record (window eight, so command output is never consumed ahead of
+  the window). It blocks for the first byte, then takes further bytes only while
+  `read -t 0` reports data, up to 2048, and encodes the record with one
+  `printf`. A short write is therefore delivered immediately
+  (`TestShellBrokerPartialOutputIsNotHeldBack`). The parent reads each
+  `length / hex` pair with `read -N` and is the only carrier writer.
+- The parent sleeps 1 ms (timed read on the never-written idle pipe) only when
+  an iteration did nothing, instead of after every iteration without input.
+
+No timed `read` consumes protocol or command data: `-t 0` only polls, `-N` and
+`-n1` reads are untimed. No new remote tool is required: the two extra workers
+are Bash subshells, in memory.
+
+**Why output is still per byte.** Bash cannot learn how many bytes a pipe holds.
+`read -n K` blocks until K bytes or the delimiter, which would hold back
+interactive output; a timed multi-byte read would reintroduce the Bash 5.2
+delimiter-loss defect for NUL; `read -N` uses one buffered syscall but silently
+drops NUL bytes (`builtins/read.def`, 5.2); `EINTR` from a signal discards the
+partial variable. So one `read -t 0` + `read -n1` pair per byte remains the
+floor, about 6–8 µs per byte locally. An optional `dd bs=2048 count=1` per
+record (one `read(2)` of what is available) could remove it, but it adds a
+remote tool and a fork per record; it was not implemented and would need a
+measured native need plus a pure-Bash fallback.
+
+**Local measurement** (`TestShellBrokerThroughputBenchmark`, real PTY + Bash,
+256 KiB per case, order-preserving simulated round trip; upload = stdin to
+`wc -c`, download = 256 KiB `/dev/zero` + 256 KiB `/dev/urandom`, roundtrip =
+256 KiB through `cat`, rates count bytes moved):
+
+| Bash | RTT | Upload old → new KiB/s | Download old → new | Roundtrip old → new |
+| --- | --- | --- | --- | --- |
+| 5.3 | 0 ms | 96.9 → 693.6 | 92.0 → 115.5 | 166.3 → 228.7 |
+| 5.3 | 10 ms | 62.1 → 539.6 | 62.7 → 112.8 | 123.3 → 219.2 |
+| 5.3 | 40 ms | 28.0 → 259.2 | 20.4 → 105.4 | 41.1 → 194.9 |
+| 5.2.37 | 0 ms | 115.2 → 721.2 | 94.2 → 118.4 | 176.5 → 236.5 |
+| 5.2.37 | 10 ms | 68.5 → 548.7 | 63.9 → 115.9 | 131.4 → 224.8 |
+| 5.2.37 | 40 ms | 30.7 → 262.1 | 20.4 → 107.2 | 40.8 → 193.6 |
+
+Single runs on a shared Mac; treat differences under ~10% as noise. Download is
+now insensitive to RTT and bound by the per-byte read loop. The Pi's CPU is
+slower, so native rates will be lower; they are unmeasured until the owner runs
+`scripts/native-broker-throughput.sh --execute-approved` (read-only: stdin to
+`wc -c`, `head -c` of `/dev/zero` and `/dev/urandom`, and `exit 0`).
+
+**In-flight bounds.** At most eight records per direction and stream (about
+66 KiB of output hex for both streams), within the transport's 256 KiB / 4096
+message receive queue. The Connect PTY receives up to about 33 KiB of input
+records at once instead of 2 KiB; the agent's behavior under that burst is
+unverified natively.
+
+## Abort after remote completion — 2026-10-23
+
+Native 2026-10-22: a local stdin read failure with `exit 0` reported "remote
+broker cleanup was not confirmed". Cause, from the code: the broker emits `X`/`Y`
+only after reaping the command and helpers, then returns and its Bash exits
+(the carrier shell was replaced by `exec bash`), so it never reads a later `C`.
+When the client failed locally while `X` was in flight, `abort` ignored `X` and
+waited two seconds for a `D` that could not come. `abort` now treats `X`/`Y`
+as confirmation; `D` remains the only confirmation while the command runs.
+Regressions: `TestBrokerAbortAcceptsCompletionAlreadyInFlight` (fake carrier)
+and `TestShellBrokerAbortAfterRemoteCompletion` (real Bash; received frames are
+delayed 500 ms after `G` so `C` arrives after the broker exited). Both failed
+before the change and pass after it. Run still returns the local stdin error.
+OpenSSH's channel code appears to treat a local read error like EOF
+(`chan_read_failed`); whether pi-sh should match that is a separate, untested
+compatibility question. Native confirmation is step 5 of the script.
