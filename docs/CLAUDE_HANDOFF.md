@@ -147,15 +147,14 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 
 ### Rami di agenti non ancora integrati (2026-10-23)
 
-Il ramo broker (`worktree-agent-a80cb6879808fc633`) è integrato il 2026-10-26 e
-verificato sul Pi (vedi sopra). Restano due rami. Gli agenti si erano fermati per il limite settimanale di utilizzo (ripresa possibile
-dal 25 ottobre alle 14:00, con SendMessage all'agente o rileggendo il ramo). Il lavoro
-è committato nei worktree `.claude/worktrees/agent-*` ma è incompleto e non verificato
-su `main`; ognuno ha ancora 1–2 file non committati. Non unirli senza completare test e verifica.
+I rami broker e terminale sono integrati (2026-10-26/27) e verificati sul Pi:
+throughput, cleanup dopo errore di stdin, shell di login tramite adattatori
+(ora percorso interattivo predefinito; `--legacy-shell` per il flusso grezzo),
+tutti gli escape, `~^Z` e SIGTSTP esterno, `~.` con uscita 255
+(REAL_DEVICE_TESTS.md). Resta aperta la M3 di `scripts/native-shell-check.sh`
+(perdita di rete: serve il proprietario per disattivare la rete del Mac).
+Resta un ramo, fermato per limite d'uso, incompleto e non verificato:
 
-- `worktree-agent-aeda33dc242b6413b` (terminale): shell interattiva tramite adattatori
-  in memoria, SIGTSTP esterno, HUP alla shell di login su abort, escape rimanenti
-  (`~.` esce 255). Si era fermato aggiornando un test sull'help degli escape.
 - `worktree-agent-a2fd792200a64ad6c` (forwarding): parser `forwardspec` (OpenSSH 10.2),
   motore locale `-L`, `-D` SOCKS4/4a/5, `-W`, adattatore Bash multiplexato. Mancano i
   test dell'adattatore e gli script di sonda in sola lettura da eseguire sul Pi.

@@ -815,3 +815,18 @@ This does not test Bash 3.2 as a remote shell; the Pi's shell is Bash 5.2.37.
 portable `openssh_dump_test.go`: the Windows test build had failed since the CLI
 branch (`account_test.go`, `completeness_test.go`). The seven targets now
 compile the tests.
+
+## Verification after merging broker and terminal branches — 2026-10-27
+
+On `main` 81df74a: root and fork vet, `go mod verify`, fork race suite and the
+seven CGO-disabled targets (build and test compilation) passed. A first full race
+run, while separate copycli repetitions loaded the Mac, failed three tests:
+`TestRecursiveCopyAgainstLocalSCP` (one regular-file atime; control intact, the
+environmental reader described in SFTP_LISTING.md hits about 65% of files),
+`TestShellBrokerAbortAfterRemoteCompletion` ("cleanup was not confirmed") and
+`TestSFTPMegabyteOverActualBrokerWebRTCAndOpenSSHServer` ("connection lost"),
+with the shellbroker package taking 185 s instead of about 70 s. Rerun without the
+extra load: the recursive differential 6/6, the two broker tests 5/5 under
+`-race`, then the whole race suite passed. The broker pair is load-sensitive:
+abort waits a bounded time for `X`/`D`, and reports cleanup as unconfirmed when
+it does not arrive, which is the honest outcome rather than a false success.
