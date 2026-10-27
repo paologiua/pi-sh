@@ -145,22 +145,25 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 
 ## Correzioni recenti da preservare
 
-### Rami di agenti non ancora integrati (2026-10-23)
+### Rami integrati (2026-10-26/27)
 
-I rami broker e terminale sono integrati (2026-10-26/27) e verificati sul Pi:
-throughput, cleanup dopo errore di stdin, shell di login tramite adattatori
-(ora percorso interattivo predefinito; `--legacy-shell` per il flusso grezzo),
-tutti gli escape, `~^Z` e SIGTSTP esterno, `~.` con uscita 255
-(REAL_DEVICE_TESTS.md). Resta aperta la M3 di `scripts/native-shell-check.sh`
-(perdita di rete: serve il proprietario per disattivare la rete del Mac).
-Resta un ramo, fermato per limite d'uso, incompleto e non verificato:
+Tutti i rami degli agenti sono integrati in `main` e verificati sul Pi
+(REAL_DEVICE_TESTS.md): broker (throughput, cleanup dopo errore di stdin),
+terminale (shell di login tramite adattatori, ora percorso interattivo
+predefinito; `--legacy-shell` per il flusso grezzo; tutti gli escape; `~^Z` e
+SIGTSTP esterno; `~.` esce 255) e forwarding (`-L`, `-D`, `-W`, `-N` su una
+sessione Connect dedicata; FORWARDING.md). Il companion del browser ora serve
+più offerte con un solo heartbeat: prima la seconda sessione dello stesso
+processo (forwarding accanto a un comando, oppure i tentativi di
+ConnectionAttempts in modalità browser) andava in timeout.
 
-- `worktree-agent-a2fd792200a64ad6c` (forwarding): parser `forwardspec` (OpenSSH 10.2),
-  motore locale `-L`, `-D` SOCKS4/4a/5, `-W`, adattatore Bash multiplexato. Mancano i
-  test dell'adattatore, l'integrazione CLI di `-L/-D/-W` e la sonda nativa. Sul Pi
-  è presente OpenBSD netcat 1.229 con `-N` (FORWARDING.md, 2026-10-27); manca
-  ncat/socat. Una prova half-close richiede un listener temporaneo `nc -l` su
-  loopback: serve un piano approvato dal proprietario.
+Aperti: M3 di `scripts/native-shell-check.sh` (perdita di rete: il proprietario
+deve disattivare la rete del Mac); decisione del proprietario su `-R` (oggi
+rifiutato: richiede un listener sul Pi per tutta la sessione); prova half-close
+nativa con un listener temporaneo `nc -l` su loopback (serve un piano approvato);
+`-D` non ancora provato sul Pi; throughput del forwarding non misurato; `~#` non
+elenca i canali inoltrati; alla fine della sessione le connessioni inoltrate
+vengono chiuse invece di attenderle.
 
 Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
 opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
@@ -229,15 +232,14 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
-| Forwarding | Capacità reali dell'agente; eventuali utility già presenti; -W/-L/-R/-D, half-close, concorrenza, bind/IPv6, cleanup, multiplexing e operazioni di controllo | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
+| Forwarding | Decisione su -R; half-close nativo (listener temporaneo, piano da approvare); -D sul Pi; throughput, molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 
-Forwarding oggi non è implementato in `main`. Il candidato Bash `/dev/tcp` è stato
-dimostrato insufficiente per half-close con lettore vivo; questo esclude quel
-candidato, non ogni soluzione. `nc` funziona nel fixture sul Mac ma dialetto,
-presenza e comportamento sul Pi sono ignoti. Non installarlo e non inventare
-canali Connect. Opzioni SSH senza equivalente devono essere rifiutate chiaramente.
+Il forwarding usa l'adattatore Bash in memoria e il `nc.openbsd` già presente sul
+Pi (OpenBSD netcat 1.229, `-N`). Il candidato Bash `/dev/tcp` resta escluso per
+l'half-close. Non installare connettori e non inventare canali Connect. Opzioni
+SSH senza equivalente devono essere rifiutate chiaramente.
 
 La discrepanza isolata sugli atime nelle prove ricorsive è stata classificata
 (2026-10-22) come lettore esterno sul Mac di test (probabilmente Trend Micro):
