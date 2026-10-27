@@ -57,33 +57,56 @@ async function piShCompanion(base, destination) {
     const configuration = await (await request(prefix + '/ice-configuration', {headers: {Accept: 'application/json'}})).json();
     stage = 'browser_operation_failed';
     await local('configuration', {device: {id: device.id, name: device.name}, configuration});
-    const offer = await (await local('offer')).json();
-    const response = await request(prefix + '/connections', {
-      method: 'POST',
-      headers: {'X-CSRF-Token': csrfToken, 'Content-Type': 'application/octet-stream', Accept: 'application/json'},
-      body: JSON.stringify(offer)
-    });
-    const locationHeader = response.headers.get('Location');
-    if (!locationHeader) throw new CompanionError('invalid_connection_location');
-    const poll = new URL(locationHeader, location.href);
-    if (poll.origin !== location.origin || !poll.pathname.startsWith(prefix + '/')) throw new CompanionError('invalid_connection_location');
-    for (let i = 0; i < 120; i++) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const result = await (await request(poll.href, {headers: {Accept: 'application/json'}})).json();
-      if (result.answer) {
-        await local('answer', result.answer);
-        // Match the official client's periodic authorisation check. Stop when
-        // the local CLI disappears; do not retain or export account tokens.
-        for (;;) {
-          await new Promise(resolve => setTimeout(resolve, 60000));
-          await local('alive');
-          const alive = await request(prefix + '.json');
-          if (alive.status !== 204) throw new CompanionError('access_denied');
-          await local('authorized', {});
-        }
+    // One Connect connection per CLI offer: the session, a forwarding carrier
+    // or a retried attempt. Each create request is sent once, never replayed.
+    const connectOnce = async offer => {
+      const response = await request(prefix + '/connections', {
+        method: 'POST',
+        headers: {'X-CSRF-Token': csrfToken, 'Content-Type': 'application/octet-stream', Accept: 'application/json'},
+        body: JSON.stringify(offer)
+      });
+      const locationHeader = response.headers.get('Location');
+      if (!locationHeader) throw new CompanionError('invalid_connection_location');
+      const poll = new URL(locationHeader, location.href);
+      if (poll.origin !== location.origin || !poll.pathname.startsWith(prefix + '/')) throw new CompanionError('invalid_connection_location');
+      for (let i = 0; i < 120; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const result = await (await request(poll.href, {headers: {Accept: 'application/json'}})).json();
+        if (result.answer) return result.answer;
       }
+      throw new CompanionError('answer_timeout');
+    };
+    await local('answer', await connectOnce(await (await local('offer')).json()));
+    let stopped = false;
+    // Match the official client's periodic authorisation check. Stop when
+    // the local CLI disappears; do not retain or export account tokens.
+    const heartbeat = async () => {
+      while (!stopped) {
+        await new Promise(resolve => setTimeout(resolve, 60000));
+        await local('alive');
+        const alive = await request(prefix + '.json');
+        if (alive.status !== 204) throw new CompanionError('access_denied');
+        await local('authorized', {});
+      }
+    };
+    const offers = async () => {
+      while (!stopped) {
+        let offer;
+        try {
+          offer = await (await local('offer')).json();
+        } catch (error) {
+          // An idle wait ends at the local timeout; the CLI keeps the offer.
+          if (error?.name === 'TimeoutError') continue;
+          throw error;
+        }
+        await local('answer', await connectOnce(offer));
+      }
+    };
+    try {
+      await Promise.all([heartbeat(), offers()]);
+    } finally {
+      stopped = true;
     }
-    throw new CompanionError('answer_timeout');
   } catch (error) {
     // Keep exceptions, HTML, locations and descriptions out of browser logs.
     const code = error instanceof CompanionError ? error.code : stage;

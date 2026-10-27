@@ -3,6 +3,7 @@ package browserauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -184,5 +185,50 @@ func TestCancellationStopsBrowserWaits(t *testing.T) {
 	_ = b.Close()
 	if _, err := b.Exchange(context.Background(), webrtc.SessionDescription{Type: webrtc.SDPTypeOffer}); err == nil {
 		t.Fatal("closed bridge exchange succeeded")
+	}
+}
+
+// A second Exchange (forwarding carrier or a retried attempt) is served by the
+// same companion and shares one watcher: with one heartbeat per interval, the
+// session must not expire.
+func TestSecondExchangeSharesOneAuthorizationWatcher(t *testing.T) {
+	b := testBridge(t)
+	b.heartbeat = 300 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for i, sdp := range []string{"first-offer", "second-offer"} {
+		errs := make(chan error, 1)
+		go func() {
+			a, err := b.Exchange(ctx, webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: sdp})
+			if err == nil && a.SDP != sdp+"-answer" {
+				err = errors.New("answer altered")
+			}
+			errs <- err
+		}()
+		o := request(t, b, "GET", b.prefix+"offer", Origin, "")
+		var offer webrtc.SessionDescription
+		if err := json.NewDecoder(o.Body).Decode(&offer); err != nil || offer.SDP != sdp {
+			t.Fatalf("offer %d: %v %q", i, err, offer.SDP)
+		}
+		_ = o.Body.Close()
+		a := request(t, b, "POST", b.prefix+"answer", Origin, `{"type":"answer","sdp":"`+sdp+`-answer"}`)
+		_ = a.Body.Close()
+		if err := <-errs; err != nil {
+			t.Fatal(i, err)
+		}
+	}
+	stop := time.After(1500 * time.Millisecond)
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case message := <-b.Failures():
+			t.Fatalf("heartbeat split between watchers: %s", message)
+		case <-tick.C:
+			r := request(t, b, "POST", b.prefix+"authorized", Origin, "{}")
+			_ = r.Body.Close()
+		case <-stop:
+			return
+		}
 	}
 }
