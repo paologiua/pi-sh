@@ -97,7 +97,7 @@ cleanup still need a native probe. A probe against a loopback service that
 already listens (for example reading a banner) is read-only; a half-close echo
 test needs a temporary remote listener (`nc -l` on 127.0.0.1), which is a new
 remote process and needs the owner's approval of an exact plan first. Python and
-Perl are present but the project avoids them on the remote side.
+Perl are present; see the Perl connector below.
 
 ## Implementation — 2026-10-27
 
@@ -106,7 +106,7 @@ and directives and prints them for `-G` (differential against local `ssh -G`).
 `internal/forward` is the local side: listeners with ssh's bind rules, SOCKS4/4a/5
 CONNECT, `-W` stdio and a relay with independent half-close per direction.
 `internal/fwdbroker` stages `forward.bash` over a Connect shell carrier, detects a
-connector (`nc -h` reporting OpenBSD netcat, Nmap ncat, or socat), and multiplexes
+connector (`nc -h` reporting OpenBSD netcat, Perl whose Socket module loads, Nmap ncat, or socat, in that order), and multiplexes
 up to 64 remote connectors, each started per connection with an argv chosen by
 Go (for OpenBSD netcat: `nc -N -v -- host port`, or `nc -N -U -- path`). Records are
 hex text with acknowledged windows (input 4×1 KiB, output 8×512 B per stream);
@@ -173,3 +173,38 @@ timestamp fell inside A's start/end timestamps) and exited 22. Each process had
 its own companion step in the same Devices tab. So the agent accepts at least two
 concurrent sessions for one account and device; no limit or quota was probed.
 This is what lets forwarding use a carrier separate from the session.
+
+## Perl connector — 2026-10-27
+
+**Why.** OpenBSD netcat is installed by default on Raspberry Pi OS but can be
+removed (Debian priority `important`). A read-only package query on the Pi showed
+`bash` and `perl-base` 5.40.1 marked Essential (they cannot be removed without
+breaking the system), `perl-base` shipping `Socket`, `IO::Socket::INET`,
+`IO::Socket::IP` and `IO::Select`, `netcat-openbsd` `important`, `perl`
+`standard`, `python3` only `optional`, and no `ncat` or `socat`. Bash's
+`/dev/tcp` is enabled (a connect to 127.0.0.1:1 and ::1 port 1 failed with
+`Connection refused`, not a missing file), but it cannot half-close or reach Unix
+sockets. Perl via `perl-base` therefore is the fallback: it is always present and
+can do everything the netcat connector does. Python is not used.
+
+**How.** The adapter detects it with `perl -MSocket=getaddrinfo,pack_sockaddr_un`
+printing a fixed fingerprint; a Perl without the module is not selected. The
+program (`perlConnector`, 850 bytes) travels as an argv word of the open record
+(`perl -e PROGRAM -- host port`, or `-- path` for a Unix socket); nothing is written
+on the device. It connects in getaddrinfo order, prints a readiness line, relays
+with `select`/`sysread`/`syswrite`, shuts the socket's write side at stdin EOF,
+closes stdout at remote EOF while input still flows, and on failure prints the
+system reason and exits 1. Dial now refuses an open record larger than the
+adapter's bounds (per-target error instead of an adapter protocol failure), and
+remote socket paths are limited to 107 bytes, which also fixes a path long enough
+to have failed the whole adapter with the netcat connector.
+
+`PI_SH_FORWARD_CONNECTOR=perl` (diagnostic, like `PI_SH_ISH_RELAY`) restricts the
+selection to one detected tool; it still has to be recognized on the device.
+
+**Tests.** The adapter suite (binary half-close, concurrency, IPv6 and Unix
+targets, remote-first close with late input, open failure, backpressure and
+cleanup, end-to-end -L/-D/-W) runs once with the netcat double and once with the
+local Perl, under Bash 5.3 and 5.2; `TestSelectPrefersNetcatThenPerl` and
+`TestPerlOpenFitsAdapterRecord` check selection and the worst-case record size.
+Native results are in REAL_DEVICE_TESTS.md.

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,13 +32,18 @@ const (
 	inputWindow = 4
 	outWindow   = 8
 	maxStderr   = 4096
+	// maxOpen and maxWord are the adapter's record and argv-word bounds
+	// (forward.bash), checked so an oversized open fails that connection
+	// instead of the adapter.
+	maxOpen     = 2304
+	maxWord     = 1024
 	quitTimeout = 2 * time.Second
 )
 
 var (
 	ErrProtocol    = errors.New("invalid or incomplete forwarding adapter exchange")
 	ErrClosed      = errors.New("forwarding adapter closed")
-	ErrNoConnector = errors.New("no supported connector (OpenBSD netcat, Nmap ncat or socat) is present on the device; pi-sh does not install software")
+	ErrNoConnector = errors.New("no supported connector (OpenBSD netcat, Perl, Nmap ncat or socat) is present on the device; pi-sh does not install software")
 )
 
 // Mux is a started adapter. It implements forward.Dialer.
@@ -92,7 +98,13 @@ func Start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
 		}
 	}
 	go m.receive()
-	connector, ok := Select(m.Detected)
+	detected := m.Detected
+	// Diagnostic override (docs/TESTING.md): consider only this tool, which
+	// must still be recognized on the device.
+	if tool := os.Getenv("PI_SH_FORWARD_CONNECTOR"); tool != "" {
+		detected = map[string][]string{tool: m.Detected[tool]}
+	}
+	connector, ok := Select(detected)
 	if !ok {
 		m.Close()
 		return nil, ErrNoConnector
@@ -287,8 +299,17 @@ func (m *Mux) Dial(ctx context.Context, target forward.Target) (forward.Stream, 
 		return nil, m.Err()
 	}
 	words := make([]string, len(argv))
+	size := len("O 1234567890")
 	for i, a := range argv {
 		words[i] = hex.EncodeToString([]byte(a))
+		size += 1 + len(words[i])
+		if len(a) > maxWord {
+			size = maxOpen + 1
+		}
+	}
+	if size > maxOpen {
+		<-m.slots
+		return nil, &forward.OpenError{Detail: "remote target too long for the forwarding adapter"}
 	}
 	m.mu.Lock()
 	m.next++

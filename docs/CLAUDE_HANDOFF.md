@@ -232,12 +232,14 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
-| Forwarding | Decisione su -R; half-close nativo (listener temporaneo, piano da approvare); -D sul Pi; throughput, molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
+| Forwarding | Decisione su -R; half-close nativo (listener temporaneo, piano da approvare); throughput, molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 
 Il forwarding usa l'adattatore Bash in memoria e il `nc.openbsd` già presente sul
-Pi (OpenBSD netcat 1.229, `-N`). Il candidato Bash `/dev/tcp` resta escluso per
+Pi (OpenBSD netcat 1.229, `-N`), altrimenti Perl tramite `perl-base` (Essential,
+verificato sul Pi il 2026-10-27; FORWARDING.md "Perl connector"). Python non si
+usa (priorità optional). Il candidato Bash `/dev/tcp` resta escluso per
 l'half-close. Non installare connettori e non inventare canali Connect. Opzioni
 SSH senza equivalente devono essere rifiutate chiaramente.
 

@@ -830,3 +830,13 @@ extra load: the recursive differential 6/6, the two broker tests 5/5 under
 `-race`, then the whole race suite passed. The broker pair is load-sensitive:
 abort waits a bounded time for `X`/`D`, and reports cleanup as unconfirmed when
 it does not arrive, which is the honest outcome rather than a false success.
+
+## Perl forwarding connector — 2026-10-27
+
+`go test -race ./internal/fwdbroker/` runs every adapter test with the netcat
+double and with the local `perl` (subtests `nc` and `perl`; the perl ones skip
+without a perl on PATH), under `PI_SH_TEST_BASH` 5.3 and the Bash 5.2.37 build.
+To force the connector on a device for a native check, set
+`PI_SH_FORWARD_CONNECTOR=perl` (or `nc`, `ncat`, `socat`); the tool must still be
+detected there, and the `-v` line `forwarding carrier ready connector=…` shows
+the choice.

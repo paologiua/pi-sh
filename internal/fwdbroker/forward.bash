@@ -53,12 +53,13 @@ _fw_unhex() {
 }
 _fw_detect() {
   local t out line n
-  for t in nc ncat socat; do
+  for t in nc ncat socat perl; do
     command -v "$t" >/dev/null 2>&1 || continue
     case $t in
       nc) out=$(nc -h 2>&1 </dev/null) ;;
       ncat) out=$(ncat --version 2>&1 </dev/null) ;;
       socat) out=$(socat -V 2>&1 </dev/null) ;;
+      perl) out=$(perl -MSocket=getaddrinfo,pack_sockaddr_un -e 'print "pi-sh perl sockets\n"' 2>&1 </dev/null) ;;
     esac
     n=0
     while ((n<3)) && [[ -n $out ]]; do

@@ -13,7 +13,7 @@ import (
 // stdio into one outbound connection. Each candidate's required behaviour
 // (binary transparency, stdin EOF => socket write shutdown, remote EOF =>
 // stdout EOF, nonzero exit on connect failure) must be confirmed on the
-// device with scripts/probe-forwarding-loopback.sh before relying on it.
+// device (docs/REAL_DEVICE_TESTS.md) before relying on it.
 type Connector struct {
 	Name string
 	// Ready (TCP) and UnixReady are stderr substrings printed once the
@@ -62,6 +62,21 @@ var (
 		}
 		return []string{"ncat", "-v", "--", t.Host, strconv.Itoa(t.Port)}, nil
 	}}
+	// Perl through the perl-base modules Debian marks Essential (Socket), so
+	// it is present on every Raspberry Pi OS. The program is sent as an argv
+	// word (see perlConnector); nothing is written remotely.
+	perlSockets = Connector{Name: "perl", Ready: perlReady, UnixReady: perlReady, argv: func(t forward.Target) ([]string, error) {
+		if t.Path != "" {
+			if err := checkPath(t.Path); err != nil {
+				return nil, err
+			}
+			return []string{"perl", "-e", perlConnector, "--", t.Path}, nil
+		}
+		if err := checkHostPort(t); err != nil {
+			return nil, err
+		}
+		return []string{"perl", "-e", perlConnector, "--", t.Host, strconv.Itoa(t.Port)}, nil
+	}}
 	// socat shuts down the write side on EOF but then waits only -t seconds
 	// for the other direction; a one-day bound is used and documented.
 	socat = Connector{Name: "socat", Ready: "starting data transfer loop", UnixReady: "starting data transfer loop", argv: func(t forward.Target) ([]string, error) {
@@ -85,6 +100,29 @@ var (
 	}}
 )
 
+const (
+	perlReady = "pi-sh-perl: connected"
+	// Printed by the adapter's detection only when Socket loads.
+	perlFingerprint = "pi-sh perl sockets"
+	// perlConnector behaves like nc -N: one connection (getaddrinfo order,
+	// or a Unix socket for a single operand), stdin EOF shuts the socket's
+	// write side, remote EOF closes stdout while input still flows, and a
+	// failed connect prints the system reason and exits 1.
+	perlConnector = `use Socket qw(:addrinfo AF_UNIX SOCK_STREAM pack_sockaddr_un);
+$SIG{PIPE}="IGNORE";my($s,$e,$b,$n,@a)=(undef,"failed");
+if(@ARGV==1){@a=({family=>AF_UNIX,addr=>pack_sockaddr_un($ARGV[0])})}
+else{($e,@a)=getaddrinfo(@ARGV,{socktype=>SOCK_STREAM})}
+for(@a){socket($s,$_->{family},SOCK_STREAM,0)&&connect($s,$_->{addr}) and last;$e="$!";undef $s}
+$s or print(STDERR "pi-sh-perl: $e\n"),exit 1;
+print STDERR "pi-sh-perl: connected\n";
+sub w{my($f,$k,$d)=(@_,0);while($d<$k){my $r=syswrite($f,$b,$k-$d,$d);defined $r or exit 1;$d+=$r}}
+my($i,$o)=(1,1);
+while($i||$o){my $r="";vec($r,0,1)=1 if $i;vec($r,fileno $s,1)=1 if $o;
+select($r,undef,undef,undef)>0 or next;
+if($i&&vec($r,0,1)){$n=sysread(STDIN,$b,65536);if($n){w($s,$n)}else{$i=0;shutdown($s,1)}}
+if($o&&vec($r,fileno $s,1)){$n=sysread($s,$b,65536);if($n){w(\*STDOUT,$n)}else{$o=0;close STDOUT}}}`
+)
+
 // Select picks the first recognized connector from the adapter's detection
 // lines (tool name -> first output lines). Recognition requires an
 // implementation fingerprint, never a bare command name.
@@ -100,6 +138,8 @@ func Select(detected map[string][]string) (Connector, bool) {
 	switch {
 	case has("nc", "OpenBSD netcat"):
 		return openBSDNetcat, true
+	case has("perl", perlFingerprint):
+		return perlSockets, true
 	case has("ncat", "Ncat: Version") || (has("ncat", "Ncat") && has("ncat", "nmap.org")):
 		return nmapNcat, true
 	case has("socat", "socat version 1.") || has("socat", "socat by Gerhard Rieger"):
@@ -131,7 +171,8 @@ func checkHostPort(t forward.Target) error {
 }
 
 func checkPath(p string) error {
-	if p == "" || len(p) > 4096 || p[0] == '-' {
+	// 107 bytes is the longest path a Linux sockaddr_un holds.
+	if p == "" || len(p) > 107 || p[0] == '-' {
 		return errors.New("invalid remote socket path")
 	}
 	for i := 0; i < len(p); i++ {

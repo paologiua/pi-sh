@@ -716,3 +716,20 @@ written; the connector was the existing `/usr/bin/nc.openbsd`.
 The timed-out attempt sent no command (pi-sh reported establishment timeout
 before any remote command was sent). Single runs; throughput, many concurrent
 streams, long sessions and connection loss are not measured.
+
+## Perl connector and `-D`, 27 October 2026
+
+Read-only, browser companion, `main` plus the Perl connector. Targets were the
+device's own loopback sshd (only the version banner was read), the closed port 1
+and a nonexistent Unix socket path; no connection reached anything else.
+
+| Step | Result |
+| --- | --- |
+| Package query (`dpkg-query`, `dpkg -L perl-base`, Perl module load, Bash `/dev/tcp` to closed ports) | as in FORWARDING.md "Perl connector" |
+| `PI_SH_FORWARD_CONNECTOR=perl -N -D -L tcp -L unix` | log `connector=perl`; SOCKS5 to 127.0.0.1:22 and -L to it read `SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4`; SOCKS5 to port 1 `open failed: connect failed: Connection refused`; missing socket `open failed: connect failed: No such file or directory`; SIGTERM exit 0 |
+| Same with the default selection | `connector=openbsd-nc`; identical results |
+| `PI_SH_FORWARD_CONNECTOR=perl -W 127.0.0.1:22`, empty stdin | banner, exit 0 |
+| `ps -eo pid,etime,args` afterwards | only the listing command itself: no `perl`, `nc` or adapter process left |
+
+Half-close with a live remote reader is still unverified natively (it needs a
+temporary listener and the owner's approval). Single runs.

@@ -37,6 +37,14 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// eachConnector runs an adapter test with the netcat double and with the
+// Perl connector, which the device's perl-base provides.
+func eachConnector(t *testing.T, test func(*testing.T, string)) {
+	for _, c := range []string{"nc", "perl"} {
+		t.Run(c, func(t *testing.T) { test(t, c) })
+	}
+}
+
 type readResult struct {
 	data []byte
 	err  error
@@ -65,8 +73,9 @@ func (s ptyStream) Receive(ctx context.Context) ([]byte, error) {
 }
 
 // startMux runs the adapter in a local interactive /bin/sh over a real PTY,
-// with PATH restricted to bash, cat, stty and (optionally) the test connector.
-func startMux(t *testing.T, withConnector bool) (*Mux, error) {
+// with PATH restricted to bash, cat, stty and connector: "nc" (the test
+// double), "perl" (the local interpreter) or "" (none).
+func startMux(t *testing.T, connector string) (*Mux, error) {
 	t.Helper()
 	bash := os.Getenv("PI_SH_TEST_BASH")
 	if bash == "" {
@@ -89,12 +98,19 @@ func startMux(t *testing.T, withConnector bool) (*Mux, error) {
 		}
 		link(name, path)
 	}
-	if withConnector {
+	switch connector {
+	case "nc":
 		self, err := os.Executable()
 		if err != nil {
 			t.Fatal(err)
 		}
 		link("nc", self)
+	case "perl":
+		path, err := exec.LookPath("perl")
+		if err != nil {
+			t.Skip("perl unavailable")
+		}
+		link("perl", path)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	cmd := exec.Command("/bin/sh", "-i")
@@ -192,11 +208,15 @@ func roundTrip(ctx context.Context, m *Mux, target forward.Target, request []byt
 }
 
 func TestAdapterHalfCloseBinaryAndConcurrency(t *testing.T) {
-	m, err := startMux(t, true)
+	eachConnector(t, testAdapterHalfCloseBinaryAndConcurrency)
+}
+
+func testAdapterHalfCloseBinaryAndConcurrency(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Connector().Name != "openbsd-nc" || len(m.Detected["nc"]) == 0 {
+	if want := map[string]string{"nc": "openbsd-nc", "perl": "perl"}[connector]; m.Connector().Name != want || len(m.Detected[connector]) == 0 {
 		t.Fatal("connector selection", m.Connector().Name, m.Detected)
 	}
 	server := reverseServer(t, "tcp4", "127.0.0.1:0")
@@ -229,8 +249,10 @@ func TestAdapterHalfCloseBinaryAndConcurrency(t *testing.T) {
 	}
 }
 
-func TestAdapterIPv6AndUnixTargets(t *testing.T) {
-	m, err := startMux(t, true)
+func TestAdapterIPv6AndUnixTargets(t *testing.T) { eachConnector(t, testAdapterIPv6AndUnixTargets) }
+
+func testAdapterIPv6AndUnixTargets(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +277,11 @@ func TestAdapterIPv6AndUnixTargets(t *testing.T) {
 }
 
 func TestAdapterRemoteFirstCloseAndLateInput(t *testing.T) {
-	m, err := startMux(t, true)
+	eachConnector(t, testAdapterRemoteFirstCloseAndLateInput)
+}
+
+func testAdapterRemoteFirstCloseAndLateInput(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,8 +324,10 @@ func TestAdapterRemoteFirstCloseAndLateInput(t *testing.T) {
 	}
 }
 
-func TestAdapterOpenFailure(t *testing.T) {
-	m, err := startMux(t, true)
+func TestAdapterOpenFailure(t *testing.T) { eachConnector(t, testAdapterOpenFailure) }
+
+func testAdapterOpenFailure(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +352,11 @@ func TestAdapterOpenFailure(t *testing.T) {
 // An unread stream must not stall others (per-stream windows), and closing
 // streams and the adapter must terminate the remote connectors.
 func TestAdapterBackpressureIsolationAndCleanup(t *testing.T) {
-	m, err := startMux(t, true)
+	eachConnector(t, testAdapterBackpressureIsolationAndCleanup)
+}
+
+func testAdapterBackpressureIsolationAndCleanup(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +424,7 @@ func TestAdapterBackpressureIsolationAndCleanup(t *testing.T) {
 }
 
 func TestAdapterWithoutConnectorRefuses(t *testing.T) {
-	m, err := startMux(t, false)
+	m, err := startMux(t, "")
 	if !errors.Is(err, ErrNoConnector) || m != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +432,11 @@ func TestAdapterWithoutConnectorRefuses(t *testing.T) {
 
 // The whole local side over the adapter: SOCKS5 and -L listeners.
 func TestEndToEndLocalAndDynamicForwarding(t *testing.T) {
-	m, err := startMux(t, true)
+	eachConnector(t, testEndToEndLocalAndDynamicForwarding)
+}
+
+func testEndToEndLocalAndDynamicForwarding(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
 	if err != nil {
 		t.Fatal(err)
 	}
