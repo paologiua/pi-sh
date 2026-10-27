@@ -48,7 +48,7 @@ test('HTTP 200 reauthentication HTML reports required sign-in before ICE setup',
   assert.equal(calls.some(url => url.endsWith('/connections')), false);
 });
 
-async function runCSRFScenario({onShellPage = false, pageToken = 'fresh-fixture-token', refuse = false} = {}) {
+async function runCSRFScenario({onShellPage = false, pageToken = 'fresh-fixture-token', refuse = false, offers = 1} = {}) {
   const origin = 'https://connect.raspberrypi.com';
   const base = 'http://127.0.0.1:12345/test-capability/';
   const shell = {getAttribute: name => name === 'data-shell-device-value' ? JSON.stringify({id:'deadbeef', name:'test-device'}) : null};
@@ -60,13 +60,14 @@ async function runCSRFScenario({onShellPage = false, pageToken = 'fresh-fixture-
   };
   class DOMParser {parseFromString(){return {forms:[], querySelector:selector(pageToken)};}}
   const expected = onShellPage || !pageToken ? 'document-fixture-token' : pageToken;
-  const state = {creates:0, answerPosted:false, header:undefined, failure:undefined};
+  const state = {creates:0, answerPosted:false, answers:0, offersServed:0, alive:0, header:undefined, failure:undefined};
   const fetch = async (url, options={}) => {
     url=String(url);
     if(url===origin+'/devices/deadbeef/remote-shell-session')return new Response('<shell-fixture>');
     if(url===origin+'/devices/deadbeef/ice-configuration')return Response.json({iceServers:[]});
     if(url===base+'configuration')return new Response(null,{status:204});
-    if(url===base+'offer')return Response.json({type:'offer',sdp:'fixture-only'});
+    // The CLI asks for one offer per Connect connection, then is gone (410).
+    if(url===base+'offer')return state.offersServed++<offers?Response.json({type:'offer',sdp:'fixture-only'}):new Response(null,{status:410});
     if(url===origin+'/devices/deadbeef/connections') {
       state.creates++;
       state.header=options.headers['X-CSRF-Token'];
@@ -74,9 +75,12 @@ async function runCSRFScenario({onShellPage = false, pageToken = 'fresh-fixture-
       return new Response(null,{status:201,headers:{Location:'/devices/deadbeef/connections/fixture'}});
     }
     if(url===origin+'/devices/deadbeef/connections/fixture')return Response.json({answer:{type:'answer',sdp:'fixture-only'}});
-    if(url===base+'answer'){state.answerPosted=true;return new Response(null,{status:204});}
+    if(url===base+'answer'){state.answerPosted=true;state.answers++;return new Response(null,{status:204});}
     // Stop the heartbeat after setup. No wall-clock sleep or background task.
-    if(url===base+'alive')return new Response(null,{status:410});
+    // Alive until the CLI has every answer it asked for; then it exits (410).
+    if(url===base+'alive'){state.alive++;return new Response(null,{status:state.answers<offers?204:410});}
+    if(url===origin+'/devices/deadbeef.json')return new Response(null,{status:204});
+    if(url===base+'authorized')return new Response(null,{status:204});
     if(url===base+'failure'){state.failure=JSON.parse(options.body).code;return new Response(null,{status:204});}
     throw new Error('Unexpected fixture request');
   };
@@ -106,4 +110,11 @@ test('a refused connection is reported without replaying the create request',asy
   assert.equal(state.creates,1);
   assert.equal(state.answerPosted,false);
   assert.equal(state.failure,'connect_request_failed');
+});
+
+test('each further CLI offer gets its own Connect connection and a single heartbeat runs',async()=>{
+  const state=await runCSRFScenario({offers:2});
+  assert.equal(state.creates,2);
+  assert.equal(state.answers,2);
+  assert.equal(state.failure,'local_companion_failed');
 });

@@ -8,7 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"pi-sh/internal/forwardspec"
 )
+
+// Directive is one active list directive and its arguments, as written.
+type Directive struct {
+	Key  string
+	Args []string
+}
 
 const (
 	MaxIncludeDepth = 16
@@ -185,6 +193,20 @@ func (p *parser) directive(text string, active *bool, never bool, depth int) err
 			}
 		}
 		return nil
+	}
+	if forwardspec.ListKeyword(key) {
+		if err := forwardspec.CheckDirective(key, args, os.LookupEnv); err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		if *active && p.ctx.Lists != nil {
+			*p.ctx.Lists = append(*p.ctx.Lists, Directive{Key: key, Args: append([]string(nil), args...)})
+		}
+		return nil
+	}
+	if forwardspec.FeatureKeyword(key) && len(args) > 1 {
+		// Only ProxyCommand takes several words; ValidateFeature refuses
+		// every value but none, so a multi-word command is always an error.
+		return forwardspec.ValidateFeature(key, args)
 	}
 	if MultiValue(key) && len(args) > 1 {
 		for _, arg := range args[1:] {

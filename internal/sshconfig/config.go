@@ -11,6 +11,7 @@ import (
 
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
+	"pi-sh/internal/forwardspec"
 )
 
 const (
@@ -190,6 +191,12 @@ func Validate(key, value string) error {
 		// Raw command text (see RawCommand); "none" selects no command.
 	case "refuseconnection":
 		// Any message; an active RefuseConnection fails the whole load.
+	case "gatewayports", "exitonforwardfailure", "clearallforwardings", "streamlocalbindunlink", "streamlocalbindmask":
+		return forwardspec.ValidateScalar(key, value)
+	case "forwardagent", "forwardx11", "forwardx11trusted", "controlmaster", "controlpath",
+		"controlpersist", "tunnel", "proxycommand", "proxyjump", "proxyusefdpass", "sessiontype":
+		// Accepted only with the values that leave the feature off.
+		return forwardspec.ValidateFeature(key, []string{value})
 	default:
 		if handled, err := keywordDecision(key, value); handled {
 			return err

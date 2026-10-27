@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4"
@@ -42,8 +43,12 @@ type Bridge struct {
 	answers     chan webrtc.SessionDescription
 	failures    chan string
 	authorized  chan struct{}
-	ctx         context.Context
-	cancel      context.CancelFunc
+	// watch starts one authorization watcher for all exchanges: several
+	// watchers would split the companion's single heartbeat between them.
+	watch     sync.Once
+	heartbeat time.Duration
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func New(ctx context.Context, destination string) (*Bridge, error) {
@@ -59,6 +64,7 @@ func New(ctx context.Context, destination string) (*Bridge, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	b := &Bridge{listener: l, prefix: "/" + hex.EncodeToString(nonce[:]) + "/", destination: destination, config: make(chan Configuration, 1), offers: make(chan webrtc.SessionDescription), answers: make(chan webrtc.SessionDescription, 1), failures: make(chan string, 1), ctx: ctx, cancel: cancel}
 	b.authorized = make(chan struct{}, 1)
+	b.heartbeat = 90 * time.Second
 	b.server = &http.Server{Handler: http.HandlerFunc(b.serve), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 130 * time.Second, WriteTimeout: 130 * time.Second, MaxHeaderBytes: 8192}
 	go func() { _ = b.server.Serve(l) }()
 	go func() { <-ctx.Done(); _ = b.server.Close() }()
@@ -98,7 +104,7 @@ func (b *Bridge) Exchange(ctx context.Context, offer webrtc.SessionDescription) 
 	}
 	select {
 	case a := <-b.answers:
-		go b.watchAuthorization(90 * time.Second)
+		b.watch.Do(func() { go b.watchAuthorization(b.heartbeat) })
 		return a, nil
 	case message := <-b.failures:
 		return webrtc.SessionDescription{}, errors.New("browser signaling failed: " + message)

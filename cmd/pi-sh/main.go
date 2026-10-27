@@ -61,7 +61,9 @@ func app() int {
 	var plan *command.Plan
 	var brokerPlan *shellbroker.Plan
 	var ttyCommand *ttyCommandRequest
-	if opts.legacy {
+	if opts.noSession() {
+		// SessionType none (-N, -W): no shell, command or TTY.
+	} else if opts.legacy {
 		plan, err = commandArguments(opts.args)
 	} else if opts.broker || !opts.legacyShell {
 		useTTY, warning := opts.requestTTY(terminal.IsTerminal(os.Stdin))
@@ -96,8 +98,32 @@ func app() int {
 		log.Debug(msgAuthBrowser)
 	}
 	source, err := authentication(ctx, destination, opts.direct, opts.policy)
+	if err == nil && opts.noSession() {
+		defer source.Close()
+		var stdin io.Reader = os.Stdin
+		if opts.stdinNull {
+			stdin = nil
+		}
+		code, err := runForwarding(ctx, opts.policy, source, opts, stdin, os.Stdout)
+		if err != nil {
+			log.Failure(diag.Fatal, err)
+		}
+		return code
+	}
 	if err == nil {
 		defer source.Close()
+		if opts.forwarding() {
+			// Like ssh, forwardings are set up before the session starts.
+			f, listeners, ferr := startForwarding(ctx, opts.policy, source, opts)
+			if ferr != nil {
+				log.Failure(diag.Fatal, ferr)
+				return 255
+			}
+			if listeners != nil {
+				f.serve(ctx, listeners)
+			}
+			defer f.stop(ctx)
+		}
 		stdin := opts.stdin(os.Stdin)
 		if opts.stdinNull {
 			stdin = nil

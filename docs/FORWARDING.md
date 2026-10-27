@@ -1,9 +1,13 @@
-# Forwarding investigation — 2026-10-20
+# Forwarding — investigation 2026-10-20, implementation 2026-10-27
 
-No forwarding option is implemented or accepted yet. The observed Connect
-interface supplies a shell PTY and resize/control events; no native TCP/Unix
-forwarding request has been observed. A working SFTP server process over the
-binary broker does not establish an agent socket channel.
+**Status (2026-10-27):** `-L`, `-D`, `-W`, `-N` and their configuration
+directives are implemented through an in-memory Bash adapter and a connector
+program already present on the device (see "Implementation" below). `-R` is
+parsed and refused pending the owner's decision. Agent, X11, tunnel,
+multiplexing and proxy options are accepted only with their "off" values.
+Connect itself still offers no native forwarding request: the observed interface
+supplies a shell PTY and resize/control events, and none has been observed since.
+The investigation below explains why the plain Bash bridge was rejected.
 
 ## Required behavior
 
@@ -86,12 +90,86 @@ netcat (Debian patchlevel 1.229-1)", package `netcat-openbsd 1.229-1`, whose usa
 lists `-N` (shut down the socket after stdin EOF) and `-U`; also `busybox`, `curl`,
 `perl` and `python3` (3.13). Absent: `ncat`, `nc.traditional`, `socat`, `telnet`.
 
-This settles which connector the unmerged forwarding branch
-(`worktree-agent-a2fd792200a64ad6c`, `openbsd-nc` in `internal/fwdbroker`) can use
-on this device without installing anything. It does not yet verify its behavior:
+This settles which connector `internal/fwdbroker` (`openbsd-nc`) can use on this
+device without installing anything. It does not yet verify its behavior:
 binary transparency, half-close with a live reader, connect-failure status and
 cleanup still need a native probe. A probe against a loopback service that
 already listens (for example reading a banner) is read-only; a half-close echo
 test needs a temporary remote listener (`nc -l` on 127.0.0.1), which is a new
 remote process and needs the owner's approval of an exact plan first. Python and
 Perl are present but the project avoids them on the remote side.
+
+## Implementation — 2026-10-27
+
+**Pieces.** `internal/forwardspec` parses OpenSSH 10.2 forwarding specifications
+and directives and prints them for `-G` (differential against local `ssh -G`).
+`internal/forward` is the local side: listeners with ssh's bind rules, SOCKS4/4a/5
+CONNECT, `-W` stdio and a relay with independent half-close per direction.
+`internal/fwdbroker` stages `forward.bash` over a Connect shell carrier, detects a
+connector (`nc -h` reporting OpenBSD netcat, Nmap ncat, or socat), and multiplexes
+up to 64 remote connectors, each started per connection with an argv chosen by
+Go (for OpenBSD netcat: `nc -N -v -- host port`, or `nc -N -U -- path`). Records are
+hex text with acknowledged windows (input 4×1 KiB, output 8×512 B per stream);
+the adapter kills and reaps every connector on `Q`/abort. Connector failure text
+is not echoed: only recognized system reasons ("Connection refused" …) are shown.
+
+**CLI (`cmd/pi-sh/forwarding.go`).** Forwarding uses its own Connect session, opened
+from the same authenticated source, separate from the shell/command channel. Two
+concurrent sessions were observed natively (below). `-N`/`-W` open only that
+carrier. With a shell or command, the carrier and listeners are set up first
+(as ssh binds after authentication and before the session), and stopped when the
+session ends: listeners close, active streams end, the adapter confirms cleanup
+(an unconfirmed cleanup is reported), and the carrier closes.
+
+**Semantics checked against OpenSSH 10.2p1** (a local sshd fixture, single runs):
+`-W` with `-n` or a command still relays (the command is ignored), a refused target
+prints `channel 0: open failed: connect failed: Connection refused` then
+`stdio forwarding failed` and exits 255; `-N` ignores command words; `-W` clears
+`-L` and implies no TTY; `-L localhost:…` succeeds if one loopback address binds;
+ClearAllForwardings also drops command-line forwardings; `-N` after another
+SessionType is `Cannot specify -N with -s/SessionType`; `ssh -N` exits 0 on
+SIGTERM and 255 on SIGINT or SIGHUP, which pi-sh reproduces.
+
+**Configuration.** `-o` and `-F` files accept LocalForward/DynamicForward (file
+entries follow command-line ones, duplicates dropped, also across `Match final`),
+GatewayPorts, ExitOnForwardFailure, ClearAllForwardings, StreamLocalBindMask/Unlink,
+PermitRemoteOpen (printed; no effect without `-R`) and SessionType none/default.
+pi-cp and pi-sftp validate and drop list directives, as scp/sftp run ssh with
+ClearAllForwardings=yes. Unix-socket paths expand `%d %h %i %n %r %u %%`; other
+tokens are refused.
+
+**Tests.** forwardspec differentials and parser cases; forward bind/SOCKS/relay
+and Unix tests; adapter tests over a real PTY and Bash with a netcat test double
+(`fwdtest`), covering binary half-close, concurrency, IPv6/Unix targets,
+remote-first close, open failure, backpressure isolation and cleanup;
+CLI tests over local Pion peers with an agent stand-in that opens one PTY shell
+per Connect session: `TestStdioForwardingThroughCLI`,
+`TestNoSessionLocalForwardingThroughCLI` (three concurrent streams, one
+session, listener closed afterwards), `TestExitOnForwardFailureThroughCLI`,
+`TestLocalForwardingAlongsideCommand` (two sessions, forwarded traffic while
+the command runs, its status 7 kept).
+
+**Known differences.** `~#` lists only the session channel; `~&` and the escape
+command line are absent; after the session ends, open forwarded connections are
+closed instead of waited for ("Waiting for forwarded connections to
+terminate"). Throughput is bounded by hex records and Bash; it is unmeasured
+natively. The device's connector must exist: pi-sh installs nothing and
+refuses with ErrNoConnector otherwise.
+
+**Browser companion and several sessions.** The companion first answered only one
+offer, so the second session of one process (forwarding next to a command, or a
+ConnectionAttempts retry in browser mode) timed out natively. It now runs one
+heartbeat and answers every further offer with a new connection, never replaying
+a create request; the bridge starts one authorization watcher, since several
+split the single heartbeat (`TestSecondExchangeSharesOneAuthorizationWatcher`,
+which failed before the change, and the companion's multi-offer test).
+Native results: REAL_DEVICE_TESTS.md, 27 October 2026.
+
+## Concurrent Connect sessions — 2026-10-27
+
+Read-only, browser companion, two separate pi-sh processes. Session A ran
+`sleep 40` and exited 21; session B started while A was sleeping (its remote
+timestamp fell inside A's start/end timestamps) and exited 22. Each process had
+its own companion step in the same Devices tab. So the agent accepts at least two
+concurrent sessions for one account and device; no limit or quota was probed.
+This is what lets forwarding use a carrier separate from the session.

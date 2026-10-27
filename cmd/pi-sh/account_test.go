@@ -12,11 +12,19 @@ import (
 
 	"pi-sh/internal/account"
 	"pi-sh/internal/connpolicy"
+	"pi-sh/internal/fwdbroker/fwdtest"
 )
 
 // TestMain isolates every test from the developer's own default account
 // (PI_SH_ACCOUNT or ~/.config/pi-sh/account); an empty value disables both.
 func TestMain(m *testing.M) {
+	// Device-side tests run this binary as the connector program and setsid.
+	switch filepath.Base(os.Args[0]) {
+	case "nc":
+		os.Exit(fwdtest.Netcat(os.Args[1:]))
+	case "setsid":
+		os.Exit(fwdtest.Setsid(os.Args[1:]))
+	}
 	os.Setenv(account.EnvName, "")
 	os.Exit(m.Run())
 }

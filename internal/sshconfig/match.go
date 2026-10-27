@@ -43,6 +43,12 @@ type Context struct {
 	DefaultUser string
 	// Stderr receives Match exec standard error; nil selects os.Stderr.
 	Stderr io.Writer
+	// Lists receives active list directives (LocalForward, DynamicForward,
+	// RemoteForward, PermitRemoteOpen) in file order; both Match final passes
+	// append, as ssh adds to its lists twice and drops duplicates. With nil they
+	// are validated and dropped, as scp and sftp run ssh with
+	// ClearAllForwardings=yes.
+	Lists *[]Directive
 
 	env *localEnv // test hook; nil selects the real local system
 }
