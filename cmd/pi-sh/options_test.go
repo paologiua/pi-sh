@@ -21,7 +21,7 @@ func TestOptionsBoundariesAndValidation(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"--browser", "-e"}, {"--browser", "-o"}, {"--browser", "-F"},
-		{"--browser", "-F", "config"}, {"--browser", "-L8080:localhost:80"}, {"--browser", "-\x1b"},
+		{"--browser", "-F", "config"}, {"--browser", "-R8080:localhost:80", "pi"}, {"--browser", "-\x1b"},
 		{"--browser", "-oProxyCommand=echo secret"}, {"--browser", "-oStdinNull=maybe"},
 		{"--browser", "-oRequestTTY=maybe"}, {"--browser", "-oEscapeChar=ab"},
 		{"--browser", "-oStdinNull=yes extra"}, {"--browser", "-oStdinNull=yes\nLocalCommand=x"},

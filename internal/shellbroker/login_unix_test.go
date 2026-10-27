@@ -5,9 +5,9 @@ package shellbroker
 import (
 	"bytes"
 	"fmt"
-	"regexp"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )

@@ -4,11 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/user"
+	"strconv"
 	"strings"
 
 	"pi-sh/internal/account"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
+	"pi-sh/internal/forwardspec"
 	"pi-sh/internal/sshconfig"
 	"pi-sh/internal/sshdest"
 )
@@ -39,10 +43,22 @@ type options struct {
 	// destinationParsed records that the destination's account/port were
 	// seeded at its command-line position (first obtained, as in ssh.c).
 	destinationParsed bool
+	// fwd holds -L/-D/-W and the forwarding directives; features holds the
+	// accepted (off) values of refused features and SessionType, so -G
+	// prints them. Remote (-R) forwardings are parsed and then refused.
+	fwd      forwardspec.Settings
+	features forwardspec.Features
 }
 
+// noSession reports ssh's SessionType none (-N, -W): no shell or command runs,
+// and any command words are ignored, as ssh(1) ignores them.
+func (o options) noSession() bool { return o.features.SessionNone }
+
+// forwarding reports whether a forwarding carrier is needed.
+func (o options) forwarding() bool { return len(o.fwd.Local) > 0 || o.fwd.StdioSet }
+
 func parseOptions(args []string) (options, error) {
-	o := options{escape: "~", tty: "auto", connection: map[string]string{}, policy: connpolicy.Default()}
+	o := options{escape: "~", tty: "auto", connection: map[string]string{}, policy: connpolicy.Default(), fwd: forwardspec.NewSettings()}
 	seen := make(map[string]bool)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -107,7 +123,27 @@ func parseOptions(args []string) (options, error) {
 				o.logging.verbosity.Quiet()
 			case 'y':
 				o.logging.syslog = true
-			case 'e', 'o', 'F', 'P', 'Q', 'E', 'l', 'p':
+			case 'N':
+				// ssh -N assigns SessionType none and no TTY directly, like -W,
+				// and rejects an earlier other SessionType.
+				if seen["sessiontype"] && !o.features.SessionNone {
+					return o, errors.New("Cannot specify -N with -s/SessionType")
+				}
+				o.tty, o.features.SessionNone = "no", true
+				seen["requesttty"], seen["sessiontype"] = true, true
+			case 'g':
+				o.fwd.GatewayPorts = true
+				seen["gatewayports"] = true
+			case 'a', 'x':
+				// Disable agent/X11 forwarding: already pi-sh's only behaviour.
+			case 'A':
+				return o, forwardspec.ErrAgentForwarding
+			case 'X', 'Y':
+				return o, forwardspec.ErrX11Forwarding
+			case 'M':
+				return o, forwardspec.ErrMultiplexing
+			case 'e', 'o', 'F', 'P', 'Q', 'E', 'l', 'p', 'L', 'R', 'D', 'W', 'S', 'O', 'w', 'J':
+				var err error
 				value := a[j+1:]
 				if j+1 == len(a) {
 					i++
@@ -120,6 +156,23 @@ func parseOptions(args []string) (options, error) {
 				case 'Q':
 					o.inspection, o.query = "query", value
 					return o, nil
+				case 'L':
+					err = o.fwd.AddLocal(value, os.LookupEnv)
+				case 'D':
+					err = o.fwd.AddDynamic(value, os.LookupEnv)
+				case 'R':
+					err = o.fwd.AddRemote(value, os.LookupEnv)
+				case 'W':
+					err = o.fwd.SetStdio(value, os.LookupEnv)
+					// As ssh.c: -W assigns no TTY and SessionType none directly.
+					o.tty, o.features.SessionNone = "no", true
+					seen["requesttty"], seen["sessiontype"] = true, true
+				case 'S', 'O':
+					return o, forwardspec.ErrMultiplexing
+				case 'w':
+					return o, forwardspec.ErrTunnel
+				case 'J':
+					return o, forwardspec.ErrProxy
 				case 'e':
 					o.escape = value
 					seen["escapechar"] = true
@@ -150,6 +203,13 @@ func parseOptions(args []string) (options, error) {
 					}
 					o.configFile = value
 				case 'o':
+					if key, words, ferr := sshconfig.Fields(value); ferr == nil && forwardspec.ListKeyword(key) {
+						if err := o.fwd.Directive(key, words, os.LookupEnv, seen[key]); err != nil {
+							return o, fmt.Errorf("%s: %w", key, err)
+						}
+						seen[key] = key == "permitremoteopen" || seen[key]
+						break
+					}
 					key, val, err := scalarOption(value)
 					if err != nil {
 						return o, err
@@ -160,8 +220,11 @@ func parseOptions(args []string) (options, error) {
 						return o, err
 					}
 				}
+				if err != nil {
+					return o, err
+				}
 				j = len(a)
-			case '4', '6', 'C', 'f', 'K', 'k', 'N', 's', 'B', 'b', 'c', 'I', 'i', 'm':
+			case '4', '6', 'C', 'f', 'K', 'k', 's', 'B', 'b', 'c', 'I', 'i', 'm':
 				// Known ssh(1) options with an explicit decision; see
 				// refusedFlag. Their operands, if any, are never interpreted.
 				return o, fmt.Errorf("option -%c is not supported: %s", c, refusedFlag(c))
@@ -203,11 +266,23 @@ func parseOptions(args []string) (options, error) {
 			initial["user"] = user
 		}
 		// Match command/sessiontype see the words ssh would join for exec.
-		values, err := sshconfig.LoadContext(o.configFile, sshconfig.Context{
-			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "), DefaultUser: defaultAccount,
-		})
+		var lists []sshconfig.Directive
+		ctx := sshconfig.Context{
+			Host: o.args[0], Overrides: initial, Command: strings.Join(o.args[1:], " "), DefaultUser: defaultAccount, Lists: &lists,
+		}
+		if o.noSession() {
+			ctx.SessionType = sshconfig.SessionNone
+		}
+		values, err := sshconfig.LoadContext(o.configFile, ctx)
 		if err != nil {
 			return o, configError{err}
+		}
+		// File forwardings follow the command line's, as ssh appends them.
+		for _, d := range lists {
+			if err := o.fwd.Directive(d.Key, d.Args, os.LookupEnv, seen[d.Key]); err != nil {
+				return o, configError{err}
+			}
+			seen[d.Key] = d.Key == "permitremoteopen" || seen[d.Key]
 		}
 		for key, value := range values {
 			if seen[key] {
@@ -229,6 +304,9 @@ func parseOptions(args []string) (options, error) {
 		}
 	}
 	if _, err := parseEscape(o.escape); err != nil {
+		return o, err
+	}
+	if err := o.finishForwarding(defaultAccount); err != nil {
 		return o, err
 	}
 	if err := o.applyRemoteCommand(defaultAccount); err != nil {
@@ -255,6 +333,17 @@ func parseOptions(args []string) (options, error) {
 	if !o.browser && !o.direct {
 		return o, errors.New("select --browser or --direct-login")
 	}
+	if (o.legacy || o.legacyShell) && (o.forwarding() || o.noSession()) {
+		return o, errors.New("forwarding and -N require the in-memory adapters, not the legacy streams")
+	}
+	if o.noSession() {
+		// ssh(1) with SessionType none runs nothing and ignores command words.
+		if len(o.args) == 0 {
+			return o, errors.New("a destination is required")
+		}
+		o.args = o.args[:1]
+		return o, nil
+	}
 	command := o.broker || o.legacy
 	if (command && len(o.args) < 2) || (!command && len(o.args) > 1) {
 		return o, errors.New("command execution requires an explicit adapter, device and command")
@@ -274,6 +363,36 @@ func parseOptions(args []string) (options, error) {
 	}
 	return o, nil
 }
+
+// finishForwarding applies ssh's -W/ClearAllForwardings rules, refuses what
+// pi-sh cannot do and expands Unix-socket paths.
+func (o *options) finishForwarding(defaultAccount string) error {
+	o.fwd.Finish()
+	if len(o.fwd.Remote) > 0 {
+		return errRemoteForwarding
+	}
+	tokens := map[byte]string{}
+	if len(o.args) > 0 {
+		tokens['h'], tokens['n'] = o.destination(), o.args[0]
+	}
+	if account := o.connection["user"]; account != "" {
+		tokens['r'] = account
+	} else if defaultAccount != "" {
+		tokens['r'] = defaultAccount
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		tokens['d'] = home
+	}
+	if u, err := user.Current(); err == nil {
+		tokens['u'] = u.Username
+	}
+	tokens['i'] = strconv.Itoa(os.Getuid())
+	return o.fwd.Expand(tokens)
+}
+
+// errRemoteForwarding is the pending decision for -R/RemoteForward: it needs a
+// listener on the device for the whole session (docs/FORWARDING.md).
+var errRemoteForwarding = errors.New("remote forwarding (-R, RemoteForward) is not implemented: it would keep a listener open on the device; see docs/FORWARDING.md")
 
 // applyRemoteCommand follows ssh(1): RemoteCommand together with a
 // command-line command is an error (also for -G); otherwise its %-expanded
@@ -386,6 +505,13 @@ func (o *options) apply(key, value string, seen map[string]bool) error {
 			o.logging.facility = value
 		case "remotecommand":
 			o.remoteCommand = value
+		case "gatewayports", "exitonforwardfailure", "clearallforwardings", "streamlocalbindunlink", "streamlocalbindmask":
+			if err := o.fwd.SetScalar(key, value); err != nil {
+				return err
+			}
+		case "forwardagent", "forwardx11", "forwardx11trusted", "controlmaster", "controlpath",
+			"controlpersist", "tunnel", "proxycommand", "proxyjump", "proxyusefdpass", "sessiontype":
+			o.features.Set(key, value)
 		case "refuseconnection":
 			// As in OpenSSH 10.2, an obtained value always terminates.
 			return errors.New("RefuseConnection: connection refused by configuration")
@@ -485,6 +611,12 @@ func (o options) writeConfig(w io.Writer) error {
 		}
 	}
 	if err := o.logging.writeConfig(w); err != nil {
+		return err
+	}
+	if err := o.fwd.WriteConfig(w); err != nil {
+		return err
+	}
+	if err := o.features.WriteConfig(w); err != nil {
 		return err
 	}
 	return o.policy.WriteConfig(w)

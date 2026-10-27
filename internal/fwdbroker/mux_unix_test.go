@@ -23,6 +23,7 @@ import (
 
 	"pi-sh/internal/forward"
 	"pi-sh/internal/forwardspec"
+	"pi-sh/internal/fwdbroker/fwdtest"
 )
 
 // TestMain lets this test binary act as a stand-in connector named "nc" with
@@ -31,62 +32,9 @@ import (
 // locally; the device's real connector is checked by the probe scripts.
 func TestMain(m *testing.M) {
 	if filepath.Base(os.Args[0]) == "nc" {
-		os.Exit(fakeNetcat(os.Args[1:]))
+		os.Exit(fwdtest.Netcat(os.Args[1:]))
 	}
 	os.Exit(m.Run())
-}
-
-func fakeNetcat(args []string) int {
-	verbose, unix := false, false
-	var operands []string
-	for i, a := range args {
-		if a == "--" {
-			operands = args[i+1:]
-			break
-		}
-		switch a {
-		case "-h":
-			fmt.Fprintln(os.Stderr, "OpenBSD netcat (pi-sh test double)")
-			return 1
-		case "-v":
-			verbose = true
-		case "-U":
-			unix = true
-		case "-N":
-		default:
-			return 2
-		}
-	}
-	var conn net.Conn
-	var err error
-	if unix && len(operands) == 1 {
-		conn, err = net.Dial("unix", operands[0])
-	} else if len(operands) == 2 {
-		conn, err = net.Dial("tcp", net.JoinHostPort(operands[0], operands[1]))
-	} else {
-		return 2
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "nc: connect to %s failed: Connection refused\n", strings.Join(operands, " port "))
-		return 1
-	}
-	if verbose && !unix {
-		fmt.Fprintf(os.Stderr, "Connection to %s %s port [tcp/*] succeeded!\n", operands[0], operands[1])
-	}
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		io.Copy(conn, os.Stdin)
-		conn.(interface{ CloseWrite() error }).CloseWrite()
-	}()
-	go func() {
-		defer wg.Done()
-		io.Copy(os.Stdout, conn)
-		os.Stdout.Close()
-	}()
-	wg.Wait()
-	return 0
 }
 
 type readResult struct {

@@ -50,21 +50,22 @@ func (l logOptions) writeConfig(w io.Writer) error {
 
 // Phase messages are fixed text; see docs/DIAGNOSTICS.md for the level table.
 const (
-	msgVersion      diag.Message = "unofficial client"
-	msgConfigFile   diag.Message = "configuration: reading explicit configuration file"
-	msgConfigNone   diag.Message = "configuration: no configuration file selected"
-	msgConfigLevel  diag.Message = "configuration: effective diagnostics"
-	msgAuthBrowser  diag.Message = "authentication: browser companion mode selected"
-	msgAuthDirect   diag.Message = "authentication: direct login mode selected"
-	msgNoTTY        diag.Message = "pseudo-terminal will not be allocated because stdin is not a terminal or is disabled"
-	msgEscape       diag.Message = "disconnected locally; remote TTY cleanup was not confirmed"
-	msgLegacy       diag.Message = "experimental command adapter; remote PTY, merged stdout/stderr, stdin /dev/null"
-	msgBroker       diag.Message = "experimental shell-only broker; binary stdin, separate stdout/stderr; no Python"
-	msgTTYCommand   diag.Message = "experimental TTY command; merged stdout/stderr; abnormal remote cleanup remains unverified"
-	msgSessionShell diag.Message = "session: starting interactive shell"
-	msgSessionMode  diag.Message = "session: starting command adapter"
-	msgSessionLogin diag.Message = "session: starting login shell through the in-memory adapter"
-	msgExitStatus   diag.Message = "session: remote command finished"
+	msgVersion        diag.Message = "unofficial client"
+	msgConfigFile     diag.Message = "configuration: reading explicit configuration file"
+	msgConfigNone     diag.Message = "configuration: no configuration file selected"
+	msgConfigLevel    diag.Message = "configuration: effective diagnostics"
+	msgAuthBrowser    diag.Message = "authentication: browser companion mode selected"
+	msgAuthDirect     diag.Message = "authentication: direct login mode selected"
+	msgNoTTY          diag.Message = "pseudo-terminal will not be allocated because stdin is not a terminal or is disabled"
+	msgEscape         diag.Message = "disconnected locally; remote TTY cleanup was not confirmed"
+	msgLegacy         diag.Message = "experimental command adapter; remote PTY, merged stdout/stderr, stdin /dev/null"
+	msgForwardCarrier diag.Message = "forwarding carrier ready"
+	msgBroker         diag.Message = "experimental shell-only broker; binary stdin, separate stdout/stderr; no Python"
+	msgTTYCommand     diag.Message = "experimental TTY command; merged stdout/stderr; abnormal remote cleanup remains unverified"
+	msgSessionShell   diag.Message = "session: starting interactive shell"
+	msgSessionMode    diag.Message = "session: starting command adapter"
+	msgSessionLogin   diag.Message = "session: starting login shell through the in-memory adapter"
+	msgExitStatus     diag.Message = "session: remote command finished"
 )
 
 func logStartup(log *diag.Logger, o options) {

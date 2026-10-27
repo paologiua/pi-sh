@@ -24,11 +24,11 @@ const (
 	ReasonFamily     = "address family selection is not implemented for the HTTPS and WebRTC/ICE connections; only AddressFamily any is accepted"
 	ReasonBind       = "local bind address/interface selection is not implemented for the HTTPS and WebRTC/ICE connections"
 	ReasonFork       = "going to the background after authentication is not supported: the memory-only Connect session cannot be handed to a forked process; use shell job control"
-	ReasonSession    = "only SessionType default is supported: Connect's shell channel always starts a shell (no -N/none) and no SSH subsystem request exists (use pi-sftp for SFTP)"
+	ReasonSession    = "SSH subsystems (-s) are not supported: Connect has no subsystem request (use pi-sftp for SFTP)"
 	ReasonEnv        = "environment passing is not implemented: Connect has no SSH environment request, and pi-sh does not inject variables into the remote shell"
 	ReasonLocalCmd   = "LocalCommand is not implemented: pi-sh never runs local commands from configuration except Match exec; only PermitLocalCommand no is accepted"
 	ReasonIgnore     = "IgnoreUnknown is not supported: pi-sh validates every directive in explicitly selected files so that no setting is silently skipped"
-	ReasonForwarding = "forwarding, proxying, agent/X11 forwarding and connection sharing are not implemented (see docs/FORWARDING.md)"
+	ReasonForwarding = "X11 forwarding and tun/tap tunnels are not supported (see docs/FORWARDING.md)"
 	ReasonEscape     = "the escape command line (~C) is not implemented"
 	ReasonQoS        = "WebRTC traffic class, rekeying and keystroke-timing obfuscation are not configurable in pi-sh; only ObscureKeystrokeTiming no is accepted"
 	ReasonBanner     = "pi-sh sends no SSH version banner to extend"
@@ -46,7 +46,6 @@ var accepted = map[string]struct {
 	"canonicalizehostname":      {[]string{"no"}, ReasonCanonical},
 	"addressfamily":             {[]string{"any"}, ReasonFamily},
 	"forkafterauthentication":   {[]string{"no"}, ReasonFork},
-	"sessiontype":               {[]string{"default"}, ReasonSession},
 	"permitlocalcommand":        {[]string{"no"}, ReasonLocalCmd},
 	"gssapiauthentication":      {[]string{"no"}, ReasonAuth},
 	"gssapidelegatecredentials": {[]string{"no"}, ReasonAuth},
@@ -87,14 +86,7 @@ var refused = map[string]string{
 	"logverbose":              ReasonLogVerbose,
 	"enableescapecommandline": ReasonEscape,
 
-	"localforward": ReasonForwarding, "remoteforward": ReasonForwarding, "dynamicforward": ReasonForwarding,
-	"gatewayports": ReasonForwarding, "exitonforwardfailure": ReasonForwarding, "clearallforwardings": ReasonForwarding,
-	"permitremoteopen": ReasonForwarding, "forwardagent": ReasonForwarding, "forwardx11": ReasonForwarding,
-	"forwardx11timeout": ReasonForwarding, "forwardx11trusted": ReasonForwarding, "xauthlocation": ReasonForwarding,
-	"tunnel": ReasonForwarding, "tunneldevice": ReasonForwarding, "controlmaster": ReasonForwarding,
-	"controlpath": ReasonForwarding, "controlpersist": ReasonForwarding, "proxyjump": ReasonForwarding,
-	"proxycommand": ReasonForwarding, "proxyusefdpass": ReasonForwarding, "streamlocalbindmask": ReasonForwarding,
-	"streamlocalbindunlink": ReasonForwarding,
+	"forwardx11timeout": ReasonForwarding, "xauthlocation": ReasonForwarding, "tunneldevice": ReasonForwarding,
 
 	"protocol": ReasonObsolete, "cipher": ReasonObsolete, "rsaauthentication": ReasonObsolete,
 	"rhostsrsaauthentication": ReasonObsolete, "compressionlevel": ReasonObsolete, "useroaming": ReasonObsolete,

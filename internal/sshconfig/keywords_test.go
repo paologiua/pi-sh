@@ -12,7 +12,7 @@ func TestKeywordDecisions(t *testing.T) {
 		t.Fatalf("%q %v", got["remotecommand"], err)
 	}
 	for _, text := range []string{
-		"Compression yes", "AddressFamily inet", "SessionType none", "CanonicalizeMaxDots -1",
+		"Compression yes", "AddressFamily inet", "SessionType subsystem", "CanonicalizeMaxDots -1",
 		"CanonicalizeFallbackLocal maybe", "IdentityFile secret-path", "Host other\nCiphers secret-cipher",
 		"SetEnv A=b", "RemoteCommand \"a\x00b\"", "Host pi\nRefuseConnection secret-message",
 	} {
