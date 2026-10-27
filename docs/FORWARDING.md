@@ -156,6 +156,15 @@ terminate"). Throughput is bounded by hex records and Bash; it is unmeasured
 natively. The device's connector must exist: pi-sh installs nothing and
 refuses with ErrNoConnector otherwise.
 
+**Browser companion and several sessions.** The companion first answered only one
+offer, so the second session of one process (forwarding next to a command, or a
+ConnectionAttempts retry in browser mode) timed out natively. It now runs one
+heartbeat and answers every further offer with a new connection, never replaying
+a create request; the bridge starts one authorization watcher, since several
+split the single heartbeat (`TestSecondExchangeSharesOneAuthorizationWatcher`,
+which failed before the change, and the companion's multi-offer test).
+Native results: REAL_DEVICE_TESTS.md, 27 October 2026.
+
 ## Concurrent Connect sessions — 2026-10-27
 
 Read-only, browser companion, two separate pi-sh processes. Session A ran

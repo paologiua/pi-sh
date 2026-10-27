@@ -696,3 +696,23 @@ appeared but before `unset HISTFILE`; no command was typed in them, so Bash had
 no new history lines to save, but on hangup it may still have rewritten the
 account's history file as on any interrupted login (as does the official Remote
 shell page opened for the recent-sign-in step). Single runs.
+
+## Native forwarding, 27 October 2026
+
+Read-only, browser companion, forwarding branch build. Targets were the device's
+own loopback: port 22 (its existing sshd, only the version banner was read; no
+SSH authentication was attempted) and port 1 (closed). Nothing was installed or
+written; the connector was the existing `/usr/bin/nc.openbsd`.
+
+| Step | Result |
+| --- | --- |
+| Two separate pi-sh processes at once (`sleep 40; exit 21` and `exit 22`) | both ran; B inside A's interval; statuses 21 and 22 |
+| `-W 127.0.0.1:22`, stdin open 25 s then EOF | banner `SSH-2.0-OpenSSH_10.0p2 Debian-7+deb13u4`, exit 0 |
+| `-W 127.0.0.1:1` | `channel 0: open failed: connect failed: Connection refused`, `stdio forwarding failed`, exit 255 (as OpenSSH) |
+| `-N -L 127.0.0.1:23022:127.0.0.1:22`, two concurrent local clients, then SIGTERM | both read the banner; exit 0 (as `ssh -N` on SIGTERM); no cleanup warning |
+| `-T -L 127.0.0.1:23023:127.0.0.1:22` next to `sleep 15; exit 7` | first attempt: the command's Connect session timed out (companion answered only one offer); after the companion fix, banner read during the command, output intact, exit 7 |
+| `ps -u` afterwards | no `nc` and no adapter process left |
+
+The timed-out attempt sent no command (pi-sh reported establishment timeout
+before any remote command was sent). Single runs; throughput, many concurrent
+streams, long sessions and connection loss are not measured.
