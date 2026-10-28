@@ -139,7 +139,7 @@ _ps_main() {
   eval "exec ${_PS_RELAY[0]}<&- ${_PS_RELAY[1]}>&-"
   local out_seq=0 err_seq=0 out_ack=0 err_ack=0 out_req=0 err_req=0
   local in_seq=0 in_fwd=0 in_ack=0 out_eof=0 err_eof=0 input_closed=0 input_pending=0
-  local record= line= status hex n fd tfd name seqvar eofvar ackvar reqvar idle plen=${#_ps_prefix}
+  local record= line= status hex n fd tfd name seqvar eofvar ackvar reqvar idle plen=${#_ps_prefix} quiet=0 nap
   local -a inq=()
   local meta_line= meta_state= terminal_kind=unknown unknown_since=-1 refreshed=0
   _ps_emit R
@@ -239,9 +239,17 @@ _ps_main() {
         ((requested++))
       done
     done
+    # Idle rounds sleep 1 ms while records or acknowledgements are expected
+    # within a round trip, then 20 ms once nothing has happened for about
+    # 100 rounds: polling every millisecond kept an idle session's broker at
+    # a quarter of a device core (2026-10-28). The first event after a pause
+    # waits at most 20 ms more.
     if ((idle)); then
-      IFS= read -r -t 0.001 -u11 line
+      if ((quiet<100)); then ((++quiet)); nap=0.001; else nap=0.02; fi
+      IFS= read -r -t $nap -u11 line
       (($?>128)) || exit 125
+    else
+      quiet=0
     fi
     if ((out_eof && err_eof && out_seq==out_ack && err_seq==err_ack)); then
       if ! kill -0 "$_ps_pid" 2>/dev/null; then

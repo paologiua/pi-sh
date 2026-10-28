@@ -333,7 +333,7 @@ _fw_perl() {
   _fw_emit p
 }
 _fw_main() {
-  local head line id seq n k plen=${#_ps_prefix}
+  local head line id seq n k plen=${#_ps_prefix} quiet=0 nap
   exec 2>/dev/null
   trap _fw_cleanup EXIT
   trap 'exit 125' HUP TERM
@@ -388,9 +388,15 @@ _fw_main() {
       esac
     done
     for id in "${!S_pid[@]}"; do _fw_service "$id"; done
+    # 2 ms naps while traffic is expected within a round trip, 20 ms after
+    # about 100 quiet rounds, as the shell broker (whose 1 ms polling kept an
+    # idle session at a quarter of a device core).
     if ((_fw_busy==0)); then
-      IFS= read -r -t 0.002 -u"$idle" line
+      if ((quiet<100)); then ((++quiet)); nap=0.002; else nap=0.02; fi
+      IFS= read -r -t $nap -u"$idle" line
       (($?>128)) || exit 125
+    else
+      quiet=0
     fi
   done
 }

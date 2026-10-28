@@ -1048,3 +1048,15 @@ page was opened (nothing typed), then Devices again.
 | 64 × 1 MiB with `top -b -d 3` in a second session | 64 complete, 1939 KiB/s; adapter Perl about 50 % of a core, the 64 connectors about 10 % together, `rpi-connectd` 90–134 %, device about a third idle; a `bash` at 20–28 % went on after the transfer (probably the `top` session's broker) |
 | NATIVE_RMANY_PLAN.md, twice | `k=16 ok=16 of 16, 1.1 s` / `1.0 s`; `k=64 ok=64 of 64, 4.9 s` / `3.6 s`; `k=65 ok=65 of 65, 3.8 s` / `3.7 s`; Mac counter 145 connections of 65536 bytes each time; status 0 |
 | `ps`, `ss -ltn` afterwards | no `perl`, `nc` or `top`; only 22 and 11434 listening |
+
+## Idle broker CPU, 28 October 2026
+
+Read-only, browser companion. The command found its broker (the PISH3 `bash`
+whose parent is `rpi-connectd`), read its utime+stime from `/proc/<pid>/stat`,
+slept 10 s and read them again.
+
+| Check | Result |
+| --- | --- |
+| Build at `e898ffa` (1 ms idle sleep) | 257 ticks in 10 s (CLK_TCK 100): about 26 % of a core |
+| With the adaptive idle sleep (SHELL_BROKER.md "Idle CPU") | 27 ticks in 10 s |
+| 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero`, old / new build | `wc` 1048576 both; upload 3411 / 3435 ms (timed on the device); download 56.1 / 56.2 s, 1048576 bytes; exit 0 |

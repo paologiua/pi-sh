@@ -256,3 +256,23 @@ OpenSSH's channel code appears to treat a local read error like EOF
 (`chan_read_failed`); whether pi-sh should match that is a separate, untested
 compatibility question. One native run on 2026-10-26 confirmed cleanup
 (REAL_DEVICE_TESTS.md).
+
+## Idle CPU — 2026-10-28
+
+The main loop polls its descriptors with `read -t 0` and, when a round finds
+nothing, sleeps with a timed read on a pipe that nothing writes (Bash 5.2 timed
+reads can lose data, so they are never used on data descriptors). That sleep
+was 1 ms, so an idle session ran about a thousand rounds a second. On the
+device the broker of a session that only ran `sleep 10` used 257 ticks of
+CPU in 10 s (`/proc/<pid>/stat`, 100 ticks per second): a quarter of a core.
+
+Idle rounds now sleep 1 ms for about 100 rounds, which covers the wait for an
+acknowledgement or the next record of a transfer, and 20 ms after that. Any
+activity resets the count. The same session's broker then used 27 ticks in
+10 s. The cost is at most 20 ms more before the first event after a pause.
+
+Transfers were unchanged on the device (read-only, old and new build, one run
+each): 1 MiB to `wc -c` took 3.41 / 3.44 s and 1 MiB from `head -c` took 56.1
+/ 56.2 s. The local broker and Bash forwarding benchmarks stayed within run
+noise. The Bash forwarding adapter (forward.bash) now does the same with its
+2 ms naps.

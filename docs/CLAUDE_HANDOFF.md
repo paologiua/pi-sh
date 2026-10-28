@@ -275,6 +275,8 @@ Righe ancora aperte (lavoro rimanente):
   che chiudeva la sessione (ora contropressione) e i nomi coproc riusati che
   con Bash 5.3 chiudevano la portante; FORWARDING.md "Perl adapter"; limite ora
   rpi-connectd ~130% CPU);
+  broker inattivo: da ~26% a ~3% di un core sul Pi con attesa adattiva
+  (1 ms per ~100 giri, poi 20 ms; anche forward.bash), trasferimenti invariati;
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many
