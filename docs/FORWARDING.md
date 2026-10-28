@@ -243,7 +243,9 @@ with sshd's clientspecified rules, reports `L port` or `F reason`, then
 multiplexes accepted connections over its stdio with binary frames
 (`pack("aNN", type, id, length)`) and a 64 KiB window per connection in each
 direction, so a stalled local consumer stalls only its own connection. It
-accepts at most 64 connections at once and exits at stdin EOF; closing the
+serves at most 64 connections at once (further ones wait in the listen backlog
+until one ends, since 2026-10-28; before, a 65th was accepted and closed at
+once) and exits at stdin EOF; closing the
 stream kills it through the adapter. A device without Perl gets "remote
 forwarding needs Perl (perl-base) on the device".
 
@@ -415,6 +417,14 @@ trip, 256 KiB per stream): 16 streams 1.9 → 3.7–4.1 MiB/s, 64 streams 0.6 �
 **Limit.** A 65th connection while 64 are open waits for a free stream (it is
 not refused): it completed its download after one of the 64 ended. ssh has no
 such limit.
+
+**Remote forwarding (-R), locally.** 16 and 64 concurrent connections, each
+sending 64 KiB and receiving it reversed through a 40 ms round trip: every
+byte correct; about 150 KiB/s in each direction in total, whatever the
+number of connections, because all connections of one -R share the
+listener's adapter stream. A 65th connection was accepted and closed at once
+(the client read EOF with no data); it now waits in the backlog
+(`TestRemoteForwardingConnectionBeyondLimitWaits`).
 
 ## End of session — 2026-10-28
 

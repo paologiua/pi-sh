@@ -412,3 +412,52 @@ func TestRemoteListenRefusalIsOnlyAWarning(t *testing.T) {
 		t.Fatal(logs.lines)
 	}
 }
+
+// With 64 connections open, a further one waits until one of them ends, as a
+// -L connection beyond the adapter's limit does (sshd has no limit). Before,
+// the listener accepted and closed it at once: the client read EOF with no
+// data (found with 65 concurrent -R connections, 2026-10-28).
+func TestRemoteForwardingConnectionBeyondLimitWaits(t *testing.T) {
+	m, err := startMux(t, "perl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := reverseServer(t, "tcp4", "127.0.0.1:0")
+	logs := &logLines{}
+	if _, err := serveRemote(t, m, forward.RemoteConfig{Forwards: []forwardspec.Forward{remoteForward(t, fmt.Sprintf("0:127.0.0.1:%d", target.Addr().(*net.TCPAddr).Port))}}, logs); err != nil {
+		t.Fatal(err)
+	}
+	address := "127.0.0.1:" + strconv.Itoa(logs.allocatedPort(t))
+	held := make([]net.Conn, 64)
+	for i := range held {
+		c, err := net.DialTimeout("tcp", address, 10*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		held[i] = c
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for strings.Count(logs.String(), "client_request_forwarded_tcpip") < 64 {
+		if time.Now().After(deadline) {
+			t.Fatal("64 connections not announced")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	extra, err := net.DialTimeout("tcp", address, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer extra.Close()
+	extra.Write([]byte("abc"))
+	extra.(*net.TCPConn).CloseWrite()
+	extra.SetReadDeadline(time.Now().Add(time.Second))
+	if n, err := extra.Read(make([]byte, 8)); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("connection beyond the limit ended at once: %d bytes, %v", n, err)
+	}
+	held[0].Close()
+	extra.SetReadDeadline(time.Now().Add(20 * time.Second))
+	if got, err := io.ReadAll(extra); err != nil || string(got) != "cba" {
+		t.Fatalf("after a slot freed: %q, %v", got, err)
+	}
+}

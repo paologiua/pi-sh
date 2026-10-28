@@ -99,7 +99,9 @@ parse();
 while (1) {
   my ($r, $w) = ('', '');
   vec($r, 0, 1) = 1;
-  vec($r, fileno $_, 1) = 1 for @ls;
+  # At $MAX connections new ones wait in the listen backlog, as a -L
+  # connection beyond the adapter's limit waits for a free stream.
+  if (keys %c < $MAX) { vec($r, fileno $_, 1) = 1 for @ls }
   for my $k (values %c) {
     vec($r, fileno $k->{s}, 1) = 1 if !$k->{reof} && !$k->{closing} && $k->{credit} > 0;
     vec($w, fileno $k->{s}, 1) = 1 if length $k->{out};
@@ -113,8 +115,8 @@ while (1) {
   }
   for my $l (@ls) {
     next unless vec($r, fileno $l, 1);
+    last if keys %c >= $MAX;
     my $peer = accept(my $s, $l) or next;
-    if (keys %c >= $MAX) { close $s; next }
     nonblock($s);
     my $id = ++$next;
     $c{$id} = { s => $s, out => '', credit => $W, reof => 0, weof => 0 };
