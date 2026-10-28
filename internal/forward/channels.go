@@ -1,6 +1,8 @@
 package forward
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -15,13 +17,14 @@ import (
 // Listening sockets are not listed by ~#, as in ssh. A nil *Channels is valid
 // and lists nothing.
 type Channels struct {
-	mu     sync.Mutex
-	used   map[int]bool
-	listed map[int]string
+	mu      sync.Mutex
+	used    map[int]bool
+	listed  map[int]string
+	changed chan struct{} // closed and replaced by Release
 }
 
 func NewChannels() *Channels {
-	return &Channels{used: map[int]bool{}, listed: map[int]string{}}
+	return &Channels{used: map[int]bool{}, listed: map[int]string{}, changed: make(chan struct{})}
 }
 
 func (c *Channels) alloc() int {
@@ -75,7 +78,45 @@ func (c *Channels) Release(id int) {
 	c.mu.Lock()
 	delete(c.used, id)
 	delete(c.listed, id)
+	close(c.changed)
+	c.changed = make(chan struct{})
 	c.mu.Unlock()
+}
+
+// ErrWaitStopped reports that WaitIdle ended because stop was closed.
+var ErrWaitStopped = errors.New("forwarding stopped")
+
+// WaitIdle returns nil once no listed channel remains, as ssh's client loop
+// ends only when no channel is open; ctx or stop end it early.
+func (c *Channels) WaitIdle(ctx context.Context, stop <-chan struct{}) error {
+	if c == nil {
+		return nil
+	}
+	for {
+		c.mu.Lock()
+		n, changed := len(c.listed), c.changed
+		c.mu.Unlock()
+		if n == 0 {
+			return nil
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-stop:
+			return ErrWaitStopped
+		}
+	}
+}
+
+// Len is the number of listed channels.
+func (c *Channels) Len() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.listed)
 }
 
 // List returns ssh's ~# lines in id order, each "  #N description".

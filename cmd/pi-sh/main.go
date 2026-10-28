@@ -113,25 +113,35 @@ func app() int {
 	}
 	if err == nil {
 		defer source.Close()
+		var fwd *forwarding
+		var chans *forward.Channels
+		session := -1
 		if opts.forwarding() {
 			// Like ssh, forwardings are set up before the session starts.
-			chans := forward.NewChannels()
+			chans = forward.NewChannels()
 			f, listeners, ferr := startForwarding(ctx, opts.policy, source, opts, chans)
 			if ferr != nil {
 				log.Failure(diag.Fatal, ferr)
 				return 255
 			}
 			// As in ssh, the session channel follows the listening sockets.
-			chans.Open(sessionChannel)
+			session = chans.Open(sessionChannel)
 			ctx = withChannels(ctx, chans)
 			f.serve(ctx, listeners)
 			defer f.stop(ctx)
+			fwd = f
 		}
 		stdin := opts.stdin(os.Stdin)
 		if opts.stdinNull {
 			stdin = nil
 		}
 		err = connectWithPolicy(ctx, opts.policy, source, escape, plan, brokerPlan, ttyCommand, stdin, !opts.broker && !opts.legacy)
+		if fwd != nil && sessionEnded(err) {
+			chans.Release(session)
+			if !fwd.await(ctx, chans) {
+				return 255
+			}
+		}
 	}
 	if err != nil {
 		if errors.Is(err, errEscape) {

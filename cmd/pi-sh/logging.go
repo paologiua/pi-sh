@@ -60,6 +60,7 @@ const (
 	msgEscape         diag.Message = "disconnected locally; remote TTY cleanup was not confirmed"
 	msgLegacy         diag.Message = "experimental command adapter; remote PTY, merged stdout/stderr, stdin /dev/null"
 	msgForwardCarrier diag.Message = "forwarding carrier ready"
+	msgForwardWait    diag.Message = "session ended; serving forwarded connections until they close"
 	msgBroker         diag.Message = "experimental shell-only broker; binary stdin, separate stdout/stderr; no Python"
 	msgTTYCommand     diag.Message = "experimental TTY command; merged stdout/stderr; abnormal remote cleanup remains unverified"
 	msgSessionShell   diag.Message = "session: starting interactive shell"

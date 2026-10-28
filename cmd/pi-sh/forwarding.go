@@ -176,3 +176,31 @@ func noSessionSignalStatus(sig os.Signal) int {
 type eofReader struct{}
 
 func (eofReader) Read([]byte) (int, error) { return 0, io.EOF }
+
+// await keeps serving forwarded connections after the session ended until
+// none is open, as ssh's client loop does: listeners stay open and new
+// connections are still forwarded, and stdin is no longer read. OpenSSH 10.2
+// prints nothing while waiting (its "Waiting for forwarded connections to
+// terminate" was SSH-1 only). It returns false when a termination signal
+// ended the wait; ssh then exits 255. A carrier failure is reported and ends
+// the wait, keeping the session's status.
+func (f *forwarding) await(ctx context.Context, chans *forward.Channels) bool {
+	log := diag.From(ctx)
+	if n := chans.Len(); n > 0 {
+		log.Debug(msgForwardWait, diag.Count("connections", n))
+	}
+	err := chans.WaitIdle(ctx, f.mux.Done())
+	if errors.Is(err, forward.ErrWaitStopped) {
+		log.Failure(diag.Error, f.mux.Err())
+		return true
+	}
+	return err == nil
+}
+
+// sessionEnded reports a session that closed by itself, with or without a
+// status, after which ssh waits for forwarded connections. A local ~.
+// disconnect or a transport failure does not wait.
+func sessionEnded(err error) bool {
+	var status *commandStatus
+	return err == nil || errors.As(err, &status)
+}

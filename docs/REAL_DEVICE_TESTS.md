@@ -836,6 +836,21 @@ The following connections are open:
 
 This matches OpenSSH 10.2p1's numbering and text for the same options (two
 listening sockets take ids 0 and 1). The `/bin/bash -l` seen in the previous
-check is consistent with the official Remote shell page's session (opening the
-page started one). The transport failure of run 1 is recorded as an open,
+check was started by Connect (same parent as every Connect session) before
+these sessions; it is not a pi-sh process. The transport failure of run 1 is recorded as an open,
 unexplained single event; -R listing on the device needs an approved listener.
+
+## Waiting for forwarded connections at session end, 28 October 2026
+
+Read-only, browser companion. Each run: `pi-sh --browser --experimental-command
+-T -v -L 127.0.0.1:47221:127.0.0.1:22 raspberrypi 'echo READY; sleep 2; exit
+7'`; after READY a Mac client connected to 47221 (the device's sshd banner) and
+held the connection 10 s.
+
+| Run | Result |
+| --- | --- |
+| A | debug `session ended; serving forwarded connections until they close connections=1`; exit 7 after 10.1 s from READY (the command ended after 2 s) |
+| B, SIGTERM to pi-sh 6 s after READY | exit 255 at 6.0 s, no cleanup warning (OpenSSH 10.2 gave 255 for TERM, INT and HUP during the wait) |
+| `ps -eo pid,ppid,etime,args`, `ss -ltn` afterwards | only the listing session's own processes; listeners 127.0.0.1:11434 and port 22. The `/bin/bash -l` (pid 10666, parent 1134 like every Connect session) was 1 h 16 min old, so it predates this work's sessions |
+
+Single runs; -R connections and a TTY session were checked only locally.

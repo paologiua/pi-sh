@@ -160,8 +160,7 @@ processo (forwarding accanto a un comando, oppure i tentativi di
 ConnectionAttempts in modalità browser) andava in timeout.
 
 Aperti: M3 di `scripts/native-shell-check.sh` (perdita di rete: il proprietario
-deve disattivare la rete del Mac); alla fine della
-sessione le connessioni inoltrate vengono chiuse invece di attenderle; la riga
+deve disattivare la rete del Mac); la riga
 fatale `Error: remote port forwarding failed…` esce con il prefisso `pi-sh:`,
 che ssh non mette (convenzione generale del logger, DIAGNOSTICS.md: valutare
 per tutte le righe fatali). Half-close con -L, `-D` e `-R` (diretto, SOCKS
@@ -243,7 +242,7 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
-| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; `-R 0` non provato sul Pi); velocità di -R dopo il cambio dei record e half-close del nuovo connettore Perl da rifare sul Pi; molti stream, sessioni lunghe, perdita di connessione; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
+| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; `-R 0` non provato sul Pi); velocità di -R dopo il cambio dei record e half-close del nuovo connettore Perl da rifare sul Pi; molti stream, sessioni lunghe, perdita di connessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 

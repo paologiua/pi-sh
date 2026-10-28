@@ -149,10 +149,9 @@ session, listener closed afterwards), `TestExitOnForwardFailureThroughCLI`,
 `TestLocalForwardingAlongsideCommand` (two sessions, forwarded traffic while
 the command runs, its status 7 kept).
 
-**Known differences.** `~#` lists forwarded connections since 2026-10-28 (ESCAPES.md), with pi-sh's own status in parentheses; `~&` and the escape
-command line are absent; after the session ends, open forwarded connections are
-closed instead of waited for ("Waiting for forwarded connections to
-terminate"). Throughput: see "Throughput" (2026-10-28). The device's connector must exist: pi-sh installs nothing and
+**Known differences.** `~#` lists forwarded connections since 2026-10-28 (ESCAPES.md), with pi-sh's own status in parentheses; `~&` (ssh forks into the background) and the escape
+command line are absent. Since 2026-10-28 pi-sh waits for open forwarded
+connections at the end of the session, as ssh does (see "End of session"). Throughput: see "Throughput" (2026-10-28). The device's connector must exist: pi-sh installs nothing and
 refuses with ErrNoConnector otherwise.
 
 **Browser companion and several sessions.** The companion first answered only one
@@ -351,3 +350,43 @@ have about 2 MiB of output hex in flight, which the receive goroutine drains
 without blocking (it never waits on a consumer). Native `-R` throughput after
 the change is unmeasured: it needs a listener on the device, so an approved
 plan. Single sessions on one network; not a load test.
+
+## End of session — 2026-10-28
+
+**Reference (local OpenSSH 10.2p1 sshd, single runs).** When the command or
+shell ends while forwarded connections are open, ssh keeps running until every
+forwarded connection (-L, -D or -R) has closed, then exits with the session's
+status (7 after `exit 7`, 8 s after the end with a connection held 8 s). It
+prints nothing while it waits: the "Waiting for forwarded connections to
+terminate..." message belonged to SSH-1 and is absent from the 10.2 binary
+(`strings /usr/bin/ssh`). The listeners stay open and a connection made during
+the wait is still forwarded (it received the sshd banner). stdin is no longer
+read and the terminal leaves raw mode, so `~#` or `~?` typed then are only
+echoed, never interpreted. SIGTERM, SIGINT or SIGHUP during the wait ends ssh
+at once with 255 (with -tt it prints `Connection to … closed.`). The same wait
+happens with -T. `~.` during the session exits 255 without waiting.
+
+**pi-sh.** After a session that ended by itself (a status, or the shell
+closing), pi-sh releases the session's channel and serves forwarded
+connections until the channel table has none (`forward.Channels.WaitIdle`);
+listeners stay open and new connections are forwarded and counted. The
+session's input workers have already been joined and the terminal restored
+before the wait, so nothing reads stdin. A termination signal ends the wait
+with 255. `~.` and transport failures do not wait. A failure of the forwarding
+carrier during the wait is reported and ends the wait, keeping the session's
+status. Debug level logs `session ended; serving forwarded connections until
+they close connections=N`.
+
+**Tests.** `TestSessionEndWaitsForForwardedConnections` (CLI over local Pion
+peers: a held -L connection keeps the wait open, a connection made during the
+wait is forwarded, the wait ends after both close, a cancelled context ends it
+with false; `~.` and transport failures do not wait),
+`TestRemoteForwardingListsChannels` (a -R connection leaves the table when it
+ends). **Device (2026-10-28, read-only, REAL_DEVICE_TESTS.md):** `-T -L` to the
+device's sshd banner with `sleep 2; exit 7` and a connection held 10 s exited 7
+after 10.1 s; with SIGTERM 6 s after start, 255 at 6.0 s; nothing left running.
+
+**Difference.** ssh prints `Connection to HOST closed.` at the end of a -tt
+session at Info level; pi-sh does not print it (a general difference, not
+specific to forwarding). Waiting on -R connections on the device needs an
+approved listener.

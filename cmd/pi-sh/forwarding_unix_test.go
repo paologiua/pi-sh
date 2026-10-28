@@ -500,3 +500,100 @@ func TestRemoteForwardFailureIsFatalThroughCLI(t *testing.T) {
 		t.Fatal(code, err)
 	}
 }
+
+// After the command ends, pi-sh keeps serving forwarded connections until they
+// close, as ssh 10.2 does (silently): the open connection keeps working, a new
+// one is still forwarded, and the wait ends when both close. A signal (the
+// app context ending) ends the wait with false, which app() turns into 255.
+func TestSessionEndWaitsForForwardedConnections(t *testing.T) {
+	lifetime, stop := context.WithTimeout(context.Background(), 60*time.Second)
+	defer stop()
+	source := newAgentSource(t, lifetime)
+	_, port := echoServer(t)
+	local := freePort(t)
+	var logged bytes.Buffer
+	ctx := diag.With(lifetime, diag.Default(&logged, "pi-sh"))
+	opts, err := parseOptions([]string{"--browser", "--experimental-command", "-T", "-L", "127.0.0.1:" + strconv.Itoa(local) + ":127.0.0.1:" + strconv.Itoa(port), "pi", "exit 7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chans := forward.NewChannels()
+	f, listeners, err := startForwarding(ctx, opts.policy, source, opts, chans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.stop(ctx)
+	session := chans.Open(sessionChannel)
+	f.serve(ctx, listeners)
+	address := "127.0.0.1:" + strconv.Itoa(local)
+	held, err := net.Dial("tcp4", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); chans.Len() != 2; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal(chans.List())
+		}
+	}
+	plan, err := shellbroker.New("exit 7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = connect(ctx, source, -1, nil, plan, nil, strings.NewReader(""))
+	var status *commandStatus
+	if !errors.As(err, &status) || status.code != 7 || !sessionEnded(err) {
+		t.Fatalf("command: %v", err)
+	}
+	chans.Release(session)
+	waited := make(chan bool, 1)
+	go func() { waited <- f.await(ctx, chans) }()
+	// A connection opened during the wait is still forwarded.
+	late, err := net.Dial("tcp4", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	late.Write([]byte("late"))
+	late.(*net.TCPConn).CloseWrite()
+	if got, err := io.ReadAll(late); err != nil || string(got) != "etal" {
+		t.Fatalf("during the wait: %q %v", got, err)
+	}
+	late.Close()
+	select {
+	case <-waited:
+		t.Fatal("wait ended with a connection open")
+	case <-time.After(300 * time.Millisecond):
+	}
+	held.Write([]byte("held"))
+	held.(*net.TCPConn).CloseWrite()
+	if got, err := io.ReadAll(held); err != nil || string(got) != "dleh" {
+		t.Fatalf("held connection: %q %v", got, err)
+	}
+	held.Close()
+	select {
+	case ok := <-waited:
+		if !ok {
+			t.Fatal("wait reported a signal")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("wait did not end after the connections closed")
+	}
+	// A signal during the wait: the context ends, await reports false.
+	again, err := net.Dial("tcp4", address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer again.Close()
+	for deadline := time.Now().Add(10 * time.Second); chans.Len() != 1; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal(chans.List())
+		}
+	}
+	signalled, cancel := context.WithCancel(ctx)
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+	if f.await(signalled, chans) {
+		t.Fatal("signal did not end the wait")
+	}
+	if sessionEnded(errEscape) || sessionEnded(transport.ErrClosed) {
+		t.Fatal("~. or a transport failure must not wait")
+	}
+}
