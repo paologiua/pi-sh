@@ -213,7 +213,9 @@ With an owner-approved temporary Perl listener on the device's loopback, 1 MiB
 sent through `-L`, followed by the client's write shutdown, was answered with the
 byte count on the same connection, with the netcat connector and with the Perl
 one; nothing was left running (REAL_DEVICE_TESTS.md). Forwarded upload ran at
-about 25 KiB/s. Raising it (larger input records or a wider window) is open work.
+about 25 KiB/s. Re-run after the throughput change (owner-approved, same
+listener): 1 MiB and the reply in 2.2 s with the Perl connector and 4.0 s with
+netcat.
 
 `-R` is the next step. Owner decision (2026-10-28): the remote listener binds the
 loopback by default, and an explicit bind address (`*`, empty, or an address) is
@@ -253,8 +255,8 @@ Remote Unix-domain listeners (`-R /path:…`) are refused, since binding would
 create a socket file on the device.
 
 **Differences.** All connections of one -R share one adapter stream, so their
-total rate is bounded like a single forwarded connection (about 25 KiB/s
-upload natively for -L). The listener's reason for a failed bind appears only
+total rate is bounded like a single forwarded connection (about 450–600 KiB/s
+natively with Perl since the throughput change). The listener's reason for a failed bind appears only
 at debug level (sshd sends none). pi-sh waits for each listener's reply before
 starting the session, while ssh may start the session first.
 
@@ -265,8 +267,11 @@ counting server and came back as `262144` (about 21 s each, roughly 12 KiB/s);
 `-R 127.0.0.1:22:…` with ExitOnForwardFailure ended with `Error: remote port
 forwarding failed for listen port 22` and exit 255 (prefixed `pi-sh:` by the
 logger, unlike ssh); afterwards no listener or helper process was left
-(REAL_DEVICE_TESTS.md). Single runs: `-R 0`, many connections and long
-sessions remain unexercised on the device.
+(REAL_DEVICE_TESTS.md). Re-run after the throughput change (owner-approved):
+1 MiB from a device client through `-R` to a Mac counter in about 1.8 s, `~#`
+listing the -R connection, exit 0 under `-tt`; `-R 127.0.0.1:0:…` printed
+`Allocated port 43995 …`. Many connections and long sessions remain
+unexercised on the device.
 
 ## Throughput — 2026-10-28
 

@@ -824,7 +824,7 @@ banner was sent back); then `\r~#` was typed.
 | Run | Result |
 | --- | --- |
 | First attempt | Connect asked for recent sign-in; the official Remote shell page was opened in the same tab (nothing typed), then Devices again |
-| Run 1 | listing as below; the command session then ended with `WebRTC peer operation failed` and `remote broker cleanup was not confirmed`, exit 255 (not reproduced; cause unknown) |
+| Run 1 | listing as below; the command session then ended with `WebRTC peer operation failed` and `remote broker cleanup was not confirmed`, exit 255 (explained later the same day: the data channel close race fixed in "Native forwarding re-verification") |
 | Run 2 (`-v -E file`) | listing as below; `remote command finished exit_status=3`, exit 3 |
 
 ```
@@ -837,8 +837,8 @@ The following connections are open:
 This matches OpenSSH 10.2p1's numbering and text for the same options (two
 listening sockets take ids 0 and 1). The `/bin/bash -l` seen in the previous
 check was started by Connect (same parent as every Connect session) before
-these sessions; it is not a pi-sh process. The transport failure of run 1 is recorded as an open,
-unexplained single event; -R listing on the device needs an approved listener.
+these sessions; it is not a pi-sh process. The transport failure of run 1 was later traced to a close race in the data
+channel (see "Native forwarding re-verification"); -R listing was checked there.
 
 ## Waiting for forwarded connections at session end, 28 October 2026
 
@@ -873,3 +873,34 @@ Read-only, browser companion, `main` at `5a1e4d1` (after the review fixes):
 `connector=perl`; 1 MiB down in 1.66 s after the first byte (about 620 KiB/s)
 and 1 MiB up in 2.24 s (about 460 KiB/s), both HTTP 200 with the full count;
 SIGTERM ended pi-sh. Single run.
+
+## Native forwarding re-verification, 28 October 2026
+
+Owner-approved plan `docs/NATIVE_FORWARD_PLAN.md`, browser companion, `main` at
+`97cb28d`, loopback listeners only, programs run from memory; nothing was
+written on the device. The first attempt hit Connect's recent sign-in; the
+official Remote shell page was opened (nothing typed), then Devices again.
+
+| Step | Result |
+| --- | --- |
+| 1. `-L 127.0.0.1:47124:127.0.0.1:47123`, Perl connector, 1 MiB then write shutdown | log `connector=perl`; reply `1048576` after 2.2 s (41.1 s before the throughput change); exit 0 |
+| 1. Same, `PI_SH_FORWARD_CONNECTOR=nc` | log `connector=openbsd-nc`; reply `1048576` after 4.0 s (40.8 s before); exit 0 |
+| 2. `-tt -v -R 127.0.0.1:47125:127.0.0.1:51125`, device client sends 1 MiB, Mac counter holds the reply 6 s, `\r~#` typed while it waits | `~#` listed `#0 client-session (Connect shell channel)` and `#1 127.0.0.1 (Connect forwarding carrier)` (no listening sockets on the client side for -R, as ssh); Mac counted 1048576; device client printed `reply 1048576 7.8 s` (about 1.8 s of transfer plus the 6 s hold); **exit 255**, `WebRTC peer operation failed` and `remote broker cleanup was not confirmed` |
+| 2, repeated with `-vvv -E` (timestamped) | same data and listing; exit 255 again; the failure came 0.1 s after the command's end, while both peer connections were still `connected` |
+| 2, diagnostic build (uncommitted; printed Pion's data channel callbacks to the local log only), two runs | exit 0 both times; at the command's end, before the result was read, the device agent closed the command session's data channels and Pion reported `abort chunk … user initiated abort` through OnError and also OnClose |
+| 2, after the fix below, two runs | same data and listing; exit 0 both times |
+| 3. `-N -v -R 127.0.0.1:0:127.0.0.1:51125`, SIGTERM after the allocation | `pi-sh: Allocated port 43995 for remote forward to 127.0.0.1:51125`; exit 0 |
+| 4. `ps -eo pid,ppid,etime,args`, `ss -ltn` (after step 3 and again after the last run) | only the listing session's own processes and the `/bin/bash -l` of Connect noted before; listeners 127.0.0.1:11434 and port 22; nothing on 47123, 47125 or 43995; no `perl` or `nc` |
+
+**Defect found and fixed.** The agent ends a session by aborting the SCTP
+association with a User Initiated Abort cause. Pion runs the data channel's
+OnError and OnClose handlers in separate goroutines, and pi-sh mapped OnError to
+`ErrPeer` and OnClose to EOF, so whichever ran first decided whether a finished
+command exited with its status or with 255. This also explains run 1 of the
+`~#` check above. The channel now treats `sctp.ErrUserInitiatedAbort` as EOF;
+`TestPeerCloseEndsChannelWithEOF` (20 local Pion peer closes per run) failed
+without the fix and passes with it. Framing is unchanged: a command still needs
+its complete status record, so an abort before it is still an error.
+
+The plan's steps ran once each as written; step 2 was repeated five times (once with
+`-vvv`, twice with the diagnostic build, twice with the fix), each with the same device-side program and bounds.

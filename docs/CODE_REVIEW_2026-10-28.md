@@ -26,6 +26,12 @@ reverting only the fix, unless noted) and passes with it.
 | pi-cp, pi-sftp | `-A` and `-J` were refused with the X11/tunnel reason | the agent-forwarding and ProxyJump reasons used by pi-sh | `TestSCPOptionDecisions`, `TestSFTPOptionDecisions` |
 | pi-sftp | `-a` help claimed prefixes are compared | help says the prefix is trusted, as documented | help text (no behavior change) |
 
+## Found on the device after the review
+
+| Area | Defect | Fix | Test |
+| --- | --- | --- | --- |
+| Transport | When the device agent ended a session (SCTP ABORT, User Initiated Abort), Pion ran OnError and OnClose concurrently; if OnError won, a finished command exited 255 with `WebRTC peer operation failed` instead of its status (seen natively in 3 of 6 runs under -tt with forwarding) | a User Initiated Abort ends the channel with EOF; other errors stay `ErrPeer` | `TestPeerCloseEndsChannelWithEOF` |
+
 ## Recorded, not changed
 
 - A put that fails right after exclusive creation (mask not honored, fchmod

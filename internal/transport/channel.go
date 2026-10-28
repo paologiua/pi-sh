@@ -2,9 +2,11 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 
+	"github.com/pion/sctp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -44,7 +46,17 @@ func newChannel(dc *webrtc.DataChannel) *Channel {
 	})
 	dc.OnOpen(func() { c.openOnce.Do(func() { close(c.opened) }) })
 	dc.OnClose(func() { c.finish(io.EOF) })
-	dc.OnError(func(error) { c.finish(ErrPeer) })
+	// The device agent ends a session by closing its peer connection, an SCTP
+	// ABORT with a User Initiated Abort cause. That is a close, not a failure:
+	// Pion runs OnError and OnClose in separate goroutines, so it must not
+	// depend on which one finishes the channel first.
+	dc.OnError(func(err error) {
+		if errors.Is(err, sctp.ErrUserInitiatedAbort) {
+			c.finish(io.EOF)
+			return
+		}
+		c.finish(ErrPeer)
+	})
 	dc.OnMessage(c.receive)
 	return c
 }

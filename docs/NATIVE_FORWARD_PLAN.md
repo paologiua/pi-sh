@@ -1,7 +1,8 @@
-# Native forwarding re-verification — awaiting owner approval
+# Native forwarding re-verification — approved and run
 
 Proposed 2026-10-28 after the forwarding throughput change (FORWARDING.md
-"Throughput"). Not yet authorized. Each step is one pi-sh process with its own
+"Throughput"); approved by the owner and run the same day (results in
+REAL_DEVICE_TESTS.md, "Native forwarding re-verification"). Each step is one pi-sh process with its own
 browser companion step; nothing is written on the device; every listener binds
 the device's or the Mac's loopback only and ends with the session. Nothing is
 retried automatically on failure.

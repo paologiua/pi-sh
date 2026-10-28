@@ -377,3 +377,38 @@ func TestReceiveByteBudgetAndAccounting(t *testing.T) {
 		t.Fatalf("queue byte accounting leaked %d bytes", remaining)
 	}
 }
+
+// A peer that closes its connection after its last message (Pion's Close
+// aborts the SCTP association with a User Initiated Abort cause, as the device
+// agent did at the end of a command) ends the channel with io.EOF after the
+// message. Pion runs OnError and OnClose in separate goroutines, so before the
+// fix about half of the runs ended with ErrPeer instead.
+func TestPeerCloseEndsChannelWithEOF(t *testing.T) {
+	for i := range 20 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		a, b := localPeer(t, ctx), localPeer(t, ctx)
+		x, err := a.CreateChannel("local-test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		negotiate(t, ctx, a, b, nil)
+		y, err := b.Accept(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := y.Send(ctx, Message{Data: []byte("last")}); err != nil {
+			t.Fatal(err)
+		}
+		if m, err := x.Receive(ctx); err != nil || string(m.Data) != "last" {
+			t.Fatalf("run %d: %q %v", i, m.Data, err)
+		}
+		if err := b.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := x.Receive(ctx); !errors.Is(err, io.EOF) {
+			t.Fatalf("run %d: peer close: %v", i, err)
+		}
+		cancel()
+		_ = a.Close()
+	}
+}

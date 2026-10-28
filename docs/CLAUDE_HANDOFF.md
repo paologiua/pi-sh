@@ -172,8 +172,8 @@ finestre 8×2 KiB, `read -N`, lettore per flusso, e Perl che codifica da solo i
 record hex; Perl ora è preferito a nc. Sul Pi: Perl ~600 KiB/s Pi→Mac e
 ~450 KiB/s Mac→Pi (prima 12 e 25), nc 17 e 243. Chiusura dopo EOF ora svuota
 l'input in coda (`G`) e l'ascoltatore -R scrive i dati bufferizzati prima di
-chiudere (difetto emerso con la velocità). Da rifare sul Pi, con piano approvato:
-half-close con il nuovo connettore Perl e velocità di -R.
+chiudere (difetto emerso con la velocità). Rifatti sul Pi con piano approvato (NATIVE_FORWARD_PLAN.md): half-close 1 MiB
+in 2,2 s con Perl e 4,0 s con nc, -R 1 MiB in ~1,8 s con `~#`, `-R 0` allocato.
 
 Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
 opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
@@ -238,10 +238,11 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 ## Revisione del codice e prove da approvare (2026-10-28)
 
 Revisione completa in quattro aree: difetti corretti con test e quelli registrati
-ma non modificati in `docs/CODE_REVIEW_2026-10-28.md`. Il piano esatto delle prove
-sul Pi che scrivono o aprono porte (half-close con il nuovo connettore Perl,
-velocità e `~#` di -R, `-R 0`) è in `docs/NATIVE_FORWARD_PLAN.md`: non ancora
-approvato dal proprietario.
+ma non modificati in `docs/CODE_REVIEW_2026-10-28.md`. Il piano delle prove
+sul Pi che aprono porte (`docs/NATIVE_FORWARD_PLAN.md`) è stato approvato ed
+eseguito: ha fatto emergere una gara alla chiusura del data channel (l'agente
+chiude con ABORT SCTP «User Initiated Abort», Pion chiama OnError e OnClose in
+goroutine diverse; un comando finito usciva a volte con 255), corretta con test.
 
 ## Revisione della matrice (2026-10-28)
 
@@ -261,8 +262,7 @@ Righe ancora aperte (lavoro rimanente):
   trattino iniziale e disk-full sul Pi; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
 - SFTP: `mget`/`mput`, `-r` della console, flag di `ls`, `lumask`, `ln`, `chown`/
   `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
-- Forwarding: sul Pi -R dopo il cambio dei record (velocità, half-close), half-close
-  del nuovo connettore Perl, `-R 0`, bind jolly/IPv6 (piano da approvare);
+- Forwarding: bind jolly/IPv6 di -R sul Pi (servirebbe un piano approvato);
   EnableEscapeCommandline; molti stream e sessioni lunghe.
 - Diagnostica: prefisso `pi-sh:` sulle righe fatali; manca `Connection to HOST
   closed.` di ssh con -tt.
@@ -277,7 +277,7 @@ Righe ancora aperte (lavoro rimanente):
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
-| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; `-R 0` non provato sul Pi); velocità di -R dopo il cambio dei record e half-close del nuovo connettore Perl da rifare sul Pi; molti stream, sessioni lunghe, perdita di connessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
+| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; dopo il cambio dei record rifatti sul Pi half-close, velocità, `~#` e `-R 0`); molti stream, sessioni lunghe, perdita di connessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 
