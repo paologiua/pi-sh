@@ -1080,3 +1080,17 @@ shell page opened, nothing typed).
 | --- | --- |
 | 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero` | `wc` 1048576; upload 3092 ms (window 8: 3536); download 1048576 bytes in 1.25 s (1.26); exit 0 |
 | `pi-cp --browser -q raspberrypi:/usr/bin/bash` | 1,412,096 bytes, same SHA-256, exit 0; 28.5 s wall time including sign-in and setup (22.1 s before; not comparable) |
+
+## Perl input writer, 28 October 2026
+
+Read-only, browser companion.
+
+| Check | Result |
+| --- | --- |
+| 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero` | `wc` 1048576; upload 1470 ms (Bash writer: 3092); download 1048576 bytes in 0.91 s; exit 0 |
+| `pi-cp --browser -q raspberrypi:/usr/bin/bash` | 1,412,096 bytes, SHA-256 `ccbd5106945d1095…` as on the device, exit 0, 19.1 s wall time including sign-in |
+| `ps -eo pid,ppid,etime,comm`, `ss -ltn` afterwards | `perl` only as the two output readers of the listing session's own broker; one long-running Connect login shell (`bash`, parent `rpi-connectd`, from the browser's Remote shell); listeners 22 and 11434 only |
+
+An earlier cleanup listing filtered out lines containing `[` (kernel threads),
+which also hides the Perl workers whose program text contains brackets. Listings
+now select by command name.

@@ -59,7 +59,7 @@ _ps_reader() {
 # output on the device, 2026-10-28). Same contract: one record per newline
 # token, "length\nhex\n", "F" at end of output. It is a single-quoted word, so
 # it holds no apostrophe; it runs only if perl compiles it, else Bash reads.
-_ps_perl_reader='open(my $i, "<&=", $ARGV[0]) or exit 125;
+_ps_perl_reader='use strict; open(my $i, "<&=", $ARGV[0]) or exit 125;
 while (defined(my $t = <STDIN>)) {
   my $n = sysread($i, my $b, 2048);
   $n = sysread($i, $b, 2048) while !defined $n && $!{EINTR};
@@ -68,11 +68,33 @@ while (defined(my $t = <STDIN>)) {
   my $r = length($h) . "\n$h\n";
   while (length $r) { my $w = syswrite(STDOUT, $r); exit 0 if !defined $w; substr($r, 0, $w) = "" }
 }'
+# Input writer in Perl when the device has it, for the same reason as the
+# reader: the Bash writer decodes each record with printf %b (about 600 KiB/s
+# locally, 300 KiB/s on the device). Same contract: "start" to the command
+# first, then per "seq length" line and its hex the decoded bytes, "A seq"
+# once written, "K" when the command stops reading, "F" after closing.
+_ps_perl_writer='use strict; $SIG{PIPE} = "IGNORE";
+open(my $o, ">&=", 9) or exit 125;
+sub put { my $s = shift; while (length $s) { my $w = syswrite($o, $s); return 0 if !defined $w; substr($s, 0, $w) = "" } 1 }
+put("start\n") or exit 125;
+while (defined(my $l = <STDIN>)) {
+  chomp $l;
+  if ($l eq "F") { close($o); syswrite(STDOUT, "F\n"); exit 0 }
+  my ($seq, $n) = $l =~ /\A([0-9]+) ([0-9]+)\z/ or exit 125;
+  $n > 0 && $n <= 4096 && $n % 2 == 0 or exit 125;
+  my $h;
+  (read(STDIN, $h, $n + 1) // 0) == $n + 1 && substr($h, $n) eq "\n" or exit 125;
+  $h = substr($h, 0, $n);
+  $h =~ /\A[0-9a-f]*\z/ or exit 125;
+  if (!put(pack("H*", $h))) { syswrite(STDOUT, "K\n"); exit 0 }
+  syswrite(STDOUT, "A $seq\n");
+}
+close($o);'
 _ps_read() {
   # The stream descriptor (3 or 5) comes from a coproc descriptor, so it is
   # close-on-exec, and Bash copies that flag when duplicating it; opening
   # /dev/fd/N instead gives perl a new descriptor 9 without it.
-  if [[ -z ${_ps_bash_reader-} && -r /dev/fd/$1 ]] && perl -c -e "$_ps_perl_reader" </dev/null >/dev/null 2>&1; then
+  if [[ -z ${_ps_bash_workers-} && -r /dev/fd/$1 ]] && perl -c -e "$_ps_perl_reader" </dev/null >/dev/null 2>&1; then
     shopt -s execfail
     exec perl -e "$_ps_perl_reader" 9 9<"/dev/fd/$1"
   fi
@@ -111,6 +133,11 @@ _ps_main() {
   exec 4>&-
   coproc _PS_INPUT {
     exec 3<&- 5<&- 9<&- 10>&- 2>/dev/null
+    # As in _ps_read, the command's input (6) is reopened for perl as 9.
+    if [[ -z ${_ps_bash_workers-} && -w /dev/fd/6 ]] && perl -c -e "$_ps_perl_writer" </dev/null >/dev/null 2>&1; then
+      shopt -s execfail
+      exec perl -e "$_ps_perl_writer" 9>"/dev/fd/6" 6>&-
+    fi
     printf 'start\n' >&6 || exit 125
     local seq n hex escaped i fast=0
     # Bash >=5.2 expands & in a substitution to the match: one-step escaping.

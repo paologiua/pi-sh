@@ -418,22 +418,24 @@ func TestShellBrokerPartialOutputIsNotHeldBack(t *testing.T) {
 	}
 }
 
-// readerProbe prints how many perl output readers the broker running this
+// readerProbe prints how many perl workers (two output readers, one input
+// writer) the broker running this
 // command has: they are children of the broker, which is the command's parent
 // or, where setsid forks (Linux), its grandparent.
 const readerProbe = `a=$PPID; b=$(ps -o ppid= -p $PPID | tr -d " "); ps -A -o ppid=,args= | awk -v a="$a" -v b="$b" '($1==a || $1==b) && $2=="perl" && $3=="-e"' | wc -l | tr -d " "`
 
-// With perl on PATH the broker reads command output through the Perl reader;
-// PI_SH_BROKER_READER=bash keeps the Bash reader.
-func TestShellBrokerUsesPerlReaderWhenPresent(t *testing.T) {
+// With perl on PATH the broker moves command input and output through Perl
+// workers; PI_SH_BROKER_WORKERS=bash keeps the Bash ones.
+func TestShellBrokerUsesPerlWorkersWhenPresent(t *testing.T) {
 	if _, err := exec.LookPath("perl"); err != nil {
 		t.Skip("perl unavailable")
 	}
-	for _, c := range []struct{ env, want string }{{"", "2"}, {"bash", "0"}} {
-		t.Setenv("PI_SH_BROKER_READER", c.env)
+	for _, c := range []struct{ env, want string }{{"", "3"}, {"bash", "0"}} {
+		// Unread input keeps the writer blocked, so it is still there.
+		t.Setenv("PI_SH_BROKER_WORKERS", c.env)
 		var out bytes.Buffer
-		if code, err := runLocal(t, readerProbe, nil, &out, io.Discard); err != nil || code != 0 || strings.TrimSpace(out.String()) != c.want {
-			t.Fatalf("PI_SH_BROKER_READER=%q: %q, code %d, %v", c.env, out.String(), code, err)
+		if code, err := runLocal(t, readerProbe, bytes.NewReader(make([]byte, 1<<20)), &out, io.Discard); err != nil || code != 0 || strings.TrimSpace(out.String()) != c.want {
+			t.Fatalf("PI_SH_BROKER_WORKERS=%q: %q, code %d, %v", c.env, out.String(), code, err)
 		}
 	}
 }
@@ -441,9 +443,9 @@ func TestShellBrokerUsesPerlReaderWhenPresent(t *testing.T) {
 // testTools, when set, adds programs to the PATH directory of runLocal.
 var testTools func(dir string)
 
-// A perl that cannot compile the reader leaves the Bash reader in place, with
-// the same output.
-func TestShellBrokerFallsBackToBashReader(t *testing.T) {
+// A perl that cannot compile the workers leaves the Bash ones in place, with
+// the same data.
+func TestShellBrokerFallsBackToBashWorkers(t *testing.T) {
 	path, err := exec.LookPath("perl")
 	if err != nil {
 		t.Skip("perl unavailable")
@@ -465,6 +467,6 @@ func TestShellBrokerFallsBackToBashReader(t *testing.T) {
 	}
 	out.Reset()
 	if code, err := runLocal(t, "cat", bytes.NewReader(input), &out, io.Discard); err != nil || code != 0 || !bytes.Equal(out.Bytes(), input) {
-		t.Fatalf("bash reader: %d bytes, code %d, %v", out.Len(), code, err)
+		t.Fatalf("bash workers: %d bytes, code %d, %v", out.Len(), code, err)
 	}
 }

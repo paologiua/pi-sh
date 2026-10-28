@@ -293,7 +293,8 @@ holds, up to 2048 bytes, so short writes are still delivered at once.
   and Bash copies that flag when duplicating them. `9<&5` therefore gave perl
   nothing (every test saw empty output). The worker opens `/dev/fd/N` as
   descriptor 9 instead.
-- `PI_SH_BROKER_READER=bash` keeps the Bash reader. The full verification runs
+- `PI_SH_BROKER_READER=bash` (since renamed `PI_SH_BROKER_WORKERS`, "Perl input
+  writer") keeps the Bash reader. The full verification runs
   `internal/shellbroker` and `cmd/...` once more with it.
 - New tests: `TestShellBrokerUsesPerlReaderWhenPresent` (counts the broker's
   perl readers: 2, or 0 when forced to Bash) and
@@ -360,3 +361,44 @@ TTY adapter. The failure could not be reproduced:
 - a full rerun of the verification, all green.
 
 It is recorded here as open.
+
+## Perl input writer — 2026-10-28
+
+With output in Perl, upload became the slow direction: the Bash writer decodes
+each record with `printf %b` (about 600–850 KiB/s locally, 300 KiB/s on the
+device). When perl compiles `_ps_perl_writer`, the input worker now execs it.
+It keeps the same contract:
+- `start` to the command first;
+- for each `seq length` line and its hex, the decoded bytes, then `A seq` once
+  written;
+- `K` when the command stops reading;
+- `F` after closing the command's input.
+
+The command's input descriptor (6) is reopened for perl as 9 through
+`/dev/fd/6`, like the readers.
+
+Both Perl programs now start with `use strict`. The first version of the
+writer declared `my $h` inside the same expression that then used `$h`, which
+in Perl still means the global variable. Every record failed and the writer
+exited (empty stdin in every test). Under `strict` such a mistake fails
+`perl -c`, so the broker keeps the Bash worker instead.
+
+`PI_SH_BROKER_READER` is renamed `PI_SH_BROKER_WORKERS=bash`; it keeps all three
+workers in Bash. The tests are renamed `TestShellBrokerUsesPerlWorkersWhenPresent`
+(three perl workers while unread input keeps the writer blocked) and
+`TestShellBrokerFallsBackToBashWorkers`.
+
+Local benchmark (Bash 5.3, 1 MiB per case, KiB/s), Bash workers → Perl workers:
+
+| RTT | Upload | Download | Roundtrip |
+| --- | --- | --- | --- |
+| 0 ms | 849 → 2427 | 113 → 5093 | 222 → 4210 |
+| 40 ms | 614 → 960 | 112 → 1409 | 214 → 2019 |
+
+On the device (read-only, single run): 1 MiB to `wc -c` took 1.47 s (3.09 s
+with the Bash writer), 1 MiB from `head -c` 0.91 s. `pi-cp` of
+`/usr/bin/bash` had the same SHA-256 and took 19.1 s including sign-in and
+setup.
+
+Afterwards the only `perl` processes on the device were the two readers of the
+listing session itself; nothing listened beyond 22 and 11434.

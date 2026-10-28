@@ -22,11 +22,11 @@ import (
 //go:embed broker.bash
 var source string
 
-// brokerScript is the staged broker. PI_SH_BROKER_READER=bash keeps the Bash
+// brokerScript is the staged broker. PI_SH_BROKER_WORKERS=bash keeps the Bash
 // output reader where the device has Perl (diagnostics, docs/TESTING.md).
 func brokerScript() string {
-	if os.Getenv("PI_SH_BROKER_READER") == "bash" {
-		return "_ps_bash_reader=1\n" + source
+	if os.Getenv("PI_SH_BROKER_WORKERS") == "bash" {
+		return "_ps_bash_workers=1\n" + source
 	}
 	return source
 }
