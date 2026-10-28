@@ -232,7 +232,8 @@ func TestStdioForwardingThroughCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := binaryPayload(5000)
+	// As with ssh -W, escapes are not interpreted: "\r~#" and "~." are data.
+	payload := append([]byte("\r~#\r~.\n"), binaryPayload(5000)...)
 	var out bytes.Buffer
 	code, err := runForwarding(ctx, connpolicy.Default(), source, opts, bytes.NewReader(payload), &out)
 	if code != 0 || err != nil || !bytes.Equal(out.Bytes(), reverse(payload)) {
@@ -373,7 +374,7 @@ func TestLocalForwardingAlongsideCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, listeners, err := startForwarding(ctx, opts.policy, source, opts)
+	f, listeners, err := startForwarding(ctx, opts.policy, source, opts, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -149,7 +149,7 @@ session, listener closed afterwards), `TestExitOnForwardFailureThroughCLI`,
 `TestLocalForwardingAlongsideCommand` (two sessions, forwarded traffic while
 the command runs, its status 7 kept).
 
-**Known differences.** `~#` lists only the session channel; `~&` and the escape
+**Known differences.** `~#` lists forwarded connections since 2026-10-28 (ESCAPES.md), with pi-sh's own status in parentheses; `~&` and the escape
 command line are absent; after the session ends, open forwarded connections are
 closed instead of waited for ("Waiting for forwarded connections to
 terminate"). Throughput: see "Throughput" (2026-10-28). The device's connector must exist: pi-sh installs nothing and

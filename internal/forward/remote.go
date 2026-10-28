@@ -30,6 +30,8 @@ type RemoteConfig struct {
 	// PermitOpen is PermitRemoteOpen; empty or "any" allows every
 	// destination of a remote dynamic forwarding.
 	PermitOpen []string
+	// Channels, when set, numbers accepted connections for ~#.
+	Channels *Channels
 }
 
 const (
@@ -64,7 +66,7 @@ func ListenRemote(ctx context.Context, lst Listener, cfg RemoteConfig, log Log) 
 			listenHost = fwd.Listen.Host
 		}
 		log.debug("Remote connections from %s:%d forwarded to local address %s", listenHost, fwd.Listen.Port, connectString(fwd.Connect))
-		l, err := startRemote(ctx, lst, fwd, cfg.PermitOpen, log)
+		l, err := startRemote(ctx, lst, fwd, cfg.PermitOpen, cfg.Channels, log)
 		shown := ""
 		if fwd.Listen.HasHost {
 			shown = fwd.Listen.Host + ":"
@@ -136,6 +138,7 @@ type remoteListener struct {
 	log    Log
 	stream Stream
 	reader *bufio.Reader
+	chans  *Channels
 
 	wmu   sync.Mutex
 	mu    sync.Mutex
@@ -155,12 +158,12 @@ func bindHost(e forwardspec.Endpoint) string {
 	return e.Host
 }
 
-func startRemote(ctx context.Context, lst Listener, fwd forwardspec.Forward, permit []string, log Log) (*remoteListener, error) {
+func startRemote(ctx context.Context, lst Listener, fwd forwardspec.Forward, permit []string, chans *Channels, log Log) (*remoteListener, error) {
 	stream, err := lst.Listen(ctx, bindHost(fwd.Listen), fwd.Listen.Port)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errNoRemoteListener, err)
 	}
-	l := &remoteListener{fwd: fwd, bind: bindHost(fwd.Listen), permit: permit, log: log, stream: stream,
+	l := &remoteListener{fwd: fwd, bind: bindHost(fwd.Listen), permit: permit, log: log, stream: stream, chans: chans,
 		reader: bufio.NewReaderSize(stream, remoteMaxFrame+9), conns: map[uint32]*rconn{}}
 	type reply struct {
 		t    byte
@@ -258,9 +261,13 @@ func (l *remoteListener) run(ctx context.Context, wg *sync.WaitGroup) {
 			}
 			l.conns[id] = c
 			l.mu.Unlock()
+			// ssh names a forwarded-tcpip channel after its originator address.
+			host, _, _ := strings.Cut(c.peer, " ")
+			ch := l.chans.Open(host + carrierStatus)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				defer l.chans.Release(ch)
 				l.handle(ctx, c)
 			}()
 			continue

@@ -811,3 +811,31 @@ Every HTTP exchange returned 200 with the full byte count. A `/bin/bash -l`
 48 minutes old was also present (see the next check). Single sessions on one
 network; -R throughput after the change needs a device listener and was not
 measured.
+
+## `~#` with forwarded connections, 28 October 2026
+
+Read-only, browser companion; an `expect` script on the Mac gave pi-sh a real
+terminal. Command: `pi-sh --browser --experimental-command -tt -L
+127.0.0.1:47211:127.0.0.1:22 -D 127.0.0.1:47212 raspberrypi 'echo READY; sleep
+40; exit 3'`. After READY, a Mac client held a connection to 47211 and another
+made a SOCKS5 CONNECT to 127.0.0.1:22 through 47212 (only the device's sshd
+banner was sent back); then `\r~#` was typed.
+
+| Run | Result |
+| --- | --- |
+| First attempt | Connect asked for recent sign-in; the official Remote shell page was opened in the same tab (nothing typed), then Devices again |
+| Run 1 | listing as below; the command session then ended with `WebRTC peer operation failed` and `remote broker cleanup was not confirmed`, exit 255 (not reproduced; cause unknown) |
+| Run 2 (`-v -E file`) | listing as below; `remote command finished exit_status=3`, exit 3 |
+
+```
+The following connections are open:
+  #2 client-session (Connect shell channel)
+  #3 direct-tcpip: listening port 47212 for 127.0.0.1 port 22, connect from 127.0.0.1 port 57042 to 127.0.0.1 port 47212 (Connect forwarding carrier)
+  #4 direct-tcpip: listening port 47211 for 127.0.0.1 port 22, connect from 127.0.0.1 port 57043 to 127.0.0.1 port 47211 (Connect forwarding carrier)
+```
+
+This matches OpenSSH 10.2p1's numbering and text for the same options (two
+listening sockets take ids 0 and 1). The `/bin/bash -l` seen in the previous
+check is consistent with the official Remote shell page's session (opening the
+page started one). The transport failure of run 1 is recorded as an open,
+unexplained single event; -R listing on the device needs an approved listener.

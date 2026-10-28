@@ -161,6 +161,39 @@ func TestRemoteForwardingHalfCloseConcurrencyAndAllocation(t *testing.T) {
 	}
 }
 
+// A -R connection is listed by ~# under its originator address, as ssh names
+// a forwarded-tcpip channel; it leaves the table when it ends.
+func TestRemoteForwardingListsChannels(t *testing.T) {
+	m, err := startMux(t, "perl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := reverseServer(t, "tcp4", "127.0.0.1:0")
+	logs := &logLines{}
+	chans := forward.NewChannels()
+	chans.Open("client-session (Connect shell channel)")
+	cfg := forward.RemoteConfig{Forwards: []forwardspec.Forward{remoteForward(t, fmt.Sprintf("0:127.0.0.1:%d", target.Addr().(*net.TCPAddr).Port))}, Channels: chans}
+	if _, err := serveRemote(t, m, cfg, logs); err != nil {
+		t.Fatal(err)
+	}
+	c, err := net.Dial("tcp4", "127.0.0.1:"+strconv.Itoa(logs.allocatedPort(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "  #0 client-session (Connect shell channel)\n  #1 127.0.0.1 (Connect forwarding carrier)"
+	for deadline := time.Now().Add(10 * time.Second); strings.Join(chans.List(), "\n") != want; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("%q", chans.List())
+		}
+	}
+	c.Close()
+	for deadline := time.Now().Add(10 * time.Second); len(chans.List()) != 1; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("not released: %q", chans.List())
+		}
+	}
+}
+
 func TestRemoteDynamicForwarding(t *testing.T) {
 	m, err := startMux(t, "perl")
 	if err != nil {

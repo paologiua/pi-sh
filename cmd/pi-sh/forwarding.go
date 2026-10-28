@@ -43,7 +43,7 @@ type forwarding struct {
 // startForwarding connects the carrier and stages the adapter. With local
 // forwardings it binds them as ssh does after authentication; bind failures
 // are fatal only with ExitOnForwardFailure (forward.Listen).
-func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessionSource, opts options) (*forwarding, *forward.Forwarder, error) {
+func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessionSource, opts options, chans *forward.Channels) (*forwarding, *forward.Forwarder, error) {
 	log := diag.From(ctx)
 	peer, ch, err := connectsession.Establish(ctx, context.WithoutCancel(ctx), source, policy)
 	if err != nil {
@@ -60,7 +60,7 @@ func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessi
 	if len(opts.fwd.Local) > 0 {
 		listeners, err = forward.Listen(ctx, forward.Config{
 			Forwards: opts.fwd.Local, GatewayPorts: opts.fwd.GatewayPorts, BindUnlink: opts.fwd.BindUnlink,
-			BindMask: opts.fwd.BindMask, ExitOnFail: opts.fwd.ExitOnForwardFailure,
+			BindMask: opts.fwd.BindMask, ExitOnFail: opts.fwd.ExitOnForwardFailure, Channels: chans,
 		}, forwardLog(log))
 		if err != nil {
 			f.stop(ctx)
@@ -70,7 +70,7 @@ func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessi
 	// Remote listeners follow local ones, as in ssh_init_forwarding.
 	if len(opts.fwd.Remote) > 0 {
 		f.remote, err = forward.ListenRemote(ctx, mux, forward.RemoteConfig{
-			Forwards: opts.fwd.Remote, ExitOnFail: opts.fwd.ExitOnForwardFailure, PermitOpen: opts.fwd.PermitRemoteOpen,
+			Forwards: opts.fwd.Remote, ExitOnFail: opts.fwd.ExitOnForwardFailure, PermitOpen: opts.fwd.PermitRemoteOpen, Channels: chans,
 		}, forwardLog(log))
 		if err != nil {
 			if listeners != nil {
@@ -124,7 +124,8 @@ func (f *forwarding) stop(ctx context.Context) {
 // -W relays stdin/stdout to one remote connection; -N serves -L/-D/-R until a
 // signal or carrier failure.
 func runForwarding(ctx context.Context, policy connpolicy.Policy, source sessionSource, opts options, stdin io.Reader, stdout io.Writer) (int, error) {
-	f, listeners, err := startForwarding(ctx, policy, source, opts)
+	// -N and -W read no escapes, so no channel table is kept.
+	f, listeners, err := startForwarding(ctx, policy, source, opts, nil)
 	if err != nil {
 		return 255, err
 	}

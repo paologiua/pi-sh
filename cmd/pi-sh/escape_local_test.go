@@ -9,6 +9,7 @@ import (
 	"testing/iotest"
 
 	"pi-sh/internal/diag"
+	"pi-sh/internal/forward"
 )
 
 // OpenSSH consumes ~B ~C ~R ~V ~v ~# ~& locally. pi-sh performs ~V/~v/~#,
@@ -55,5 +56,23 @@ func TestVerbosityEscapeRespectsLogDestination(t *testing.T) {
 	err = inputWithActions(diag.With(context.Background(), log), &recordingSender{}, strings.NewReader("~v~."), '~', inputActions{diagnostic: &diagnostic})
 	if !errors.Is(err, errEscape) || !strings.Contains(diagnostic.String(), "~v [Logging to syslog or file]") || log.Level() != diag.Info {
 		t.Fatalf("file logging changed: %v %q %v", err, diagnostic.String(), log.Level())
+	}
+}
+
+// With forwarding, ~# lists the channel table: the session after the
+// listening sockets, then each forwarded connection, as ssh does.
+func TestHashEscapeListsForwardedChannels(t *testing.T) {
+	chans := forward.NewChannels()
+	chans.Reserve() // a listening socket: never listed
+	chans.Open(sessionChannel)
+	chans.Open("127.0.0.1 (Connect forwarding carrier)")
+	ctx := withChannels(diag.With(context.Background(), diag.Default(&bytes.Buffer{}, "pi-sh")), chans)
+	var diagnostic bytes.Buffer
+	if err := inputWithActions(ctx, &recordingSender{}, strings.NewReader("~#~."), '~', inputActions{diagnostic: &diagnostic}); !errors.Is(err, errEscape) {
+		t.Fatal(err)
+	}
+	want := "~#\r\nThe following connections are open:\r\n  #1 client-session (Connect shell channel)\r\n  #2 127.0.0.1 (Connect forwarding carrier)\r\n"
+	if !strings.HasPrefix(diagnostic.String(), want) {
+		t.Fatalf("%q", diagnostic.String())
 	}
 }

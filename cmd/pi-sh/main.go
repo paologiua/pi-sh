@@ -14,6 +14,7 @@ import (
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
+	"pi-sh/internal/forward"
 	"pi-sh/internal/shellbroker"
 	"pi-sh/internal/terminal"
 	"pi-sh/internal/transport"
@@ -114,11 +115,15 @@ func app() int {
 		defer source.Close()
 		if opts.forwarding() {
 			// Like ssh, forwardings are set up before the session starts.
-			f, listeners, ferr := startForwarding(ctx, opts.policy, source, opts)
+			chans := forward.NewChannels()
+			f, listeners, ferr := startForwarding(ctx, opts.policy, source, opts, chans)
 			if ferr != nil {
 				log.Failure(diag.Fatal, ferr)
 				return 255
 			}
+			// As in ssh, the session channel follows the listening sockets.
+			chans.Open(sessionChannel)
+			ctx = withChannels(ctx, chans)
 			f.serve(ctx, listeners)
 			defer f.stop(ctx)
 		}

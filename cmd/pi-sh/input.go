@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"unicode/utf8"
 
 	"pi-sh/internal/diag"
@@ -261,8 +262,8 @@ func localEscape(ctx context.Context, escape, c rune) string {
 		log.SetLevel(level)
 		return fmt.Sprintf("%s%c [LogLevel %s]\r\n", label, c, level)
 	case '#':
-		// pi-sh has exactly one channel: the session. No forwarding exists.
-		return fmt.Sprintf("%s#\r\nThe following connections are open:\r\n  #0 client-session (Connect shell channel)\r\n", label)
+		// ssh's channel_open_message: listeners are not listed.
+		return fmt.Sprintf("%s#\r\nThe following connections are open:\r\n%s\r\n", label, strings.Join(openChannels(ctx), "\r\n"))
 	case 'C':
 		// As OpenSSH with its default EnableEscapeCommandline=no.
 		return "commandline disabled\r\n"

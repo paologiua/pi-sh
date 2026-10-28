@@ -95,26 +95,31 @@ type Config struct {
 	BindUnlink   bool
 	BindMask     uint32
 	ExitOnFail   bool
+	// Channels, when set, numbers listeners and connections for ~#.
+	Channels *Channels
 }
 
 // Forwarder owns the listeners of one session.
 type Forwarder struct {
 	log       Log
 	listeners []listener
+	channels  *Channels
 	channel   atomic.Int64
 	wg        sync.WaitGroup
+	closeOnce sync.Once
 }
 
 type listener struct {
 	net.Listener
 	forward forwardspec.Forward
+	id      int
 }
 
 // Listen binds every forwarding as ssh_init_forwarding does: a forwarding
 // succeeds if at least one address binds. With ExitOnFail any failure is
 // fatal; otherwise failure of all forwardings is reported and tolerated.
 func Listen(ctx context.Context, cfg Config, log Log) (*Forwarder, error) {
-	f := &Forwarder{log: log}
+	f := &Forwarder{log: log, channels: cfg.Channels}
 	success := 0
 	for _, fwd := range cfg.Forwards {
 		if fwd.Dynamic() {
@@ -124,7 +129,7 @@ func Listen(ctx context.Context, cfg Config, log Log) (*Forwarder, error) {
 		}
 		ls := bind(ctx, fwd, cfg, log)
 		for _, l := range ls {
-			f.listeners = append(f.listeners, listener{l, fwd})
+			f.listeners = append(f.listeners, listener{l, fwd, cfg.Channels.Reserve()})
 		}
 		if len(ls) > 0 {
 			success++
@@ -150,11 +155,15 @@ func (f *Forwarder) Addrs() []net.Addr {
 	return out
 }
 
-// Close stops accepting. Active connections end with Serve's context.
+// Close stops accepting and frees the listeners' channel ids. Active
+// connections end with Serve's context.
 func (f *Forwarder) Close() {
-	for _, l := range f.listeners {
-		l.Close()
-	}
+	f.closeOnce.Do(func() {
+		for _, l := range f.listeners {
+			l.Close()
+			f.channels.Release(l.id)
+		}
+	})
 }
 
 // Serve accepts until ctx ends, then closes listeners and waits for every
@@ -177,10 +186,11 @@ func (f *Forwarder) Serve(ctx context.Context, dialer Dialer) {
 					}
 					return
 				}
-				id := f.channel.Add(1)
+				id := f.open(l.forward, conn)
 				f.wg.Add(1)
 				go func() {
 					defer f.wg.Done()
+					defer f.channels.Release(int(id))
 					f.handle(ctx, dialer, l.forward, conn, id)
 				}()
 			}
@@ -192,6 +202,26 @@ func (f *Forwarder) Serve(ctx context.Context, dialer Dialer) {
 	f.wg.Wait()
 }
 
+// open numbers an accepted connection: an id from the channel table, listed as
+// ssh does (a SOCKS connection is "dynamic-tcpip" until its request), or a
+// counter without a table.
+func (f *Forwarder) open(fwd forwardspec.Forward, conn net.Conn) int64 {
+	if f.channels == nil {
+		return f.channel.Add(1)
+	}
+	if fwd.Dynamic() {
+		return int64(f.channels.Open("dynamic-tcpip" + carrierStatus))
+	}
+	return int64(f.channels.Open(localDescription(fwd, staticTarget(fwd), conn)))
+}
+
+func staticTarget(fwd forwardspec.Forward) Target {
+	if fwd.Connect.Port == forwardspec.PortStreamLocal {
+		return Target{Path: fwd.Connect.Path}
+	}
+	return Target{Host: fwd.Connect.Host, Port: fwd.Connect.Port}
+}
+
 func (f *Forwarder) handle(ctx context.Context, dialer Dialer, fwd forwardspec.Forward, conn net.Conn, id int64) {
 	defer conn.Close()
 	var target Target
@@ -201,11 +231,10 @@ func (f *Forwarder) handle(ctx context.Context, dialer Dialer, fwd forwardspec.F
 			f.log.debug("channel %d: dynamic request failed: %v", id, err)
 			return
 		}
+		f.channels.Describe(int(id), localDescription(fwd, t, conn))
 		target, conn = t, wrapped
-	} else if fwd.Connect.Port == forwardspec.PortStreamLocal {
-		target = Target{Path: fwd.Connect.Path}
 	} else {
-		target = Target{Host: fwd.Connect.Host, Port: fwd.Connect.Port}
+		target = staticTarget(fwd)
 	}
 	f.log.debug("channel %d: new forwarded connection to %s", id, target)
 	stream, err := dialer.Dial(ctx, target)
