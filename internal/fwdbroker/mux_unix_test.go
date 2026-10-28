@@ -24,6 +24,7 @@ import (
 	"pi-sh/internal/forward"
 	"pi-sh/internal/forwardspec"
 	"pi-sh/internal/fwdbroker/fwdtest"
+	"pi-sh/internal/shellbroker"
 )
 
 // TestMain lets this test binary act as a stand-in connector named "nc" with
@@ -76,6 +77,12 @@ func (s ptyStream) Receive(ctx context.Context) ([]byte, error) {
 // with PATH restricted to bash, cat, stty and connector: "nc" (the test
 // double), "perl" (the local interpreter) or "" (none).
 func startMux(t *testing.T, connector string) (*Mux, error) {
+	t.Helper()
+	return startMuxDelayed(t, connector, 0)
+}
+
+// startMuxDelayed is startMux with a one-way carrier delay in each direction.
+func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux, error) {
 	t.Helper()
 	bash := os.Getenv("PI_SH_TEST_BASH")
 	if bash == "" {
@@ -138,7 +145,11 @@ func startMux(t *testing.T, connector string) (*Mux, error) {
 			}
 		}
 	}()
-	m, err := Start(ctx, s)
+	var carrier shellbroker.Stream = s
+	if oneWay > 0 {
+		carrier = newDelayed(ctx, s, oneWay)
+	}
+	m, err := Start(ctx, carrier)
 	t.Cleanup(func() {
 		if m != nil {
 			if err := m.Close(); err != nil {
@@ -490,5 +501,56 @@ func testEndToEndLocalAndDynamicForwarding(t *testing.T, connector string) {
 	var out bytes.Buffer
 	if err := forward.Stdio(context.Background(), m, forward.Target{Host: "127.0.0.1", Port: sp}, strings.NewReader("stdio"), &out, forward.Log{}); err != nil || out.String() != "oidts" {
 		t.Fatal(out.String(), err)
+	}
+}
+
+// Closing a stream right after EOF in both directions must not discard input
+// still queued in the adapter: before the graceful close record the connector
+// was killed with up to a window of records unwritten.
+func TestAdapterCloseAfterEOFDeliversQueuedInput(t *testing.T) {
+	eachConnector(t, testAdapterCloseAfterEOFDeliversQueuedInput)
+}
+
+func testAdapterCloseAfterEOFDeliversQueuedInput(t *testing.T, connector string) {
+	m, err := startMux(t, connector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	late := make(chan int, 1)
+	go func() {
+		c, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		c.(*net.TCPConn).CloseWrite()
+		n, _ := io.Copy(io.Discard, c)
+		late <- int(n)
+	}()
+	s, err := m.Dial(context.Background(), tcpTarget(l))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := io.ReadAll(s); err != nil || len(got) != 0 {
+		t.Fatal(got, err)
+	}
+	payload := bytes.Repeat([]byte{0, 0xff, 'x'}, 30000)
+	if _, err := s.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	s.CloseWrite()
+	s.Close()
+	select {
+	case n := <-late:
+		if n != len(payload) {
+			t.Fatalf("target received %d of %d bytes", n, len(payload))
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("queued input not delivered after close")
 	}
 }

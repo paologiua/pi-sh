@@ -840,3 +840,19 @@ To force the connector on a device for a native check, set
 `PI_SH_FORWARD_CONNECTOR=perl` (or `nc`, `ncat`, `socat`); the tool must still be
 detected there, and the `-v` line `forwarding carrier ready connector=…` shows
 the choice.
+
+## Forwarding throughput benchmark and close regression — 2026-10-28
+
+`TestForwardingThroughputBenchmark` (internal/fwdbroker) is opt-in and measures
+one forwarded connection in each direction with the netcat double and with the
+local Perl, over a PTY carrier delayed by half the simulated round trip:
+
+```sh
+PI_SH_FWD_BENCH=1 PI_SH_FWD_BENCH_BYTES=524288 PI_SH_FWD_BENCH_RTT=0,40,150 \
+  go test ./internal/fwdbroker -run ThroughputBenchmark -v -timeout 600s
+```
+
+Results before and after are in FORWARDING.md "Throughput". New regression:
+`TestAdapterCloseAfterEOFDeliversQueuedInput` (close right after EOF in both
+directions must still deliver the queued input). The fwdbroker and cmd/pi-sh
+packages pass with Bash 5.3 (also under `-race`, five repetitions) and 5.2.37.

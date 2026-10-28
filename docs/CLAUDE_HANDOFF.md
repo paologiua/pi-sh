@@ -160,14 +160,21 @@ processo (forwarding accanto a un comando, oppure i tentativi di
 ConnectionAttempts in modalità browser) andava in timeout.
 
 Aperti: M3 di `scripts/native-shell-check.sh` (perdita di rete: il proprietario
-deve disattivare la rete del Mac); velocità del forwarding (upload con -L
-~25 KiB/s, -R ~12 KiB/s); `~#` non elenca i canali inoltrati; alla fine della
+deve disattivare la rete del Mac); `~#` non elenca i canali inoltrati; alla fine della
 sessione le connessioni inoltrate vengono chiuse invece di attenderle; la riga
 fatale `Error: remote port forwarding failed…` esce con il prefisso `pi-sh:`,
 che ssh non mette (convenzione generale del logger, DIAGNOSTICS.md: valutare
 per tutte le righe fatali). Half-close con -L, `-D` e `-R` (diretto, SOCKS
 inverso, porta privilegiata rifiutata) sono verificati sul Pi
 (REAL_DEVICE_TESTS.md, 2026-10-27/28).
+
+Velocità del forwarding (2026-10-28, FORWARDING.md "Throughput"): adattatore con
+finestre 8×2 KiB, `read -N`, lettore per flusso, e Perl che codifica da solo i
+record hex; Perl ora è preferito a nc. Sul Pi: Perl ~600 KiB/s Pi→Mac e
+~450 KiB/s Mac→Pi (prima 12 e 25), nc 17 e 243. Chiusura dopo EOF ora svuota
+l'input in coda (`G`) e l'ascoltatore -R scrive i dati bufferizzati prima di
+chiudere (difetto emerso con la velocità). Da rifare sul Pi, con piano approvato:
+half-close con il nuovo connettore Perl e velocità di -R.
 
 Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
 opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
@@ -236,13 +243,13 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
-| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; `-R 0` non provato sul Pi); throughput (upload con -L ~25 KiB/s, -R ~12 KiB/s); molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
+| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; `-R 0` non provato sul Pi); velocità di -R dopo il cambio dei record e half-close del nuovo connettore Perl da rifare sul Pi; molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 
-Il forwarding usa l'adattatore Bash in memoria e il `nc.openbsd` già presente sul
-Pi (OpenBSD netcat 1.229, `-N`), altrimenti Perl tramite `perl-base` (Essential,
-verificato sul Pi il 2026-10-27; FORWARDING.md "Perl connector"). Python non si
+Il forwarding usa l'adattatore Bash in memoria e Perl tramite `perl-base`
+(Essential, verificato sul Pi il 2026-10-27; FORWARDING.md "Perl connector"),
+altrimenti il `nc.openbsd` già presente (OpenBSD netcat 1.229, `-N`). Python non si
 usa (priorità optional). Il candidato Bash `/dev/tcp` resta escluso per
 l'half-close. Non installare connettori e non inventare canali Connect. Opzioni
 SSH senza equivalente devono essere rifiutate chiaramente.

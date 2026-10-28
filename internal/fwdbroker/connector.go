@@ -20,7 +20,10 @@ type Connector struct {
 	// connection is open, or "" when the program prints none (then a nonzero
 	// exit without output is classified as an open failure).
 	Ready, UnixReady string
-	argv             func(forward.Target) ([]string, error)
+	// Hex is set for a pi-sh program that speaks the adapter's hex records on
+	// stdio itself instead of raw bytes (forward.bash).
+	Hex  bool
+	argv func(forward.Target) ([]string, error)
 }
 
 // ReadyText is the readiness marker for a target, or "".
@@ -65,7 +68,7 @@ var (
 	// Perl through the perl-base modules Debian marks Essential (Socket), so
 	// it is present on every Raspberry Pi OS. The program is sent as an argv
 	// word (see perlConnector); nothing is written remotely.
-	perlSockets = Connector{Name: "perl", Ready: perlReady, UnixReady: perlReady, argv: func(t forward.Target) ([]string, error) {
+	perlSockets = Connector{Name: "perl", Ready: perlReady, UnixReady: perlReady, Hex: true, argv: func(t forward.Target) ([]string, error) {
 		if t.Path != "" {
 			if err := checkPath(t.Path); err != nil {
 				return nil, err
@@ -107,20 +110,23 @@ const (
 	// perlConnector behaves like nc -N: one connection (getaddrinfo order,
 	// or a Unix socket for a single operand), stdin EOF shuts the socket's
 	// write side, remote EOF closes stdout while input still flows, and a
-	// failed connect prints the system reason and exits 1.
+	// failed connect prints the system reason and exits 1. It speaks the
+	// adapter's hex records: stdin is hex lines, and each read from the
+	// socket (at most 2040 bytes) becomes one "length\nhex\n" record written
+	// with a single syswrite, below PIPE_BUF so the adapter reads it whole.
 	perlConnector = `use Socket qw(:addrinfo AF_UNIX SOCK_STREAM pack_sockaddr_un);
-$SIG{PIPE}="IGNORE";my($s,$e,$b,$n,@a)=(undef,"failed");
+$SIG{PIPE}="IGNORE";my($s,$e,$b,$n,$l,@a)=(undef,"failed","","","");
 if(@ARGV==1){@a=({family=>AF_UNIX,addr=>pack_sockaddr_un($ARGV[0])})}
 else{($e,@a)=getaddrinfo(@ARGV,{socktype=>SOCK_STREAM})}
 for(@a){socket($s,$_->{family},SOCK_STREAM,0)&&connect($s,$_->{addr}) and last;$e="$!";undef $s}
 $s or print(STDERR "pi-sh-perl: $e\n"),exit 1;
 print STDERR "pi-sh-perl: connected\n";
-sub w{my($f,$k,$d)=(@_,0);while($d<$k){my $r=syswrite($f,$b,$k-$d,$d);defined $r or exit 1;$d+=$r}}
+sub w{my($f,$k,$d)=(@_,0);while($d<length$k){my $r=syswrite($f,$k,length($k)-$d,$d);defined $r or exit 1;$d+=$r}}
 my($i,$o)=(1,1);
 while($i||$o){my $r="";vec($r,0,1)=1 if $i;vec($r,fileno $s,1)=1 if $o;
 select($r,undef,undef,undef)>0 or next;
-if($i&&vec($r,0,1)){$n=sysread(STDIN,$b,65536);if($n){w($s,$n)}else{$i=0;shutdown($s,1)}}
-if($o&&vec($r,fileno $s,1)){$n=sysread($s,$b,65536);if($n){w(\*STDOUT,$n)}else{$o=0;close STDOUT}}}`
+if($i&&vec($r,0,1)){$n=sysread(STDIN,$l,65536,length$l);if($n){my $p=rindex($l,"\n")+1;if($p){(my $h=substr($l,0,$p,""))=~tr/\n//d;w($s,pack("H*",$h))}}else{$i=0;shutdown($s,1)}}
+if($o&&vec($r,fileno $s,1)){$n=sysread($s,$b,2040);if($n){my $h=unpack("H*",$b);w(\*STDOUT,length($h)."\n$h\n")}else{$o=0;close STDOUT}}}`
 )
 
 // Select picks the first recognized connector from the adapter's detection
@@ -136,10 +142,10 @@ func Select(detected map[string][]string) (Connector, bool) {
 		return false
 	}
 	switch {
-	case has("nc", "OpenBSD netcat"):
-		return openBSDNetcat, true
 	case has("perl", perlFingerprint):
 		return perlSockets, true
+	case has("nc", "OpenBSD netcat"):
+		return openBSDNetcat, true
 	case has("ncat", "Ncat: Version") || (has("ncat", "Ncat") && has("ncat", "nmap.org")):
 		return nmapNcat, true
 	case has("socat", "socat version 1.") || has("socat", "socat by Gerhard Rieger"):

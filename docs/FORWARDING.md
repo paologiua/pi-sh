@@ -106,10 +106,10 @@ and directives and prints them for `-G` (differential against local `ssh -G`).
 `internal/forward` is the local side: listeners with ssh's bind rules, SOCKS4/4a/5
 CONNECT, `-W` stdio and a relay with independent half-close per direction.
 `internal/fwdbroker` stages `forward.bash` over a Connect shell carrier, detects a
-connector (`nc -h` reporting OpenBSD netcat, Perl whose Socket module loads, Nmap ncat, or socat, in that order), and multiplexes
+connector (Perl whose Socket module loads, `nc -h` reporting OpenBSD netcat, Nmap ncat, or socat, in that order since 2026-10-28; see "Throughput"), and multiplexes
 up to 64 remote connectors, each started per connection with an argv chosen by
 Go (for OpenBSD netcat: `nc -N -v -- host port`, or `nc -N -U -- path`). Records are
-hex text with acknowledged windows (input 4×1 KiB, output 8×512 B per stream);
+hex text with acknowledged windows (since 2026-10-28 input and output 8×2 KiB per stream);
 the adapter kills and reaps every connector on `Q`/abort. Connector failure text
 is not echoed: only recognized system reasons ("Connection refused" …) are shown.
 
@@ -152,8 +152,7 @@ the command runs, its status 7 kept).
 **Known differences.** `~#` lists only the session channel; `~&` and the escape
 command line are absent; after the session ends, open forwarded connections are
 closed instead of waited for ("Waiting for forwarded connections to
-terminate"). Throughput is bounded by hex records and Bash; it is unmeasured
-natively. The device's connector must exist: pi-sh installs nothing and
+terminate"). Throughput: see "Throughput" (2026-10-28). The device's connector must exist: pi-sh installs nothing and
 refuses with ErrNoConnector otherwise.
 
 **Browser companion and several sessions.** The companion first answered only one
@@ -205,7 +204,7 @@ selection to one detected tool; it still has to be recognized on the device.
 **Tests.** The adapter suite (binary half-close, concurrency, IPv6 and Unix
 targets, remote-first close with late input, open failure, backpressure and
 cleanup, end-to-end -L/-D/-W) runs once with the netcat double and once with the
-local Perl, under Bash 5.3 and 5.2; `TestSelectPrefersNetcatThenPerl` and
+local Perl, under Bash 5.3 and 5.2; `TestSelectPrefersPerlThenNetcat` (order since 2026-10-28) and
 `TestPerlOpenFitsAdapterRecord` check selection and the worst-case record size.
 Native results are in REAL_DEVICE_TESTS.md.
 
@@ -269,3 +268,86 @@ forwarding failed for listen port 22` and exit 255 (prefixed `pi-sh:` by the
 logger, unlike ssh); afterwards no listener or helper process was left
 (REAL_DEVICE_TESTS.md). Single runs: `-R 0`, many connections and long
 sessions remain unexercised on the device.
+
+## Throughput — 2026-10-28
+
+**Native method (read-only).** One `pi-sh --browser -v -N -L
+127.0.0.1:P:speed.cloudflare.com:443` session per connector
+(`PI_SH_FORWARD_CONNECTOR`), and curl on the Mac with `--connect-to` to
+`https://speed.cloudflare.com/__down?bytes=N` (device to Mac) and a POST of
+1 MiB of random bytes to `/__up` (Mac to device). The device only opened an
+outbound TCP connection from the in-memory connector: no file, no listener, no
+installed tool. Rates are bytes over (total − time to first byte) for the
+download and over the total for the upload; single sessions, a few runs each.
+
+| Connector | Device → Mac before | after | Mac → device before | after |
+| --- | --- | --- | --- | --- |
+| OpenBSD nc | 12.1 KiB/s (512 KiB, 42.3 s) | 17.4 KiB/s (1 MiB, 58.9 s) | 24.5 KiB/s (1 MiB, 41.7 s) | 243 KiB/s (1 MiB, 4.2 s) |
+| Perl | 12.2 KiB/s (512 KiB, 42.2 s) | 323–648 KiB/s (1 MiB, 1.58–3.17 s, 5 runs; 4 of 5 above 580) | 24.6 KiB/s (1 MiB, 41.7 s) | 367–470 KiB/s (1 MiB, 2.18–2.79 s, 5 runs) |
+
+**Bottlenecks found.** Both connectors gave the same rates before, so the
+adapter was the limit, not the connector. Device to Mac: the adapter's main
+loop read the connector's output one byte at a time (`read -t 0` plus
+`read -n1`) and hex-encoded each byte with its own `printf`, for every stream
+in one process. Mac to device: 1 KiB records with a window of four (4 KiB per
+round trip) and a per-pair `\x` loop in the writer. A local benchmark with a
+simulated 150 ms round trip reproduced the native 24 KiB/s for the old code.
+
+**Changes.**
+- Input records are `I id seq length hex`, at most 2048 bytes, eight
+  unacknowledged per stream. The parent reads the body with an untimed
+  `read -N` of the declared length, queues it, and hands the writer one
+  record at a time, so it never blocks on the writer's pipe; `F` follows the
+  last acknowledged record. The writer decodes with one `${hex//??/\\x&}` on
+  Bash ≥5.2 (the loop remains for 4.3–5.1), as the command broker does.
+- Raw connectors (netcat, ncat, socat) get a reader worker per stream, as in
+  the broker: one token per permitted record, a blocking first byte, further
+  bytes while `read -t 0` reports data, up to 2048, and one `printf` per record.
+  The per-byte read remains (see SHELL_BROKER.md "Why output is still per
+  byte"), so netcat downloads stay near 17 KiB/s.
+- The Perl connector and the -R listener now speak the adapter's hex records
+  themselves: they read hex lines and write `length\nhex\n` records of at most
+  2040 bytes, each with one `syswrite` below PIPE_BUF, which the parent reads
+  with `read -N`. Bash never touches single bytes on that path. The `-R`
+  loader decodes the program from the same hex input.
+- Perl is now preferred over netcat. perl-base is Essential on Raspberry Pi OS
+  (it cannot be removed without breaking the system) and the Perl path is
+  about 35 times faster for downloads; netcat remains the fallback when Perl
+  or its Socket module is missing. `PI_SH_FORWARD_CONNECTOR=nc` still selects
+  netcat for diagnosis. This reverses the earlier order nc, perl.
+
+**Defect found while measuring.** With the faster path, a `-R` connection's
+reply could be lost: pi-sh sends the last data, EOF and close in quick
+succession, and the listener closed the socket on `C` before writing what it
+had buffered (`TestRemoteForwardingHalfCloseConcurrencyAndAllocation` failed
+12 times in 30 runs; 0 in 30 with the slow old path, which hid it). The same
+existed for `-L`/`-D`/`-W`: `C` killed the connector while up to a window of
+input was still queued in the adapter. sshd drains a channel's output when it
+receives `CHANNEL_CLOSE` after EOF; pi-sh now does the same. The listener
+writes buffered data and shuts the socket down before dropping it, and a
+stream closed after EOF in both directions sends `G` instead of `C`: the
+adapter hands over the queued input and lets the connector exit, killing it
+after ten seconds at most. `TestAdapterCloseAfterEOFDeliversQueuedInput`
+(90 000 bytes after the remote's EOF, then close) received 75–77 KiB of 90 KiB
+before and passes after, with both connectors; the -R test passed 30 of 30.
+
+**Local benchmark** (`TestForwardingThroughputBenchmark`, opt-in with
+`PI_SH_FWD_BENCH=1`; Bash 5.2.37, real PTY, simulated round trip, one
+connection, KiB/s):
+
+| Connector, RTT | Download old → new | Upload old → new |
+| --- | --- | --- |
+| nc, 0 ms | 98 → 133 | 210 → 524 |
+| nc, 40 ms | 81 → 136 | 76 → 316 |
+| nc, 150 ms | 24 → 91 | 24 → 96 |
+| Perl, 0 ms | 96 → 4648 | 205 → 3960 |
+| Perl, 40 ms | 81 → 339 | 76 → 327 |
+| Perl, 150 ms | 24 → 99 | 24 → 98 |
+
+With a round trip the window (16 KiB per stream) is the limit; natively the
+Perl rates imply a round trip of about 30 ms. **Bounds.** At most eight
+records of 2 KiB in flight per stream and direction; 64 streams can therefore
+have about 2 MiB of output hex in flight, which the receive goroutine drains
+without blocking (it never waits on a consumer). Native `-R` throughput after
+the change is unmeasured: it needs a listener on the device, so an approved
+plan. Single sessions on one network; not a load test.

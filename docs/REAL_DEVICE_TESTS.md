@@ -786,3 +786,28 @@ disappears at the end of the session. Data through -R moved at about 12 KiB/s
 line is the general program prefix of DIAGNOSTICS.md; ssh prints the line
 without it. Single runs; many concurrent connections, long sessions, `-R 0`
 allocation and connection loss were not exercised on the device.
+
+## Forwarding throughput before and after, 28 October 2026
+
+Read-only, browser companion. Each session was `pi-sh --browser -v -N -L
+127.0.0.1:P:speed.cloudflare.com:443`, with `PI_SH_FORWARD_CONNECTOR` choosing
+the connector; on the Mac, curl used `--connect-to` for a 512 KiB or 1 MiB
+download from `https://speed.cloudflare.com/__down` (device → Mac) and a 1 MiB
+POST of random bytes to `/__up` (Mac → device). The device only made an
+outbound TCP connection from the in-memory connector; nothing was written or
+listened on. "Before" is `main` at `a2ddd90`; "after" is the adapter of
+FORWARDING.md "Throughput".
+
+| Session | Device → Mac | Mac → device |
+| --- | --- | --- |
+| before, nc (`connector=openbsd-nc`) | 512 KiB in 42.3 s: 12.1 KiB/s | 1 MiB in 41.7 s: 24.5 KiB/s |
+| before, Perl | 512 KiB in 42.2 s: 12.2 KiB/s | 1 MiB in 41.7 s: 24.6 KiB/s |
+| after, nc | 1 MiB in 58.9 s: 17.4 KiB/s | 1 MiB in 4.2 s: 243 KiB/s |
+| after, Perl (forced), 2 runs | 1.63 s, 1.58 s: 628, 648 KiB/s | 2.24 s, 2.18 s: 457, 470 KiB/s |
+| after, final build, default selection (`connector=perl`), 3 runs | 1.62, 1.75, 3.17 s: 632, 585, 323 KiB/s | 2.31, 2.79, 2.28 s: 443, 367, 449 KiB/s |
+| `ps -eo pid,etime,args`, `ss -ltn` afterwards | only the listing session's own `bash`/`cat`; listeners 127.0.0.1:11434 and port 22 (pre-existing) | |
+
+Every HTTP exchange returned 200 with the full byte count. A `/bin/bash -l`
+48 minutes old was also present (see the next check). Single sessions on one
+network; -R throughput after the change needs a device listener and was not
+measured.

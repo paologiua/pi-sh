@@ -8,12 +8,18 @@ import (
 	"pi-sh/internal/forward"
 )
 
-func TestSelectPrefersNetcatThenPerl(t *testing.T) {
+// Perl comes first: perl-base is Essential and its connector encodes records
+// itself, so it is much faster than netcat behind the Bash byte loop.
+func TestSelectPrefersPerlThenNetcat(t *testing.T) {
 	perl := map[string][]string{"perl": {perlFingerprint}}
 	if c, ok := Select(perl); !ok || c.Name != "perl" {
 		t.Fatal(c.Name, ok)
 	}
 	both := map[string][]string{"nc": {"OpenBSD netcat (Debian patchlevel 1.229-1)"}, "perl": {perlFingerprint}, "socat": {"socat version 1.8"}}
+	if c, _ := Select(both); c.Name != "perl" {
+		t.Fatal(c.Name)
+	}
+	delete(both, "perl")
 	if c, _ := Select(both); c.Name != "openbsd-nc" {
 		t.Fatal(c.Name)
 	}
@@ -33,7 +39,7 @@ func TestPerlOpenFitsAdapterRecord(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		size := len("O 1234567890")
+		size := len("O 1234567890 h")
 		for _, a := range argv {
 			if len(a) > maxWord {
 				t.Fatalf("word of %d bytes", len(a))

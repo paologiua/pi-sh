@@ -28,22 +28,23 @@ var source string
 const (
 	// MaxStreams bounds concurrent remote connectors (and their processes).
 	MaxStreams  = 64
-	inputChunk  = 1024
-	inputWindow = 4
+	inputChunk  = 2048
+	inputWindow = 8
 	outWindow   = 8
+	outChunk    = 2048
 	maxStderr   = 4096
 	// maxOpen and maxWord are the adapter's record and argv-word bounds
 	// (forward.bash), checked so an oversized open fails that connection
 	// instead of the adapter.
-	maxOpen     = 2304
-	maxWord     = 1024
+	maxOpen     = 4224
+	maxWord     = 2048
 	quitTimeout = 2 * time.Second
 )
 
 var (
 	ErrProtocol    = errors.New("invalid or incomplete forwarding adapter exchange")
 	ErrClosed      = errors.New("forwarding adapter closed")
-	ErrNoConnector = errors.New("no supported connector (OpenBSD netcat, Perl, Nmap ncat or socat) is present on the device; pi-sh does not install software")
+	ErrNoConnector = errors.New("no supported connector (Perl with Socket, OpenBSD netcat, Nmap ncat or socat) is present on the device; pi-sh does not install software")
 )
 
 // Mux is a started adapter. It implements forward.Dialer.
@@ -202,7 +203,7 @@ func (m *Mux) dispatch(text string) error {
 	case f[0] == "o" && len(f) == 4:
 		seq, err := strconv.Atoi(f[2])
 		data, herr := hex.DecodeString(f[3])
-		if err != nil || herr != nil || len(data) == 0 || len(data) > 512 || seq != s.outSeq+1 || s.outEOF {
+		if err != nil || herr != nil || len(data) == 0 || len(data) > outChunk || seq != s.outSeq+1 || s.outEOF {
 			return ErrProtocol
 		}
 		s.outSeq = seq
@@ -291,7 +292,7 @@ func (m *Mux) Dial(ctx context.Context, target forward.Target) (forward.Stream, 
 	if err != nil {
 		return nil, &forward.OpenError{Detail: err.Error()}
 	}
-	s, err := m.start(ctx, argv, m.connector.ReadyText(target))
+	s, err := m.start(ctx, argv, m.connector.ReadyText(target), m.connector.Hex)
 	if err != nil {
 		return nil, err // never a typed nil in the interface
 	}
@@ -299,8 +300,9 @@ func (m *Mux) Dial(ctx context.Context, target forward.Target) (forward.Stream, 
 }
 
 // start runs argv as one stream; with readyText it waits for that stderr
-// marker and reports an *forward.OpenError if the program exits first.
-func (m *Mux) start(ctx context.Context, argv []string, readyText string) (*stream, error) {
+// marker and reports an *forward.OpenError if the program exits first. A hex
+// program reads and writes the adapter's hex records itself (forward.bash).
+func (m *Mux) start(ctx context.Context, argv []string, readyText string, hexStdio bool) (*stream, error) {
 	select {
 	case m.slots <- struct{}{}:
 	case <-ctx.Done():
@@ -309,7 +311,7 @@ func (m *Mux) start(ctx context.Context, argv []string, readyText string) (*stre
 		return nil, m.Err()
 	}
 	words := make([]string, len(argv))
-	size := len("O 1234567890")
+	size := len("O 1234567890 r")
 	for i, a := range argv {
 		words[i] = hex.EncodeToString([]byte(a))
 		size += 1 + len(words[i])
@@ -327,7 +329,11 @@ func (m *Mux) start(ctx context.Context, argv []string, readyText string) (*stre
 		exitCh: make(chan struct{}), inClosedCh: make(chan struct{}), wake: make(chan struct{}, 1)}
 	m.streams[s.id] = s
 	m.mu.Unlock()
-	if err := m.records.Send(fmt.Sprintf("O %d %s", s.id, strings.Join(words, " "))); err != nil {
+	mode := "r"
+	if hexStdio {
+		mode = "h"
+	}
+	if err := m.records.Send(fmt.Sprintf("O %d %s %s", s.id, mode, strings.Join(words, " "))); err != nil {
 		m.fail(err)
 		return nil, err
 	}
@@ -486,7 +492,7 @@ func (s *stream) Write(b []byte) (int, error) {
 		s.inSent++
 		seq := s.inSent
 		s.mu.Unlock()
-		if err := s.mux.records.Send(fmt.Sprintf("I %d %d %s", s.id, seq, hex.EncodeToString(chunk))); err != nil {
+		if err := s.mux.records.Send(fmt.Sprintf("I %d %d %d %s", s.id, seq, 2*len(chunk), hex.EncodeToString(chunk))); err != nil {
 			s.mux.fail(err)
 			return written, err
 		}
@@ -511,10 +517,13 @@ func (s *stream) CloseWrite() error {
 	return s.mux.records.Send(fmt.Sprintf("F %d", s.id))
 }
 
-// Close kills the connector unless it already exited.
+// Close kills the connector unless it already exited. After EOF in both
+// directions it asks the adapter to let the connector finish writing queued
+// input first (bounded), as sshd drains a channel on CHANNEL_CLOSE.
 func (s *stream) Close() error {
 	s.mu.Lock()
 	skip := s.closed || s.released
+	graceful := s.wroteEOF && s.outEOF
 	s.closed = true
 	s.mu.Unlock()
 	if skip {
@@ -524,6 +533,9 @@ func (s *stream) Close() error {
 	case <-s.mux.done:
 		return nil
 	default:
+	}
+	if graceful {
+		return s.mux.records.Send(fmt.Sprintf("G %d", s.id))
 	}
 	return s.mux.records.Send(fmt.Sprintf("C %d", s.id))
 }

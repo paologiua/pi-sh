@@ -7,6 +7,9 @@
 #   from pi-sh: D id data | E id (shut down write) | A id N32 (bytes consumed) |
 #               C id (close)
 # Each connection may have at most $W unacknowledged bytes in each direction.
+# The frames travel inside the adapter's hex records: the loader's hin()
+# decodes input into $p, and out() writes "length\nhex\n" records of at most
+# 2040 bytes, each with one syswrite below PIPE_BUF.
 use strict;
 use Socket qw(:addrinfo SOCK_STREAM SOL_SOCKET SO_REUSEADDR SOMAXCONN AF_INET AF_INET6
   IPPROTO_IPV6 IPV6_V6ONLY inet_ntop sockaddr_family pack_sockaddr_in unpack_sockaddr_in
@@ -17,16 +20,20 @@ my ($host, $port) = @ARGV;
 $host = '' if $host eq '*';
 my $W = 65536;
 my $MAX = 64;
-my (@ls, %c, $next, $in);
+my (@ls, %c, $next);
 
 sub frame {
   my ($t, $id, $d) = @_;
   $d = '' unless defined $d;
   my $b = pack('aNN', $t, $id, length $d) . $d;
-  while (length $b) {
-    my $k = syswrite(STDOUT, $b);
-    if (!defined $k) { next if $!{EINTR}; exit 4 }
-    substr($b, 0, $k) = '';
+  for (my $o = 0; $o < length $b; $o += 2040) {
+    my $h = unpack('H*', substr($b, $o, 2040));
+    my $r = length($h) . "\n$h\n";
+    while (length $r) {
+      my $k = syswrite(STDOUT, $r);
+      if (!defined $k) { next if $!{EINTR}; exit 4 }
+      substr($r, 0, $k) = '';
+    }
   }
 }
 sub fail { frame('F', 0, $_[0]); exit 1 }
@@ -71,33 +78,35 @@ frame('L', 0, $bound);
 
 sub drop { my ($id) = @_; my $k = delete $c{$id} or return; close $k->{s} }
 sub parse {
-  while (length $in >= 9) {
-    my ($t, $id, $len) = unpack('aNN', $in);
+  while (length $p >= 9) {
+    my ($t, $id, $len) = unpack('aNN', $p);
     exit 5 if $len > $W;
-    last if length $in < 9 + $len;
-    my $d = substr($in, 9, $len);
-    substr($in, 0, 9 + $len) = '';
+    last if length $p < 9 + $len;
+    my $d = substr($p, 9, $len);
+    substr($p, 0, 9 + $len) = '';
     my $k = $c{$id} or next;
     if ($t eq 'D') { exit 5 if $k->{weof} || length($k->{out}) + $len > $W; $k->{out} .= $d }
     elsif ($t eq 'E') { $k->{weof} ||= 1 }
     elsif ($t eq 'A') { $k->{credit} += unpack('N', $d) }
-    elsif ($t eq 'C') { drop($id) }
+    # Like sshd on CHANNEL_CLOSE after EOF: write what is buffered first.
+    elsif ($t eq 'C') { if ($k->{weof} && length $k->{out}) { $k->{closing} = 1 } else { drop($id) } }
     else { exit 5 }
   }
 }
 
-$in = '';
+# $p (the loader's decoded input) may already hold frames.
+parse();
 while (1) {
   my ($r, $w) = ('', '');
   vec($r, 0, 1) = 1;
   vec($r, fileno $_, 1) = 1 for @ls;
   for my $k (values %c) {
-    vec($r, fileno $k->{s}, 1) = 1 if !$k->{reof} && $k->{credit} > 0;
+    vec($r, fileno $k->{s}, 1) = 1 if !$k->{reof} && !$k->{closing} && $k->{credit} > 0;
     vec($w, fileno $k->{s}, 1) = 1 if length $k->{out};
   }
   if (select($r, $w, undef, undef) < 0) { next if $!{EINTR}; exit 6 }
   if (vec($r, 0, 1)) {
-    my $k = sysread(STDIN, $in, 65536, length $in);
+    my $k = hin();
     if (!defined $k) { exit 6 unless $!{EINTR} }
     elsif ($k == 0) { exit 0 }
     else { parse() }
@@ -121,6 +130,8 @@ while (1) {
       elsif (!$!{EAGAIN} && !$!{EINTR}) { drop($id); frame('C', $id); next }
     }
     if ($k->{weof} == 1 && !length $k->{out}) { shutdown($k->{s}, 1); $k->{weof} = 2 }
+    # pi-sh already forgot a closing connection: no frame is sent.
+    if ($k->{closing}) { drop($id) if $k->{weof} == 2; next }
     if (!$k->{reof} && $k->{credit} > 0 && vec($r, $f, 1)) {
       my $n = $k->{credit} < 16384 ? $k->{credit} : 16384;
       my $x = sysread($k->{s}, my $b, $n);
