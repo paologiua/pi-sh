@@ -1,6 +1,7 @@
-# Native -R with many connections — awaiting owner approval
+# Native -R with many connections — approved and run
 
-Proposed 2026-10-28. Not yet authorized. One pi-sh process with one browser
+Proposed 2026-10-28; approved by the owner and run the same day: every round
+complete (REAL_DEVICE_TESTS.md, "Native -R with many connections"). One pi-sh process with one browser
 companion step; nothing is written on the device; the only listener is the -R
 listener on the device's 127.0.0.1, which ends with the session; nothing is
 retried automatically on failure.

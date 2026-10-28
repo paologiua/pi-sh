@@ -424,7 +424,12 @@ byte correct; about 150 KiB/s in each direction in total, whatever the
 number of connections, because all connections of one -R share the
 listener's adapter stream. A 65th connection was accepted and closed at once
 (the client read EOF with no data); it now waits in the backlog
-(`TestRemoteForwardingConnectionBeyondLimitWaits`).
+(`TestRemoteForwardingConnectionBeyondLimitWaits`). On the device (approved
+plan): 16, 64 and 65 concurrent connections, all complete, the 65th after
+waiting; about 80 KiB/s each way in total. The listener writes every frame,
+even a 13-byte acknowledgement, as its own adapter record, so with many
+connections small frames use up the eight-record window; coalescing frames
+into records is the open improvement.
 
 ## End of session — 2026-10-28
 

@@ -961,3 +961,28 @@ page was opened (nothing typed), then Devices again.
 The pi-cp, browser-message, connector and adapter defects are in
 CODE_REVIEW_2026-10-28.md; FORWARDING.md "Many streams" has the analysis.
 Single runs except where several are listed.
+
+## Native -R with many connections, 28 October 2026
+
+Owner-approved plan `docs/NATIVE_RMANY_PLAN.md`, browser companion, `main` at
+`c6a053f` (with `bfa2a6a`, the backlog fix). One session: `pi-sh --browser
+--experimental-command -T -v -R 127.0.0.1:47141:127.0.0.1:51141 raspberrypi
+'<C>'`, a Mac-local counter on 127.0.0.1:51141. The first attempt hit Connect's
+recent sign-in (nothing sent); the Remote shell page was opened (nothing typed),
+then Devices again.
+
+| Round (one Perl process each, 64 KiB each way per connection) | Result |
+| --- | --- |
+| 16 connections | `k=16 ok=16 of 16, 13.0 s` (about 79 KiB/s each way in total) |
+| 64 connections | `k=64 ok=64 of 64, 52.4 s` (about 78 KiB/s each way) |
+| 65 connections | `k=65 ok=65 of 65, 55.4 s`: the 65th waited for a free slot and completed |
+| Mac counter | 145 connections, every one with 65536 request bytes |
+| Status | `remote command finished exit_status=0`, pi-sh exit 0; 145 `client_request_forwarded_tcpip` lines |
+| `ps`, `ss -ltn` afterwards | only the listing session; nothing on 47141; no `perl` |
+
+Every byte arrived in both directions. The total rate, about 80 KiB/s each
+way, is well below a single -R connection (1 MiB in about 1.8 s) and below -L
+with many streams (574–635 KiB/s): all connections of one -R share one adapter
+stream, and the listener sends every frame, including each 13-byte
+acknowledgement, as its own adapter record, so small frames use up the
+eight-record window. Single run.
