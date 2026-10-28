@@ -841,6 +841,11 @@ To force the connector on a device for a native check, set
 detected there, and the `-v` line `forwarding carrier ready connector=…` shows
 the choice.
 
+`TestSFTPThroughputBenchmark` (internal/shellbroker, opt-in with
+`PI_SH_SFTP_BENCH=1`) times 1 MiB up and down through the real broker and the
+local OpenSSH sftp-server for 1 KiB and 32 KiB requests (SFTP_BACKEND.md
+"Request size").
+
 **Perl output reader (2026-10-28).** The shell broker's output workers run
 a Perl reader, and its input worker a Perl writer, when perl compiles them;
 `PI_SH_BROKER_WORKERS=bash` keeps the Bash workers, and the full verification

@@ -152,7 +152,7 @@ diagnostics retain only fixed classes or numeric SFTP status. CLI setup failures
 return 255; file/batch failures return 1; cancellation returns 255. Complete exit
 and interruption parity with OpenSSH remains unverified.
 
-The pinned pure-Go pkg/sftp v1.13.11 uses SFTP v3, checked 1024-byte transfer
+The pinned pure-Go pkg/sftp v1.13.11 uses SFTP v3, checked 32 KiB transfer
 requests and four concurrent requests per file here. Its receiver rejects packets
 over 256 KiB before allocating their bodies. No crypto verification is disabled:
 HTTPS/DTLS trust remains Connect's existing path. The library's SSH client API is
@@ -186,3 +186,32 @@ preservation or remote mutation evidence follows from those metadata checks.
 See [SCP_RECURSION.md](SCP_RECURSION.md) for 48 local OpenSSH comparisons, link
 following, directory metadata, memory limitations and native verification gaps.
 SFTP console recursion remains unimplemented.
+
+## Request size — 2026-10-28
+
+The client used 1 KiB SFTP requests (`MaxPacketChecked(1024)`), a leftover
+from when the broker moved input in 1 KiB records. sftpcli copies 32 KiB at a
+time with plain `Write` and `Read`, so the pinned pkg/sftp split each write
+into 32 sequential 1 KiB `WRITE` requests, each waiting for its status.
+
+In the approved native run (NATIVE_PERL_WORKERS_PLAN.md) a 1 MiB upload took
+17.8 s with the Perl broker workers, against 1.5 s for the same MiB written to
+`wc -c`. Requests are now 32 KiB, the default of OpenSSH sftp and pkg/sftp.
+Each 32 KiB copy is one request, and write errors are still checked per
+request (sftpcli `copyFileData`).
+
+`TestSFTPThroughputBenchmark` (internal/shellbroker, opt-in with
+`PI_SH_SFTP_BENCH=1`) runs the real broker, the Perl workers and the local
+OpenSSH sftp-server, 1 MiB, KiB/s:
+
+| RTT | Request | Upload | Download |
+| --- | --- | --- | --- |
+| 0 ms | 1 KiB | 621 | 3583 |
+| 0 ms | 32 KiB | 4036 | 8885 |
+| 40 ms | 1 KiB | 43 | 209 |
+| 40 ms | 32 KiB | 1123 | 1520 |
+
+On the device, a read-only `pi-cp` of `/usr/bin/bash` (1,412,096 bytes) kept
+its SHA-256 and took 18.0 s of wall time, against 19.1 s before. Most of that
+is sign-in and session setup, so it does not isolate the transfer. A native
+upload with the new size needs a new write plan.

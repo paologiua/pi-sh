@@ -287,6 +287,10 @@ Righe ancora aperte (lavoro rimanente):
   interruttore rinominato `PI_SH_BROKER_WORKERS=bash` (lettori e scrittore);
   per elencare processi sul Pi usare `ps -eo …,comm`: `grep -v "\["` nasconde
   i lavoratori Perl;
+  piano Perl workers approvato ed eseguito: 23/23 controlli in entrambe le corse,
+  pulizia confermata; richieste SFTP da 1 KiB a 32 KiB (in locale upload a 40 ms
+  da 43 a 1123 KiB/s); upload nativo con la nuova dimensione da verificare con
+  un nuovo piano (SFTP_BACKEND.md "Request size");
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many

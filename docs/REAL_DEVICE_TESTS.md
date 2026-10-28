@@ -1094,3 +1094,27 @@ Read-only, browser companion.
 An earlier cleanup listing filtered out lines containing `[` (kernel threads),
 which also hides the Perl workers whose program text contains brackets. Listings
 now select by command name.
+
+## Native transfers through the Perl broker workers, 28 October 2026
+
+Owner-approved plan `docs/NATIVE_PERL_WORKERS_PLAN.md` ("Autorizzo il piano
+Perl workers"), `main` at `6a9310b`, browser companion. The first attempt hit
+Connect's recent sign-in before connecting (nothing created). The Remote shell
+page was opened (nothing typed), then Devices again.
+
+| Check | Perl workers (`/tmp/pi-sh-probe-0c24…`) | Bash workers, `PI_SH_BROKER_WORKERS=bash` (`/tmp/pi-sh-probe-7a78…`) |
+| --- | --- | --- |
+| All 23 probe checks (private root; empty, 64 KiB, 1 MiB round trips with SHA-256; modes; `-p` times; resume; fsync; recursive tree; missing source; cleanup) | passed | passed |
+| `broker-completion` | code 0, cleanup confirmed | code 0, cleanup confirmed |
+| 64 KiB upload / download | 1.3 / 0.25 s | 1.5 / 3.7 s |
+| 1 MiB upload / download | 17.8 / 3.8 s | 21.8 / 59.0 s |
+| Whole run (wall, with sign-in) | 45.9 s | 119.3 s |
+
+Afterwards, a read-only session ran `ls -ld` on both roots and on
+`/tmp/pi-sh-probe-*`: none present. `ps -eo pid,ppid,etime,comm` showed no
+`sftp-server`, and the only `perl` processes were the two readers of the
+listing session's own broker.
+
+The 1 MiB upload's 17.8 s against 1.5 s through `wc -c` led to the SFTP
+request size change (SFTP_BACKEND.md "Request size"). After it, a read-only
+`pi-cp` of `/usr/bin/bash` kept its SHA-256 (18.0 s wall time with setup).

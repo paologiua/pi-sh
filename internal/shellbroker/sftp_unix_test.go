@@ -142,3 +142,78 @@ func testSFTPOverActualBroker(t *testing.T, overWebRTC bool) {
 		t.Fatal(errors.New("SFTP/broker EOF did not finish"))
 	}
 }
+
+// TestSFTPThroughputBenchmark times a 1 MiB upload and download through the
+// real broker and the local OpenSSH sftp-server, copying 32 KiB at a time as
+// sftpcli does, for two SFTP request sizes and simulated round trips. Opt-in
+// with PI_SH_SFTP_BENCH=1 (docs/SFTP_BACKEND.md "Request size").
+func TestSFTPThroughputBenchmark(t *testing.T) {
+	if os.Getenv("PI_SH_SFTP_BENCH") == "" {
+		t.Skip("set PI_SH_SFTP_BENCH=1 to run the SFTP throughput benchmark")
+	}
+	server := ""
+	for _, candidate := range []string{"/usr/libexec/sftp-server", "/usr/lib/openssh/sftp-server", "/usr/libexec/openssh/sftp-server"} {
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+			server = candidate
+			break
+		}
+	}
+	if server == "" {
+		t.Skip("local OpenSSH sftp-server is not installed")
+	}
+	data := make([]byte, 1<<20)
+	for i := range data {
+		data[i] = byte(i * 7)
+	}
+	for _, rtt := range []time.Duration{0, 40 * time.Millisecond} {
+		for _, packet := range []int{1024, 32768} {
+			inR, inW := io.Pipe()
+			outR, outW := io.Pipe()
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				defer outW.Close()
+				defer inR.Close()
+				runLocalWithStream(t, "exec "+quote(server)+" -e", func(context.CancelFunc) IO {
+					return IO{Stdin: inR, Stdout: outW, Stderr: io.Discard}
+				}, nil, 120*time.Second, func(ctx context.Context, file *os.File) Stream { return newDelayedStream(ctx, file, rtt/2) })
+			}()
+			client, err := sftp.NewClientPipe(outR, inW, sftp.MaxPacketChecked(packet), sftp.MaxConcurrentRequestsPerFile(4))
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := filepath.Join(t.TempDir(), "bench")
+			start := time.Now()
+			f, err := client.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := io.CopyBuffer(struct{ io.Writer }{f}, bytes.NewReader(data), make([]byte, 32<<10)); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			up := time.Since(start)
+			start = time.Now()
+			f, err = client.Open(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got bytes.Buffer
+			if _, err := io.CopyBuffer(&got, struct{ io.Reader }{f}, make([]byte, 32<<10)); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+			down := time.Since(start)
+			if !bytes.Equal(got.Bytes(), data) {
+				t.Fatal("SFTP data changed")
+			}
+			client.Close()
+			inW.Close()
+			outR.Close()
+			<-finished
+			t.Logf("rtt=%v packet=%d upload=%.0f KiB/s download=%.0f KiB/s", rtt, packet, 1024/up.Seconds(), 1024/down.Seconds())
+		}
+	}
+}

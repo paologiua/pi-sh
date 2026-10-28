@@ -98,7 +98,11 @@ func Open(ctx context.Context, run Runner, options Options) (*Session, error) {
 	s.OriginalUmask, err = readUmask(s.outR)
 	var client *sftp.Client
 	if err == nil {
-		client, err = sftp.NewClientPipe(s.outR, s.inW, sftp.MaxPacketChecked(1024), sftp.MaxConcurrentRequestsPerFile(4))
+		// 32 KiB requests, as OpenSSH sftp: copies write and read 32 KiB at a
+		// time (sftpcli copyFileData), so each is one request. 1 KiB requests,
+		// a leftover from 1 KiB broker records, sent a 1 MiB upload as 1024
+		// sequential WRITEs (17.8 s on the device, 2026-10-28).
+		client, err = sftp.NewClientPipe(s.outR, s.inW, sftp.MaxPacketChecked(32768), sftp.MaxConcurrentRequestsPerFile(4))
 	}
 	withinDeadline := timer.Stop()
 	if err != nil || !withinDeadline || owned.Err() != nil {

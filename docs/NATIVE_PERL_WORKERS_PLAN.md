@@ -1,6 +1,8 @@
-# Native transfers through the Perl broker workers — proposed
+# Native transfers through the Perl broker workers — approved and run
 
-Proposed 2026-10-28. **Not approved; nothing has been run.**
+Proposed 2026-10-28; approved by the owner ("Autorizzo il piano Perl workers") and
+run the same day: every check passed in both runs, cleanup confirmed
+(REAL_DEVICE_TESTS.md, "Native transfers through the Perl broker workers").
 
 ## Why
 
