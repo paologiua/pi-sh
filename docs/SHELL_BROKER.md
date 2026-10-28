@@ -314,3 +314,49 @@ On the device (read-only, one run each; REAL_DEVICE_TESTS.md):
 - `pi-cp` of `/usr/bin/bash` (1,412,096 bytes) took 22.1 s instead of 94.1 s,
   both totals including sign-in and setup;
 - the SHA-256 matched `sha256sum` on the device.
+
+## Window — 2026-10-28
+
+Once Perl read the output, the eight-record window (16 KiB per direction and
+stream) bounded output at any real round trip: locally 376 KiB/s at 40 ms
+against 2684 KiB/s at 0 ms. The window is now 32 records, set as `_ps_win` in
+broker.bash and `recordWindow` in broker.go (`TestBrokerWindowMatchesClient`),
+the same as the forwarding adapter.
+
+**In-flight bounds.**
+- Up to 32 input records (128 KiB of hex) are queued in the broker's Bash
+  memory.
+- The Connect PTY receives input bursts of up to about 130 KiB.
+- The two output streams can hold up to 256 KiB of hex in flight. A full
+  transport receive queue now holds the device back instead of failing
+  (TRANSPORT.md).
+
+Local benchmark (Bash 5.3, Perl reader, KiB/s), window 8 → 32:
+
+| RTT | Download | Roundtrip | Upload |
+| --- | --- | --- | --- |
+| 0 ms | 2684 → 2771 | 1136 → 1268 | 577 → 627 |
+| 40 ms | 376 → 686 | 492 → 572 | 238 → 281 |
+| 150 ms | 119 → 204 | 160 → 220 | 78 → 116 |
+
+On the device (read-only, single runs) the round trip to Connect is short
+enough that a stream was already near its rate. 1 MiB of stdout took 1.25 s
+(1.26 s with window 8). 1 MiB of upload took 3.09 s (3.54 s). `pi-cp` of
+`/usr/bin/bash` completed with the same SHA-256. Its 28.5 s wall time (22.1 s
+before) includes sign-in and setup and does not isolate the window.
+
+**Upload limit.** Upload is now bound by the Bash input writer's hex decoding,
+about 600 KiB/s locally.
+
+**Unexplained failure.** One full verification run with the new window failed
+under the Bash 5.2.37 step: `TestShellBrokerAbortAfterRemoteCompletion` ("0
+local stdin read failed", cleanup not confirmed), then
+`TestShellBrokerBlockedInputDoesNotBlockOutput` hung until the package timeout.
+The same run's race step also had a timing failure in
+`TestStagedTTYStopOpenSSHDifferential/caught-suspend`, which uses the separate
+TTY adapter. The failure could not be reproduced:
+- two more runs of that Bash 5.2 step, with this window and with window 8;
+- 25 repetitions of each affected test under parallel load, on both;
+- a full rerun of the verification, all green.
+
+It is recorded here as open.

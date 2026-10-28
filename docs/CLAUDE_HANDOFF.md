@@ -280,6 +280,9 @@ Righe ancora aperte (lavoro rimanente):
   lettore dell'output del broker in Perl (sysread; ripiego Bash,
   `PI_SH_BROKER_READER=bash`): 1 MiB di stdout da 56 s a 1,3 s, pi-cp di
   1,4 MB da 94 s a 22 s; SHELL_BROKER.md "Perl output reader";
+  finestra del broker 8→32 (`_ps_win`/`recordWindow`): in locale download a
+  40 ms 376→686 KiB/s, sul Pi quasi invariato; un fallimento Bash 5.2 di
+  verifica non riprodotto è annotato come aperto (SHELL_BROKER.md "Window");
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many

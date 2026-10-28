@@ -4,6 +4,8 @@ set +m
 set +e
 trap '' PIPE
 _ps_emit() { printf '%s%s\n' "$_ps_prefix" "$*"; }
+# Unacknowledged records per direction and stream (recordWindow in broker.go).
+_ps_win=32
 _ps_fail() { _ps_emit 'Z protocol'; exit 125; }
 _ps_cleanup() {
   trap - EXIT HUP TERM CHLD
@@ -188,11 +190,11 @@ _ps_main() {
           esac
           ;;
         'I ')
-          # "I seq length hex": up to eight unacknowledged records of at most
+          # "I seq length hex": up to _ps_win unacknowledged records of at most
           # 2048 bytes. Records arriving after K are validated and dropped.
           IFS= read -r -d ' ' status || exit 125
           IFS= read -r -d ' ' n || exit 125
-          [[ $status =~ ^[0-9]{1,9}$ && $n =~ ^[0-9]{1,4}$ ]] && ((status==in_seq+1 && n>0 && n<=4096 && n%2==0 && in_seq-in_ack<8)) || _ps_fail
+          [[ $status =~ ^[0-9]{1,9}$ && $n =~ ^[0-9]{1,4}$ ]] && ((status==in_seq+1 && n>0 && n<=4096 && n%2==0 && in_seq-in_ack<_ps_win)) || _ps_fail
           IFS= read -r -N $((n+1)) hex || exit 125
           [[ ${hex:n} == $'\n' ]] || _ps_fail
           hex=${hex:0:n}
@@ -258,8 +260,8 @@ _ps_main() {
         ((sequence++))
         _ps_emit "$name $sequence ${hex:0:n}"
       done
-      # One token per record: at most eight unacknowledged output records.
-      while ((ended==0 && requested-acknowledged<8)); do
+      # One token per record: at most _ps_win unacknowledged output records.
+      while ((ended==0 && requested-acknowledged<_ps_win)); do
         printf '\n' >&"$tfd" || break
         ((requested++))
       done

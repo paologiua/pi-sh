@@ -1070,3 +1070,13 @@ Read-only, browser companion; the old build is `05b2f4b`.
 | 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero` | `wc` 1048576; upload 3536 ms (old: 3435); download 1048576 bytes in 1.26 s (old: 56.2 s); exit 0 |
 | `pi-cp --browser -q raspberrypi:/usr/bin/bash` (1,412,096 bytes), wall time including sign-in and setup | 22.1 s (old build: 94.1 s), exit 0 both |
 | `sha256sum /usr/bin/bash` on the device | `ccbd5106945d1095…`, equal to both local copies; no `sftp-server` left afterwards |
+
+## Broker window of 32 records, 28 October 2026
+
+Read-only, browser companion; Connect asked once for recent sign-in (Remote
+shell page opened, nothing typed).
+
+| Check | Result |
+| --- | --- |
+| 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero` | `wc` 1048576; upload 3092 ms (window 8: 3536); download 1048576 bytes in 1.25 s (1.26); exit 0 |
+| `pi-cp --browser -q raspberrypi:/usr/bin/bash` | 1,412,096 bytes, same SHA-256, exit 0; 28.5 s wall time including sign-in and setup (22.1 s before; not comparable) |

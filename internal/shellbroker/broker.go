@@ -33,13 +33,15 @@ func brokerScript() string {
 
 // Data records carry at most 2048 bytes (4096 hex digits). Adapter and client
 // ship together, so these values are an internal protocol version, not a
-// negotiated limit. Each direction keeps at most eight records unacknowledged:
-// with two output streams that is about 66 KiB of hex in flight, well inside
-// the transport's 256 KiB receive bound.
+// negotiated limit. Each direction keeps at most recordWindow records
+// unacknowledged (_ps_win in broker.bash, which must match). At 8 (16 KiB) the
+// round trip bounded output once Perl read it (SHELL_BROKER.md "Window"); two
+// output streams now hold up to 256 KiB of hex in flight, and a full
+// transport receive queue holds the device back instead of failing.
 const maxRecord = 4224
 const inputChunk = 2048
 const outputChunk = 2048
-const recordWindow = 8
+const recordWindow = 32
 
 var ErrProtocol = errors.New("invalid or incomplete shell broker exchange")
 

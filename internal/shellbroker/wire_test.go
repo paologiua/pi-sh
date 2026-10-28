@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -72,5 +74,17 @@ func TestBootstrapHasNoRemoteFilesOrPython(t *testing.T) {
 		if _, err := New(bad); err == nil {
 			t.Fatal("invalid command accepted")
 		}
+	}
+}
+
+// The broker script and the client must agree on the record window, or the
+// broker fails the protocol when the client sends more input records.
+func TestBrokerWindowMatchesClient(t *testing.T) {
+	m := regexp.MustCompile(`(?m)^_ps_win=([0-9]+)$`).FindStringSubmatch(source)
+	if m == nil {
+		t.Fatal("_ps_win not found in broker.bash")
+	}
+	if n, _ := strconv.Atoi(m[1]); n != recordWindow {
+		t.Fatalf("_ps_win=%d, recordWindow=%d", n, recordWindow)
 	}
 }
