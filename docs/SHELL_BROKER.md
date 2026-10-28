@@ -349,7 +349,7 @@ before) includes sign-in and setup and does not isolate the window.
 **Upload limit.** Upload is now bound by the Bash input writer's hex decoding,
 about 600 KiB/s locally.
 
-**Unexplained failure.** One full verification run with the new window failed
+**Failure, explained below ("Input window").** One full verification run with the new window failed
 under the Bash 5.2.37 step: `TestShellBrokerAbortAfterRemoteCompletion` ("0
 local stdin read failed", cleanup not confirmed), then
 `TestShellBrokerBlockedInputDoesNotBlockOutput` hung until the package timeout.
@@ -360,7 +360,7 @@ TTY adapter. The failure could not be reproduced:
 - 25 repetitions of each affected test under parallel load, on both;
 - a full rerun of the verification, all green.
 
-It is recorded here as open.
+This section first recorded it as open.
 
 ## Perl input writer — 2026-10-28
 
@@ -402,3 +402,58 @@ setup.
 
 Afterwards the only `perl` processes on the device were the two readers of the
 listing session itself; nothing listened beyond 22 and 11434.
+
+## Input window — 2026-10-28
+
+**Cause of the failure under "Window".** The stack saved at the timeout shows
+two goroutines blocked for three minutes:
+- `Run` was in a `write` to the carrier, sending a 4 KiB input record;
+- the receive pump was waiting to hand `Run` a record, with its 16-record
+  queue full.
+
+`Run` sends input on the same goroutine that consumes output, so a blocked send
+also stops output from being consumed. The cycle closes like this:
+1. `Run` sends input faster than the broker takes it;
+2. the broker blocks writing output that nobody reads;
+3. it therefore stops reading input;
+4. the carrier fills and `Run`'s send blocks for good.
+
+The cycle cannot close while all the input in flight fits the carrier's
+buffers: the PTY, the relay pipe (64 KiB on Linux) and the broker's memory.
+At 8 records (about 33 KiB of hex) it always fit; that was the original
+design. Raising the window to 32 records (about 130 KiB) broke that bound. It
+showed up only under load, when the relay `cat` and the broker run late.
+
+On the device the same cycle could form. With the transport's new
+backpressure it would hang rather than fail.
+
+**Fix.** The two windows are now separate:
+- input: 8 records, `inputWindow` in broker.go and `_ps_in_win` in
+  broker.bash (`TestBrokerWindowMatchesClient`);
+- output: 32 records per stream, `_ps_out_win`, set on the broker side only.
+  A blocked send cannot hold output that `Run` has not asked for.
+
+**Evidence and limits.**
+- Under full CPU load (one `yes` per core, Bash 5.2.37), 20 repetitions of
+  `TestShellBrokerAbortAfterRemoteCompletion` and
+  `TestShellBrokerBlockedInputDoesNotBlockOutput` hung once with window 32.
+- The same load passed twice with the fix, but also twice on the unfixed code,
+  so the reproduction is not reliable.
+- A deterministic test (slow local stdout, pending input) did not reproduce the
+  hang on either version and was not kept.
+- The fix rests on the stack trace and on the bound above.
+
+On the device (read-only, single run) 1 MiB to `wc -c` took 1.77 s (1.47 s
+with input window 32), and 1 MiB from `head -c` took 0.79 s.
+
+**Next step.** Separating sending from receiving in `Run` would remove the
+cycle whatever the window, as the forwarding mux already does. It is not done
+yet: the abort path also writes to the stream and would have to wait for an
+in-progress send.
+
+**Unrelated failure.** In one verification run,
+`TestTTYCommandSessionOverWebRTC/ctrl-z-handler` (Bash 5.2, TTY adapter)
+failed with "Ctrl-Z lost command completion". It then passed 20 of 20 alone
+and 15 of 15 under full load, both on this tree and on `59e152d` (this
+morning). It is recorded as an intermittent timing test, with no link to
+today's changes shown.

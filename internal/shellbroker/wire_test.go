@@ -77,14 +77,14 @@ func TestBootstrapHasNoRemoteFilesOrPython(t *testing.T) {
 	}
 }
 
-// The broker script and the client must agree on the record window, or the
+// The broker script and the client must agree on the input window, or the
 // broker fails the protocol when the client sends more input records.
 func TestBrokerWindowMatchesClient(t *testing.T) {
-	m := regexp.MustCompile(`(?m)^_ps_win=([0-9]+)$`).FindStringSubmatch(source)
+	m := regexp.MustCompile(`(?m)^_ps_in_win=([0-9]+) `).FindStringSubmatch(source)
 	if m == nil {
-		t.Fatal("_ps_win not found in broker.bash")
+		t.Fatal("_ps_in_win not found in broker.bash")
 	}
-	if n, _ := strconv.Atoi(m[1]); n != recordWindow {
-		t.Fatalf("_ps_win=%d, recordWindow=%d", n, recordWindow)
+	if n, _ := strconv.Atoi(m[1]); n != inputWindow {
+		t.Fatalf("_ps_in_win=%d, inputWindow=%d", n, inputWindow)
 	}
 }

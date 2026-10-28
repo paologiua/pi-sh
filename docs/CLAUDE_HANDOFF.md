@@ -280,9 +280,10 @@ Righe ancora aperte (lavoro rimanente):
   lettore dell'output del broker in Perl (sysread; ripiego Bash,
   `PI_SH_BROKER_WORKERS=bash`): 1 MiB di stdout da 56 s a 1,3 s, pi-cp di
   1,4 MB da 94 s a 22 s; SHELL_BROKER.md "Perl output reader";
-  finestra del broker 8→32 (`_ps_win`/`recordWindow`): in locale download a
-  40 ms 376→686 KiB/s, sul Pi quasi invariato; un fallimento Bash 5.2 di
-  verifica non riprodotto è annotato come aperto (SHELL_BROKER.md "Window");
+  finestre del broker: output 32 record (`_ps_out_win`), input di nuovo 8
+  (`_ps_in_win`/`inputWindow`): con 32 in input Run poteva bloccarsi in un ciclo
+  invio-input/output-non-letto (stack della verifica fallita; SHELL_BROKER.md
+  "Input window"); separare invio e ricezione in Run è il passo robusto, non fatto;
   scrittore dell'input del broker in Perl: upload 1 MiB sul Pi da 3,1 a 1,5 s;
   interruttore rinominato `PI_SH_BROKER_WORKERS=bash` (lettori e scrittore);
   per elencare processi sul Pi usare `ps -eo …,comm`: `grep -v "\["` nasconde

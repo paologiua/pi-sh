@@ -1131,3 +1131,10 @@ request size change (SFTP_BACKEND.md "Request size"). After it, a read-only
 Afterwards, a read-only session found the root and `/tmp/pi-sh-probe-*`
 absent and no `sftp-server`. The only `perl` processes were the two readers
 of the listing session's own broker.
+
+## Broker input window back to 8, 28 October 2026
+
+Read-only. Connect asked for recent sign-in once (Remote shell page opened,
+nothing typed). 1 MiB stdin to `wc -c` took 1769 ms (1470 ms with input
+window 32). 1 MiB from `head -c 1048576 /dev/zero` took 0.79 s, 1048576 bytes.
+Exit 0 (SHELL_BROKER.md "Input window").

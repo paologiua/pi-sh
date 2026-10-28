@@ -33,15 +33,19 @@ func brokerScript() string {
 
 // Data records carry at most 2048 bytes (4096 hex digits). Adapter and client
 // ship together, so these values are an internal protocol version, not a
-// negotiated limit. Each direction keeps at most recordWindow records
-// unacknowledged (_ps_win in broker.bash, which must match). At 8 (16 KiB) the
-// round trip bounded output once Perl read it (SHELL_BROKER.md "Window"); two
-// output streams now hold up to 256 KiB of hex in flight, and a full
-// transport receive queue holds the device back instead of failing.
+// negotiated limit.
+//
+// Input keeps at most inputWindow records unacknowledged (_ps_in_win in
+// broker.bash, which must match): Run sends input on the goroutine that also
+// consumes output, so in-flight input must fit the carrier's buffers (PTY,
+// relay pipe, broker memory). At 32 records (130 KiB) a slow broker blocked
+// writing output while Run blocked writing input, and neither moved again
+// (SHELL_BROKER.md "Window"). Output keeps up to 32 records per stream
+// (_ps_out_win, broker-side only): at 8 the round trip bounded it.
 const maxRecord = 4224
 const inputChunk = 2048
 const outputChunk = 2048
-const recordWindow = 32
+const inputWindow = 8
 
 var ErrProtocol = errors.New("invalid or incomplete shell broker exchange")
 
@@ -358,7 +362,7 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 			return 0, err
 		}
 	}
-	// Input is pipelined: up to recordWindow I records may await A. The
+	// Input is pipelined: up to inputWindow I records may await A. The
 	// broker queues them in memory and its writer holds one at a time, so
 	// a command that stops reading still backpressures the local reader.
 	inSeq, inAck, outSeq, errSeq := 0, 0, 0, 0
@@ -380,7 +384,7 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 			inputDone = true
 			return w.send("F")
 		}
-		if inSeq-inAck < recordWindow {
+		if inSeq-inAck < inputWindow {
 			reading = true
 			request <- struct{}{}
 		}
