@@ -1,6 +1,7 @@
-# Native -R bind addresses (wildcard, IPv6) — awaiting owner approval
+# Native -R bind addresses (wildcard, IPv6) — approved and run
 
-Proposed 2026-10-28. Not yet authorized. One pi-sh process with one browser
+Proposed 2026-10-28; approved by the owner and run the same day: every result
+matched the table below (REAL_DEVICE_TESTS.md, "Native -R bind addresses"). One pi-sh process with one browser
 companion step; nothing is written on the device; nothing is retried
 automatically on failure.
 

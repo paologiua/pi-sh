@@ -904,3 +904,31 @@ its complete status record, so an abort before it is still an error.
 
 The plan's steps ran once each as written; step 2 was repeated five times (once with
 `-vvv`, twice with the diagnostic build, twice with the fix), each with the same device-side program and bounds.
+
+## Native -R bind addresses (wildcard, IPv6), 28 October 2026
+
+Owner-approved plan `docs/NATIVE_RBIND_PLAN.md`, browser companion, `main` at
+`6b06206`. One session: `pi-sh --browser --experimental-command -T -v -R
+47131:127.0.0.1:51125 -R '[::1]:47132:…' -R '*:47133:…' -R ':47134:…' -R
+'<LAN>:47135:…' raspberrypi '<C>'` (all to a Mac-local counter on
+127.0.0.1:51125), with the plan's device-side `ss` listing and Perl client run
+from memory. Nothing was written on the device. The device's LAN address is
+written `<LAN>` here.
+
+| Forward | Listening sockets on the device | lo4 | lo6 | lan |
+| --- | --- | --- | --- | --- |
+| `47131` (no host) | `127.0.0.1:47131`, `[::1]:47131` | 4096 | 4096 | refused |
+| `[::1]:47132` | `[::1]:47132` | refused | 4096 | refused |
+| `*:47133` | `0.0.0.0:47133`, `[::]:47133` | 4096 | 4096 | 4096 |
+| `:47134` (empty host) | `0.0.0.0:47134`, `[::]:47134` | 4096 | 4096 | 4096 |
+| `<LAN>:47135` | `<LAN>:47135` | refused | refused | 4096 |
+
+All five forwards reported `remote forward success`; the Mac counter received
+exactly ten connections of 4096 bytes; every `client_request_forwarded_tcpip`
+originator was the device itself (127.0.0.1, ::1 or `<LAN>`), so no other LAN
+host connected during the session; command status 0, pi-sh exit 0. A read-only
+`ps`/`ss` afterwards showed nothing on 47131–47135 and no `perl` or `nc`.
+
+This matches sshd's `GatewayPorts clientspecified` rules exactly, including the
+separate IPv4 and IPv6 sockets for the loopback and wildcard cases. Single run;
+IPv6 link-local targets were not tried (they need a scope id).

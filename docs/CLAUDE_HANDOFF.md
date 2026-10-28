@@ -262,7 +262,7 @@ Righe ancora aperte (lavoro rimanente):
   trattino iniziale e disk-full sul Pi; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
 - SFTP: `mget`/`mput`, `-r` della console, flag di `ls`, `lumask`, `ln`, `chown`/
   `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
-- Forwarding: bind jolly/IPv6 di -R sul Pi (piano `docs/NATIVE_RBIND_PLAN.md`, da approvare);
+- Forwarding: bind jolly/IPv6 di -R verificati sul Pi (2026-10-28, NATIVE_RBIND_PLAN.md);
   EnableEscapeCommandline; molti stream e sessioni lunghe.
 - Diagnostica: prefisso `pi-sh:` sulle righe fatali; manca `Connection to HOST
   closed.` di ssh con -tt.

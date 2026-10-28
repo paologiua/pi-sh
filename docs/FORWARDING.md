@@ -270,8 +270,11 @@ logger, unlike ssh); afterwards no listener or helper process was left
 (REAL_DEVICE_TESTS.md). Re-run after the throughput change (owner-approved):
 1 MiB from a device client through `-R` to a Mac counter in about 1.8 s, `~#`
 listing the -R connection, exit 0 under `-tt`; `-R 127.0.0.1:0:…` printed
-`Allocated port 43995 …`. Many connections and long sessions remain
-unexercised on the device.
+`Allocated port 43995 …`. Bind addresses (owner-approved): no host, `[::1]`,
+`*`, empty host and the LAN address bound exactly the sockets sshd binds with
+`GatewayPorts clientspecified` and accepted or refused loopback IPv4/IPv6 and
+LAN clients accordingly. Many connections and long sessions remain unexercised
+on the device.
 
 ## Throughput — 2026-10-28
 
