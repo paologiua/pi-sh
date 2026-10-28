@@ -220,3 +220,45 @@ about 25 KiB/s. Raising it (larger input records or a wider window) is open work
 `-R` is the next step. Owner decision (2026-10-28): the remote listener binds the
 loopback by default, and an explicit bind address (`*`, empty, or an address) is
 honored, which is what sshd does with `GatewayPorts clientspecified`.
+
+## Remote forwarding (-R) — 2026-10-28
+
+**Reference.** Observed on a local OpenSSH 10.2p1 sshd with `GatewayPorts
+clientspecified`: `-R 0:…` prints `Allocated port N for remote forward to h:p`;
+a refused listen prints `Warning: remote port forwarding failed for listen port
+N` and the session continues, or `Error: …` and exit 255 with
+ExitOnForwardFailure (also with -N); no host binds `[::1]` and `127.0.0.1`, `*`
+every address, `127.0.0.1` or `[::1]` only that; a privileged port fails for a
+non-root user; a refused local target prints `connect_to h port p: failed.` and
+the remote client sees a reset; a missing local socket prints `connect to PATH
+port -2 failed: No such file or directory`; `-R port` (remote dynamic) answers
+SOCKS only after the local connect, and closes without a reply on failure or when
+PermitRemoteOpen denies the destination (debug
+`rdynamic_connect_finish: requested forward not permitted`).
+
+**Remote side.** `fwdbroker.Mux.Listen` runs `perl -e LOADER -- host port` as one
+adapter stream; the loader reads a length-prefixed program (`listener.pl`) from
+stdin and evaluates it, so nothing is written on the device. The listener binds
+with sshd's clientspecified rules, reports `L port` or `F reason`, then
+multiplexes accepted connections over its stdio with binary frames
+(`pack("aNN", type, id, length)`) and a 64 KiB window per connection in each
+direction, so a stalled local consumer stalls only its own connection. It
+accepts at most 64 connections at once and exits at stdin EOF; closing the
+stream kills it through the adapter. A device without Perl gets "remote
+forwarding needs Perl (perl-base) on the device".
+
+**Local side.** `forward.ListenRemote` requests each forwarding after the local
+ones (as `ssh_init_forwarding`), with ssh's messages; `Remote.Serve` connects
+each announced connection to the local target with half-close in both
+directions, or performs the SOCKS exchange for remote dynamic forwarding.
+Remote Unix-domain listeners (`-R /path:…`) are refused, since binding would
+create a socket file on the device.
+
+**Differences.** All connections of one -R share one adapter stream, so their
+total rate is bounded like a single forwarded connection (about 25 KiB/s
+upload natively for -L). The listener's reason for a failed bind appears only
+at debug level (sshd sends none). pi-sh waits for each listener's reply before
+starting the session, while ssh may start the session first.
+
+**Native test.** Running -R on the device opens a listener there for the session,
+so it needs the owner's approval of an exact plan.

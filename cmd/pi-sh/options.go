@@ -45,7 +45,7 @@ type options struct {
 	destinationParsed bool
 	// fwd holds -L/-D/-W and the forwarding directives; features holds the
 	// accepted (off) values of refused features and SessionType, so -G
-	// prints them. Remote (-R) forwardings are parsed and then refused.
+	// prints them. Remote (-R) forwardings with a remote socket path are refused.
 	fwd      forwardspec.Settings
 	features forwardspec.Features
 }
@@ -55,7 +55,9 @@ type options struct {
 func (o options) noSession() bool { return o.features.SessionNone }
 
 // forwarding reports whether a forwarding carrier is needed.
-func (o options) forwarding() bool { return len(o.fwd.Local) > 0 || o.fwd.StdioSet }
+func (o options) forwarding() bool {
+	return len(o.fwd.Local) > 0 || len(o.fwd.Remote) > 0 || o.fwd.StdioSet
+}
 
 func parseOptions(args []string) (options, error) {
 	o := options{escape: "~", tty: "auto", connection: map[string]string{}, policy: connpolicy.Default(), fwd: forwardspec.NewSettings()}
@@ -368,8 +370,10 @@ func parseOptions(args []string) (options, error) {
 // pi-sh cannot do and expands Unix-socket paths.
 func (o *options) finishForwarding(defaultAccount string) error {
 	o.fwd.Finish()
-	if len(o.fwd.Remote) > 0 {
-		return errRemoteForwarding
+	for _, f := range o.fwd.Remote {
+		if f.Listen.Port == forwardspec.PortStreamLocal {
+			return errRemoteUnixListen
+		}
 	}
 	tokens := map[byte]string{}
 	if len(o.args) > 0 {
@@ -390,9 +394,9 @@ func (o *options) finishForwarding(defaultAccount string) error {
 	return o.fwd.Expand(tokens)
 }
 
-// errRemoteForwarding is the pending decision for -R/RemoteForward: it needs a
-// listener on the device for the whole session (docs/FORWARDING.md).
-var errRemoteForwarding = errors.New("remote forwarding (-R, RemoteForward) is not implemented: it would keep a listener open on the device; see docs/FORWARDING.md")
+// errRemoteUnixListen refuses -R with a remote socket path: binding it would
+// create a file on the device (docs/FORWARDING.md).
+var errRemoteUnixListen = errors.New("remote Unix-domain socket forwarding (-R path:…) is not supported: it would create a socket file on the device; see docs/FORWARDING.md")
 
 // applyRemoteCommand follows ssh(1): RemoteCommand together with a
 // command-line command is an error (also for -G); otherwise its %-expanded

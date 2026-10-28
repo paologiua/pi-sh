@@ -291,6 +291,16 @@ func (m *Mux) Dial(ctx context.Context, target forward.Target) (forward.Stream, 
 	if err != nil {
 		return nil, &forward.OpenError{Detail: err.Error()}
 	}
+	s, err := m.start(ctx, argv, m.connector.ReadyText(target))
+	if err != nil {
+		return nil, err // never a typed nil in the interface
+	}
+	return s, nil
+}
+
+// start runs argv as one stream; with readyText it waits for that stderr
+// marker and reports an *forward.OpenError if the program exits first.
+func (m *Mux) start(ctx context.Context, argv []string, readyText string) (*stream, error) {
 	select {
 	case m.slots <- struct{}{}:
 	case <-ctx.Done():
@@ -313,7 +323,7 @@ func (m *Mux) Dial(ctx context.Context, target forward.Target) (forward.Stream, 
 	}
 	m.mu.Lock()
 	m.next++
-	s := &stream{mux: m, id: m.next, readyText: m.connector.ReadyText(target), events: make(chan []byte, outWindow+1), readyCh: make(chan struct{}),
+	s := &stream{mux: m, id: m.next, readyText: readyText, events: make(chan []byte, outWindow+1), readyCh: make(chan struct{}),
 		exitCh: make(chan struct{}), inClosedCh: make(chan struct{}), wake: make(chan struct{}, 1)}
 	m.streams[s.id] = s
 	m.mu.Unlock()

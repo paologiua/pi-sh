@@ -43,6 +43,11 @@ func TestForwardingOptionsOpenSSHDifferential(t *testing.T) {
 		{"-G", "-F", "none", "-a", "-x", "-oForwardAgent=no", "-oControlMaster=no", "-oControlPath=none", "-oProxyCommand=none", "pi"},
 		{"-G", "-F", file, "pi"},
 		{"-G", "-F", file, "-L", "9000:h:1", "pi"},
+		{"-G", "-F", "none", "-R", "8080:localhost:3000", "pi"},
+		{"-G", "-F", "none", "-R", "*:0:h:22", "pi"},
+		{"-G", "-F", "none", "-R", "1080", "pi"},
+		{"-G", "-F", "none", "-R", "127.0.0.1:8080:/tmp/l.sock", "-oPermitRemoteOpen=h:22 *:80", "pi"},
+		{"-G", "-F", "none", "-o", "RemoteForward [::1]:8080 h:22", "-oClearAllForwardings=yes", "-R", "1:h:2", "pi"},
 	} {
 		want, err := openSSHDump(t, ssh, args)
 		if err != nil {
@@ -75,6 +80,10 @@ func TestForwardingOptionsSemantics(t *testing.T) {
 	if _, err := parseOptions([]string{"-G", "-oSessionType=default", "-N", "pi"}); err == nil || err.Error() != "Cannot specify -N with -s/SessionType" {
 		t.Fatalf("-N after SessionType: %v", err)
 	}
+	o, err = parseOptions([]string{"--browser", "-N", "-R", "8080:localhost:3000", "pi"})
+	if err != nil || !o.forwarding() || len(o.fwd.Remote) != 1 {
+		t.Fatalf("-N -R: %v", err)
+	}
 	if _, err := parseOptions([]string{"--browser", "-W", "h:1", "-W", "h:2", "pi"}); err == nil || err.Error() != "stdio forward already specified" {
 		t.Fatalf("second -W: %v", err)
 	}
@@ -95,8 +104,8 @@ func TestForwardingRefusals(t *testing.T) {
 		want error
 		text string
 	}{
-		{[]string{"-G", "-R", "9000:h:22", "pi"}, errRemoteForwarding, ""},
-		{[]string{"-G", "-o", "RemoteForward 9000 h:22", "pi"}, errRemoteForwarding, ""},
+		{[]string{"-G", "-R", "/tmp/r.sock:h:22", "pi"}, errRemoteUnixListen, ""},
+		{[]string{"-G", "-o", "RemoteForward /tmp/r.sock h:22", "pi"}, errRemoteUnixListen, ""},
 		{[]string{"-G", "-A", "pi"}, forwardspec.ErrAgentForwarding, ""},
 		{[]string{"-G", "-oForwardAgent=yes", "pi"}, forwardspec.ErrAgentForwarding, ""},
 		{[]string{"-G", "-X", "pi"}, forwardspec.ErrX11Forwarding, ""},
@@ -119,7 +128,7 @@ func TestForwardingRefusals(t *testing.T) {
 		}
 	}
 	dir := t.TempDir()
-	for _, text := range []string{"Host pi\nRemoteForward 9000 h:22\n", "Host pi\nProxyCommand nc %h %p\n", "Host other\nLocalForward bad\n"} {
+	for _, text := range []string{"Host pi\nRemoteForward /tmp/r.sock h:22\n", "Host pi\nProxyCommand nc %h %p\n", "Host other\nLocalForward bad\n"} {
 		file := filepath.Join(dir, "c")
 		if err := os.WriteFile(file, []byte(text), 0600); err != nil {
 			t.Fatal(err)

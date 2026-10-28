@@ -61,12 +61,17 @@ func (e *OpenError) Error() string {
 
 // Log receives diagnostics at OpenSSH-like levels.
 type Log struct {
-	Error, Verbose, Debug func(string)
+	Error, Info, Verbose, Debug func(string)
 }
 
 func (l Log) error(format string, args ...any) {
 	if l.Error != nil {
 		l.Error(fmt.Sprintf(format, args...))
+	}
+}
+func (l Log) info(format string, args ...any) {
+	if l.Info != nil {
+		l.Info(fmt.Sprintf(format, args...))
 	}
 }
 func (l Log) verbose(format string, args ...any) {

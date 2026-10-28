@@ -32,7 +32,7 @@ import (
 // answers with a new local Pion peer whose shell channel is bridged to a new
 // interactive /bin/sh on a PTY, so each Establish gets its own session, as the
 // device accepted two concurrent sessions natively. PATH holds bash, cat,
-// stty and this test binary as "nc" (and as "setsid" where none exists).
+// stty, perl and this test binary as "nc" (and as "setsid" where none exists).
 type agentSource struct {
 	t        *testing.T
 	lifetime context.Context
@@ -60,6 +60,10 @@ func newAgentSource(t *testing.T, lifetime context.Context) *agentSource {
 	links := map[string]string{"bash": bash, "nc": self, "setsid": self}
 	if path, err := exec.LookPath("setsid"); err == nil {
 		links["setsid"] = path
+	}
+	// The -R listener runs on Perl, as on the device.
+	if path, err := exec.LookPath("perl"); err == nil {
+		links["perl"] = path
 	}
 	for _, name := range []string{"cat", "stty"} {
 		path, err := exec.LookPath(name)
@@ -403,5 +407,95 @@ func TestLocalForwardingAlongsideCommand(t *testing.T) {
 	}
 	if strings.Contains(logged.String(), "not confirmed") {
 		t.Fatalf("cleanup: %q", logged.String())
+	}
+}
+
+// -N -R through the CLI: the Perl listener (here on this machine) accepts,
+// pi-sh connects to the local target, and stop releases the remote port.
+func TestNoSessionRemoteForwardingThroughCLI(t *testing.T) {
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl unavailable")
+	}
+	lifetime, stop := context.WithTimeout(context.Background(), 60*time.Second)
+	defer stop()
+	source := newAgentSource(t, lifetime)
+	_, port := echoServer(t)
+	remote := freePort(t)
+	var logged bytes.Buffer
+	ctx, cancel := context.WithCancel(diag.With(lifetime, diag.Default(&logged, "pi-sh")))
+	defer cancel()
+	opts, err := parseOptions([]string{"--browser", "-N", "-oExitOnForwardFailure=yes", "-R", "127.0.0.1:" + strconv.Itoa(remote) + ":127.0.0.1:" + strconv.Itoa(port), "pi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		code, _ := runForwarding(ctx, connpolicy.Default(), source, opts, nil, io.Discard)
+		done <- code
+	}()
+	var conn net.Conn
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		conn, err = net.Dial("tcp4", "127.0.0.1:"+strconv.Itoa(remote))
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("remote listener never ready: %v %q", err, logged.String())
+	}
+	payload := binaryPayload(40000)
+	go func() {
+		conn.Write(payload)
+		conn.(*net.TCPConn).CloseWrite()
+	}()
+	got, err := io.ReadAll(conn)
+	conn.Close()
+	if err != nil || !bytes.Equal(got, reverse(payload)) {
+		t.Fatalf("%d bytes, %v", len(got), err)
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 255 || strings.Contains(logged.String(), "not confirmed") {
+			t.Fatalf("end: code %d log %q", code, logged.String())
+		}
+	case <-lifetime.Done():
+		t.Fatal("forwarding did not stop")
+	}
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		l, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(remote))
+		if err == nil {
+			l.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("remote listener still bound after stop")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// ExitOnForwardFailure makes a refused remote listen fatal with ssh's line.
+func TestRemoteForwardFailureIsFatalThroughCLI(t *testing.T) {
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl unavailable")
+	}
+	lifetime, stop := context.WithTimeout(context.Background(), 60*time.Second)
+	defer stop()
+	source := newAgentSource(t, lifetime)
+	busy, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	bp := strconv.Itoa(busy.Addr().(*net.TCPAddr).Port)
+	opts, err := parseOptions([]string{"--browser", "-N", "-oExitOnForwardFailure=yes", "-R", "127.0.0.1:" + bp + ":127.0.0.1:1", "pi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := runForwarding(lifetime, connpolicy.Default(), source, opts, nil, io.Discard)
+	if code != 255 || err == nil || err.Error() != "Error: remote port forwarding failed for listen port "+bp {
+		t.Fatal(code, err)
 	}
 }

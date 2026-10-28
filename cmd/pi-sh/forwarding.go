@@ -25,7 +25,7 @@ func forwardLog(log *diag.Logger) forward.Log {
 	at := func(level diag.Level) func(string) {
 		return func(s string) { log.Failure(level, errors.New(s)) }
 	}
-	return forward.Log{Error: at(diag.Error), Verbose: at(diag.Verbose), Debug: at(diag.Debug1)}
+	return forward.Log{Error: at(diag.Error), Info: at(diag.Info), Verbose: at(diag.Verbose), Debug: at(diag.Debug1)}
 }
 
 // forwarding is one dedicated Connect carrier running the in-memory
@@ -35,6 +35,7 @@ func forwardLog(log *diag.Logger) forward.Log {
 type forwarding struct {
 	peer   *transport.Peer
 	mux    *fwdbroker.Mux
+	remote *forward.Remote
 	cancel context.CancelFunc
 	served sync.WaitGroup
 }
@@ -55,28 +56,51 @@ func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessi
 	}
 	log.Debug(msgForwardCarrier, diag.State("connector", mux.Connector().Name))
 	f := &forwarding{peer: peer, mux: mux}
-	if len(opts.fwd.Local) == 0 {
-		return f, nil, nil
+	var listeners *forward.Forwarder
+	if len(opts.fwd.Local) > 0 {
+		listeners, err = forward.Listen(ctx, forward.Config{
+			Forwards: opts.fwd.Local, GatewayPorts: opts.fwd.GatewayPorts, BindUnlink: opts.fwd.BindUnlink,
+			BindMask: opts.fwd.BindMask, ExitOnFail: opts.fwd.ExitOnForwardFailure,
+		}, forwardLog(log))
+		if err != nil {
+			f.stop(ctx)
+			return nil, nil, err
+		}
 	}
-	listeners, err := forward.Listen(ctx, forward.Config{
-		Forwards: opts.fwd.Local, GatewayPorts: opts.fwd.GatewayPorts, BindUnlink: opts.fwd.BindUnlink,
-		BindMask: opts.fwd.BindMask, ExitOnFail: opts.fwd.ExitOnForwardFailure,
-	}, forwardLog(log))
-	if err != nil {
-		f.stop(ctx)
-		return nil, nil, err
+	// Remote listeners follow local ones, as in ssh_init_forwarding.
+	if len(opts.fwd.Remote) > 0 {
+		f.remote, err = forward.ListenRemote(ctx, mux, forward.RemoteConfig{
+			Forwards: opts.fwd.Remote, ExitOnFail: opts.fwd.ExitOnForwardFailure, PermitOpen: opts.fwd.PermitRemoteOpen,
+		}, forwardLog(log))
+		if err != nil {
+			if listeners != nil {
+				listeners.Close()
+			}
+			f.stop(ctx)
+			return nil, nil, err
+		}
 	}
 	return f, listeners, nil
 }
 
-// serve accepts local connections until stop or carrier failure.
+// serve accepts local and remote connections until stop or carrier failure;
+// listeners may be nil.
 func (f *forwarding) serve(ctx context.Context, listeners *forward.Forwarder) {
 	ctx, f.cancel = context.WithCancel(ctx)
-	f.served.Add(1)
-	go func() {
-		defer f.served.Done()
-		listeners.Serve(ctx, f.mux)
-	}()
+	if listeners != nil {
+		f.served.Add(1)
+		go func() {
+			defer f.served.Done()
+			listeners.Serve(ctx, f.mux)
+		}()
+	}
+	if f.remote != nil {
+		f.served.Add(1)
+		go func() {
+			defer f.served.Done()
+			f.remote.Serve(ctx)
+		}()
+	}
 }
 
 // stop closes listeners and active streams, asks the adapter to kill and reap
@@ -87,6 +111,9 @@ func (f *forwarding) stop(ctx context.Context) {
 		f.cancel()
 	}
 	f.served.Wait()
+	if f.remote != nil {
+		f.remote.Close()
+	}
 	if err := f.mux.Close(); err != nil {
 		diag.From(ctx).Failure(diag.Error, err)
 	}
@@ -94,7 +121,7 @@ func (f *forwarding) stop(ctx context.Context) {
 }
 
 // runForwarding handles sessions with forwarding but no shell or command:
-// -W relays stdin/stdout to one remote connection; -N serves -L/-D until a
+// -W relays stdin/stdout to one remote connection; -N serves -L/-D/-R until a
 // signal or carrier failure.
 func runForwarding(ctx context.Context, policy connpolicy.Policy, source sessionSource, opts options, stdin io.Reader, stdout io.Writer) (int, error) {
 	f, listeners, err := startForwarding(ctx, policy, source, opts)
@@ -119,9 +146,7 @@ func runForwarding(ctx context.Context, policy connpolicy.Policy, source session
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, terminationSignals()...)
 	defer signal.Stop(signals)
-	if listeners != nil {
-		f.serve(ctx, listeners)
-	}
+	f.serve(ctx, listeners)
 	select {
 	case <-ctx.Done():
 		// The app's signal context ends together with this channel's delivery.

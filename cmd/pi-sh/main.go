@@ -119,9 +119,7 @@ func app() int {
 				log.Failure(diag.Fatal, ferr)
 				return 255
 			}
-			if listeners != nil {
-				f.serve(ctx, listeners)
-			}
+			f.serve(ctx, listeners)
 			defer f.stop(ctx)
 		}
 		stdin := opts.stdin(os.Stdin)

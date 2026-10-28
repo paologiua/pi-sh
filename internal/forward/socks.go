@@ -20,33 +20,50 @@ const maxSocksString = 1024
 // the remote connection opens (a later remote failure closes the connection,
 // exactly as ssh behaves). Unsupported requests close without a reply.
 func socksHandshake(conn net.Conn) (Target, net.Conn, error) {
+	version, t, wrapped, err := socksRequest(conn)
+	if err == nil {
+		err = socksReply(conn, version)
+	}
+	if err != nil {
+		return Target{}, nil, err
+	}
+	return t, wrapped, nil
+}
+
+// socksRequest reads one CONNECT request without the final reply, which a
+// remote dynamic forwarding sends only once connected. Data pipelined after
+// the request stays readable through the returned connection.
+func socksRequest(conn net.Conn) (byte, Target, net.Conn, error) {
 	conn.SetDeadline(time.Now().Add(socksTimeout))
 	defer conn.SetDeadline(time.Time{})
 	r := bufio.NewReaderSize(conn, 512)
 	version, err := r.ReadByte()
 	if err != nil {
-		return Target{}, nil, err
+		return 0, Target{}, nil, err
 	}
 	var t Target
 	switch version {
 	case 4:
 		t, err = socks4(r)
-		if err == nil {
-			_, err = conn.Write([]byte{0, 90, 0, 0, 0, 0, 0, 0})
-		}
 	case 5:
 		t, err = socks5(r, conn)
-		if err == nil {
-			_, err = conn.Write([]byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0})
-		}
 	default:
-		return Target{}, nil, errors.New("unknown socks version")
+		return 0, Target{}, nil, errors.New("unknown socks version")
 	}
 	if err != nil {
-		return Target{}, nil, err
+		return 0, Target{}, nil, err
 	}
-	// Data pipelined after the request is relayed, not lost.
-	return t, bufferedConn{conn, r}, nil
+	return version, t, bufferedConn{conn, r}, nil
+}
+
+// socksReply sends the success reply ssh sends for each version.
+func socksReply(conn net.Conn, version byte) error {
+	reply := []byte{0, 90, 0, 0, 0, 0, 0, 0}
+	if version == 5 {
+		reply = []byte{5, 0, 0, 1, 0, 0, 0, 0, 0, 0}
+	}
+	_, err := conn.Write(reply)
+	return err
 }
 
 // bufferedConn reads handshake leftovers first and keeps half-close.
