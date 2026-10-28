@@ -276,3 +276,41 @@ each): 1 MiB to `wc -c` took 3.41 / 3.44 s and 1 MiB from `head -c` took 56.1
 / 56.2 s. The local broker and Bash forwarding benchmarks stayed within run
 noise. The Bash forwarding adapter (forward.bash) now does the same with its
 2 ms naps.
+
+## Perl output reader — 2026-10-28
+
+"Why output is still per byte" above left the Bash reader at one `read -n1` per
+byte, about 18 KiB/s of command output on the device. When the device has Perl
+(perl-base is Essential on Raspberry Pi OS), each output worker now execs a
+short Perl program instead. It keeps the same contract: one record per newline
+token, `length\nhex\n`, and `F` at the end. `sysread` takes whatever the pipe
+holds, up to 2048 bytes, so short writes are still delivered at once.
+
+- The program is the single-quoted word `_ps_perl_reader` in broker.bash, so it
+  holds no apostrophe. It runs only if `perl -c` compiles it and `/dev/fd/N` is
+  readable; otherwise the Bash reader stays.
+- The stream descriptors come from coproc descriptors, which are close-on-exec,
+  and Bash copies that flag when duplicating them. `9<&5` therefore gave perl
+  nothing (every test saw empty output). The worker opens `/dev/fd/N` as
+  descriptor 9 instead.
+- `PI_SH_BROKER_READER=bash` keeps the Bash reader. The full verification runs
+  `internal/shellbroker` and `cmd/...` once more with it.
+- New tests: `TestShellBrokerUsesPerlReaderWhenPresent` (counts the broker's
+  perl readers: 2, or 0 when forced to Bash) and
+  `TestShellBrokerFallsBackToBashReader` (a perl that cannot compile it).
+
+Local benchmark (`TestShellBrokerThroughputBenchmark`, Bash 5.3, KiB/s):
+
+| RTT | Download Bash → Perl | Roundtrip Bash → Perl | Upload |
+| --- | --- | --- | --- |
+| 0 ms | 114.6 → 2683.9 | 231.6 → 1135.8 | unchanged (612 / 577) |
+| 40 ms | 104.9 → 375.9 | 184.5 → 492.4 | unchanged (233 / 238) |
+| 150 ms | 82.6 → 118.9 | 130.8 → 160.3 | unchanged (79 / 78) |
+
+With a round trip the eight-record window, not the reader, now bounds output.
+
+On the device (read-only, one run each; REAL_DEVICE_TESTS.md):
+- 1 MiB from `head -c` took 1.26 s instead of 56.2 s;
+- `pi-cp` of `/usr/bin/bash` (1,412,096 bytes) took 22.1 s instead of 94.1 s,
+  both totals including sign-in and setup;
+- the SHA-256 matched `sha256sum` on the device.

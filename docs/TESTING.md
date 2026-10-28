@@ -841,6 +841,12 @@ To force the connector on a device for a native check, set
 detected there, and the `-v` line `forwarding carrier ready connector=…` shows
 the choice.
 
+**Perl output reader (2026-10-28).** The shell broker's output workers run
+a Perl reader when perl compiles it; `PI_SH_BROKER_READER=bash` keeps the Bash
+reader, and the full verification runs `internal/shellbroker` and `cmd/...`
+once more with it. `TestShellBrokerUsesPerlReaderWhenPresent` and
+`TestShellBrokerFallsBackToBashReader` cover both paths (SHELL_BROKER.md).
+
 **Perl adapter (2026-10-28).** `eachConnector` now runs every adapter test in
 four subtests, connector/adapter: `nc/bash`, `perl/bash`, `nc/perl` (perl on
 PATH beside the netcat double, `PI_SH_FORWARD_CONNECTOR=nc`) and `perl/perl`;

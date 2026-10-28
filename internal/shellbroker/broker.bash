@@ -51,6 +51,31 @@ _ps_reader() {
     fi
   done
 }
+# Output reader in Perl when the device has it (perl-base is Essential on
+# Raspberry Pi OS): sysread takes what the pipe holds, up to 2048 bytes, where
+# the Bash reader below reads one byte per call (about 18 KiB/s of command
+# output on the device, 2026-10-28). Same contract: one record per newline
+# token, "length\nhex\n", "F" at end of output. It is a single-quoted word, so
+# it holds no apostrophe; it runs only if perl compiles it, else Bash reads.
+_ps_perl_reader='open(my $i, "<&=", $ARGV[0]) or exit 125;
+while (defined(my $t = <STDIN>)) {
+  my $n = sysread($i, my $b, 2048);
+  $n = sysread($i, $b, 2048) while !defined $n && $!{EINTR};
+  if (!$n) { syswrite(STDOUT, "F\n"); exit 0 }
+  my $h = unpack("H*", $b);
+  my $r = length($h) . "\n$h\n";
+  while (length $r) { my $w = syswrite(STDOUT, $r); exit 0 if !defined $w; substr($r, 0, $w) = "" }
+}'
+_ps_read() {
+  # The stream descriptor (3 or 5) comes from a coproc descriptor, so it is
+  # close-on-exec, and Bash copies that flag when duplicating it; opening
+  # /dev/fd/N instead gives perl a new descriptor 9 without it.
+  if [[ -z ${_ps_bash_reader-} && -r /dev/fd/$1 ]] && perl -c -e "$_ps_perl_reader" </dev/null >/dev/null 2>&1; then
+    shopt -s execfail
+    exec perl -e "$_ps_perl_reader" 9 9<"/dev/fd/$1"
+  fi
+  _ps_reader "$1"
+}
 _ps_main() {
   local _ps_shell=${SHELL:-/bin/sh}
   local _ps_pid _ps_writer_pid _ps_err_pid _ps_out_pid _ps_eout_pid _ps_meta_pid _ps_idle_pid _ps_relay_pid _ps_done=0
@@ -114,11 +139,11 @@ _ps_main() {
   exec 7<&${_PS_INPUT[0]} 8>&${_PS_INPUT[1]}
   eval "exec ${_PS_INPUT[0]}<&- ${_PS_INPUT[1]}>&-"
   exec 6>&-
-  coproc _PS_OUT { exec 3<&- 7<&- 8>&- 9<&- 10>&- 2>/dev/null; _ps_reader 5; } 2>/dev/null
+  coproc _PS_OUT { exec 3<&- 7<&- 8>&- 9<&- 10>&- 2>/dev/null; _ps_read 5; } 2>/dev/null
   _ps_out_pid=$_PS_OUT_PID
   exec 14<&${_PS_OUT[0]} 15>&${_PS_OUT[1]}
   eval "exec ${_PS_OUT[0]}<&- ${_PS_OUT[1]}>&-"
-  coproc _PS_EOUT { exec 5<&- 7<&- 8>&- 9<&- 10>&- 14<&- 15>&- 2>/dev/null; _ps_reader 3; } 2>/dev/null
+  coproc _PS_EOUT { exec 5<&- 7<&- 8>&- 9<&- 10>&- 14<&- 15>&- 2>/dev/null; _ps_read 3; } 2>/dev/null
   _ps_eout_pid=$_PS_EOUT_PID
   exec 16<&${_PS_EOUT[0]} 17>&${_PS_EOUT[1]}
   eval "exec ${_PS_EOUT[0]}<&- ${_PS_EOUT[1]}>&-"

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,15 @@ import (
 
 //go:embed broker.bash
 var source string
+
+// brokerScript is the staged broker. PI_SH_BROKER_READER=bash keeps the Bash
+// output reader where the device has Perl (diagnostics, docs/TESTING.md).
+func brokerScript() string {
+	if os.Getenv("PI_SH_BROKER_READER") == "bash" {
+		return "_ps_bash_reader=1\n" + source
+	}
+	return source
+}
 
 // Data records carry at most 2048 bytes (4096 hex digits). Adapter and client
 // ship together, so these values are an internal protocol version, not a
@@ -259,7 +269,8 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 	if stdio.Stderr == nil {
 		stdio.Stderr = io.Discard
 	}
-	w, err := p.stage(ctx, stream, source)
+	script := brokerScript()
+	w, err := p.stage(ctx, stream, script)
 	if err != nil {
 		return 0, err
 	}
@@ -299,7 +310,7 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 	}()
 	// Install cleanup before committing launch: Send can fail after the peer
 	// accepted G, so a send failure is not proof that no worker was started.
-	if err = w.send(fmt.Sprintf("G %d %d", len(source), len(p.text))); err != nil {
+	if err = w.send(fmt.Sprintf("G %d %d", len(script), len(p.text))); err != nil {
 		return 0, err
 	}
 	// G may already have launched the worker even if cancellation wins before

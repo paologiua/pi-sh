@@ -140,6 +140,9 @@ func runLocalWithStream(t *testing.T, text string, configure func(context.Cancel
 			t.Fatal(err)
 		}
 	}
+	if testTools != nil {
+		testTools(tools)
+	}
 	lifetime, stopLifetime := context.WithTimeout(context.Background(), limit)
 	defer stopLifetime()
 	ctx, cancel := context.WithCancel(lifetime)
@@ -412,5 +415,56 @@ func TestShellBrokerPartialOutputIsNotHeldBack(t *testing.T) {
 	code, err := runLocal(t, `printf 'prompt>'; printf 'e>' >&2; read x; printf 'got:%s' "$x"`, stdin, out, &stderr)
 	if err != nil || code != 0 || out.String() != "prompt>got:answer" || stderr.String() != "e>" {
 		t.Fatalf("code=%d err=%v stdout=%q stderr=%q", code, err, out.String(), stderr.String())
+	}
+}
+
+// readerProbe prints how many perl output readers the broker running this
+// command has: they are children of the broker, which is the command's parent
+// or, where setsid forks (Linux), its grandparent.
+const readerProbe = `a=$PPID; b=$(ps -o ppid= -p $PPID | tr -d " "); ps -A -o ppid=,args= | awk -v a="$a" -v b="$b" '($1==a || $1==b) && $2=="perl" && $3=="-e"' | wc -l | tr -d " "`
+
+// With perl on PATH the broker reads command output through the Perl reader;
+// PI_SH_BROKER_READER=bash keeps the Bash reader.
+func TestShellBrokerUsesPerlReaderWhenPresent(t *testing.T) {
+	if _, err := exec.LookPath("perl"); err != nil {
+		t.Skip("perl unavailable")
+	}
+	for _, c := range []struct{ env, want string }{{"", "2"}, {"bash", "0"}} {
+		t.Setenv("PI_SH_BROKER_READER", c.env)
+		var out bytes.Buffer
+		if code, err := runLocal(t, readerProbe, nil, &out, io.Discard); err != nil || code != 0 || strings.TrimSpace(out.String()) != c.want {
+			t.Fatalf("PI_SH_BROKER_READER=%q: %q, code %d, %v", c.env, out.String(), code, err)
+		}
+	}
+}
+
+// testTools, when set, adds programs to the PATH directory of runLocal.
+var testTools func(dir string)
+
+// A perl that cannot compile the reader leaves the Bash reader in place, with
+// the same output.
+func TestShellBrokerFallsBackToBashReader(t *testing.T) {
+	path, err := exec.LookPath("perl")
+	if err != nil {
+		t.Skip("perl unavailable")
+	}
+	testTools = func(dir string) {
+		stub := "#!/bin/sh\nfor a; do [ \"$a\" = -c ] && exit 1; done\nexec " + path + " \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(dir, "perl"), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { testTools = nil })
+	var out bytes.Buffer
+	if code, err := runLocal(t, readerProbe, nil, &out, io.Discard); err != nil || code != 0 || strings.TrimSpace(out.String()) != "0" {
+		t.Fatalf("readers %q, code %d, %v", out.String(), code, err)
+	}
+	input := make([]byte, 256)
+	for i := range input {
+		input[i] = byte(i)
+	}
+	out.Reset()
+	if code, err := runLocal(t, "cat", bytes.NewReader(input), &out, io.Discard); err != nil || code != 0 || !bytes.Equal(out.Bytes(), input) {
+		t.Fatalf("bash reader: %d bytes, code %d, %v", out.Len(), code, err)
 	}
 }

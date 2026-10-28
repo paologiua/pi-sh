@@ -1060,3 +1060,13 @@ slept 10 s and read them again.
 | Build at `e898ffa` (1 ms idle sleep) | 257 ticks in 10 s (CLK_TCK 100): about 26 % of a core |
 | With the adaptive idle sleep (SHELL_BROKER.md "Idle CPU") | 27 ticks in 10 s |
 | 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero`, old / new build | `wc` 1048576 both; upload 3411 / 3435 ms (timed on the device); download 56.1 / 56.2 s, 1048576 bytes; exit 0 |
+
+## Perl output reader, 28 October 2026
+
+Read-only, browser companion; the old build is `05b2f4b`.
+
+| Check | Result |
+| --- | --- |
+| 1 MiB stdin to `wc -c`, then `head -c 1048576 /dev/zero` | `wc` 1048576; upload 3536 ms (old: 3435); download 1048576 bytes in 1.26 s (old: 56.2 s); exit 0 |
+| `pi-cp --browser -q raspberrypi:/usr/bin/bash` (1,412,096 bytes), wall time including sign-in and setup | 22.1 s (old build: 94.1 s), exit 0 both |
+| `sha256sum /usr/bin/bash` on the device | `ccbd5106945d1095…`, equal to both local copies; no `sftp-server` left afterwards |

@@ -277,6 +277,9 @@ Righe ancora aperte (lavoro rimanente):
   rpi-connectd ~130% CPU);
   broker inattivo: da ~26% a ~3% di un core sul Pi con attesa adattiva
   (1 ms per ~100 giri, poi 20 ms; anche forward.bash), trasferimenti invariati;
+  lettore dell'output del broker in Perl (sysread; ripiego Bash,
+  `PI_SH_BROKER_READER=bash`): 1 MiB di stdout da 56 s a 1,3 s, pi-cp di
+  1,4 MB da 94 s a 22 s; SHELL_BROKER.md "Perl output reader";
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many
@@ -333,6 +336,8 @@ go vet -C third_party/sftp -stdmethods=false ./...
 go mod verify
 # Adattatore di forwarding Bash anche dove c'è Perl (dal 2026-10-28):
 PI_SH_FORWARD_ADAPTER=bash go test -count=1 ./internal/fwdbroker ./cmd/pi-sh
+# Lettore Bash del broker anche dove c'è Perl:
+PI_SH_BROKER_READER=bash go test -count=1 ./internal/shellbroker ./cmd/...
 ```
 
 Dal 2026-10-26 la toolchain è Go 1.27.3 ufficiale (SHA-256 verificato da go.dev)
