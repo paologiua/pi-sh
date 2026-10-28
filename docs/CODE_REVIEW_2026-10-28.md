@@ -31,6 +31,10 @@ reverting only the fix, unless noted) and passes with it.
 | Area | Defect | Fix | Test |
 | --- | --- | --- | --- |
 | Transport | When the device agent ended a session (SCTP ABORT, User Initiated Abort), Pion ran OnError and OnClose concurrently; if OnError won, a finished command exited 255 with `WebRTC peer operation failed` instead of its status (seen natively in 3 of 6 runs under -tt with forwarding) | a User Initiated Abort ends the channel with EOF; other errors stay `ErrPeer` | `TestPeerCloseEndsChannelWithEOF` |
+| pi-cp | With several download operands, the first failing one stopped the copy; scp reports it and copies the rest (exit 1). A missing local upload source exited 1; scp ends with 255 | continue after a failed download operand (a lost connection still stops); `ErrLocalSource` exits 255 | `TestFailingOperandDoesNotStopTheRestLikeSCP` (differential with OpenSSH scp) |
+| Browser bridge | The recent sign-in and companion advice told pi-cp and pi-sftp users to "restart pi-sh" | program-neutral "run the command again" | `TestFailureAdviceNamesNoProgram` |
+| Forwarding | With 16 or more concurrent downloads, servers reset connections whose data sat in the device's socket and the unread tail was lost (0 of 64 complete) | the Perl connector reads the socket eagerly into up to 2 MiB per stream, as sshd's window | `TestPerlConnectorDrainsWhileReaderStalls` |
+| Forwarding | One carrier record per adapter round: the total rate fell with the number of streams (72 KiB/s for 64 on the device) | up to 64 waiting records per round (574 KiB/s for 64) | `TestForwardingConcurrencyBenchmark` (opt-in; timing is not asserted) |
 
 ## Recorded, not changed
 

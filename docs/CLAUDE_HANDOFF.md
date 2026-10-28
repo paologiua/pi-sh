@@ -254,16 +254,20 @@ REAL_DEVICE_TESTS.md, le opzioni che risultavano `U` ma sono rifiutate con motiv
 motivo e test, «Not applicable» indica comportamenti decisi solo sul client.
 Righe ancora aperte (lavoro rimanente):
 
-- Policy di connessione: ConnectTimeout/ConnectionAttempts senza prova nativa del
-  percorso di errore; ServerAlive/TCPKeepAlive e perdita di rete (M3, serve il
+- Policy di connessione: ConnectTimeout verificato sul Pi in modalità browser
+  (2026-10-28); ConnectionAttempts (solo login diretto) senza prova nativa; ServerAlive/TCPKeepAlive e perdita di rete (M3, serve il
   proprietario); scadenza/revoca/riconnessione e sessioni lunghe.
-- Sessioni multiple: più di due e quote non provate; stress di localio con il Pi.
-- SCP: più sorgenti esplicite, download ricorsivo, nomi con newline/due punti/
-  trattino iniziale e disk-full sul Pi; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
+- Sessioni multiple: cinque insieme verificate (2026-10-28); oltre e quote non provate; stress di localio con il Pi.
+- SCP: nomi con newline/due punti/trattino iniziale e disk-full sul Pi (servono
+  scritture, quindi un piano); più sorgenti e download ricorsivo verificati
+  2026-10-28; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
 - SFTP: `mget`/`mput`, `-r` della console, flag di `ls`, `lumask`, `ln`, `chown`/
   `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
 - Forwarding: bind jolly/IPv6 di -R verificati sul Pi (2026-10-28, NATIVE_RBIND_PLAN.md);
-  EnableEscapeCommandline; molti stream e sessioni lunghe.
+  EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
+  verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
+  socket, adattatore che elabora più record per giro: FORWARDING.md "Many
+  streams").
 - Diagnostica: prefisso `pi-sh:` sulle righe fatali; manca `Connection to HOST
   closed.` di ssh con -tt.
 - Decisioni del proprietario: SetEnv/SendEnv, AddressFamily/BindAddress;

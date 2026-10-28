@@ -932,3 +932,29 @@ host connected during the session; command status 0, pi-sh exit 0. A read-only
 This matches sshd's `GatewayPorts clientspecified` rules exactly, including the
 separate IPv4 and IPv6 sockets for the loopback and wildcard cases. Single run;
 IPv6 link-local targets were not tried (they need a scope id).
+
+## Read-only batch: transfers, many streams, sessions, timeout, 28 October 2026
+
+Browser companion; nothing was written on the device, nothing listened there.
+Connect asked twice for recent sign-in; each time the official Remote shell
+page was opened (nothing typed), then Devices again.
+
+| Check | Result |
+| --- | --- |
+| `pi-cp --browser -r -p raspberrypi:/usr/share/common-licenses <scratch>/cl` | exit 0; 26 entries; SHA-256, mode and mtime of every entry equal to `sha256sum`/`stat -L` on the device; the 3 symlinks (GFDL, GPL, LGPL) arrived as files, as scp follows them |
+| `pi-cp` with four remote sources, two missing (`main` at `6e97e34`) | first missing source reported, then **stopped**: the later existing source was not copied, exit 1. OpenSSH 10.2 scp (local sshd) reports each missing source, copies the rest, exit 1 |
+| Same after the fix | both missing sources reported, both existing ones copied, exit 1 |
+| `-N -L` to speed.cloudflare.com:443 (Perl), K concurrent 256 KiB HTTPS downloads, ragged TLS EOF detected | K ≤ 8 complete; K = 16: 2 of 16 complete, the rest ended without close_notify after 180–215 KB; K = 64: 0 of 64 complete |
+| Same with a diagnostic build (uncommitted; it only reported connector exits in the Mac's log) | the 13 truncated connections' socket reads ended with `Connection reset by peer`, the 3 complete ones with EOF |
+| Directly from the Mac (no pi-sh) | 256 KiB and 8 MiB downloads complete even after a 30 s reader stall: the slow drain through the device triggered the resets |
+| After the connector fix (eager reads, up to 2 MiB per stream) | K = 16, 32, 64: all complete with close_notify; 222, 132, 72 KiB/s in total |
+| After the adapter fix (64 carrier records per round) | K = 1: 327 KiB/s; K = 16: 635; K = 32: 630; K = 64: 574 KiB/s; all complete |
+| 64 downloads in flight, then a 65th connection | the 65th waited for a free stream and completed (HTTP 200) after one of the 64 ended |
+| Long session: the `-N -L` session kept about 23 minutes, a 1 MiB download every minute for 15 minutes | 15 of 15 HTTP 200 with 1048576 bytes, 2.1–4.0 s each |
+| Four `--experimental-command -T` processes at once next to that session (five Connect sessions) | `session N ok` from each, exits 11, 12, 13, 14 |
+| `-o ConnectTimeout=1 --experimental-command -T raspberrypi 'echo should-not-run'` | `Connect connection establishment timed out before any remote command was sent` during signaling, exit 255, no output |
+| `ps`, `ss -ltn`, `ss -tn` to :443, `free -m` afterwards | only the listing session's processes and Connect's `/bin/bash -l`; listeners 127.0.0.1:11434 and port 22; no `perl` or `nc`; 3.8 GB memory, 3.5 GB available |
+
+The pi-cp, browser-message, connector and adapter defects are in
+CODE_REVIEW_2026-10-28.md; FORWARDING.md "Many streams" has the analysis.
+Single runs except where several are listed.

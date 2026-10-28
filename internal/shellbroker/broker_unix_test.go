@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -42,6 +43,12 @@ func TestMain(m *testing.M) {
 		if err = syscall.Exec(path, args, os.Environ()); err != nil {
 			os.Exit(126)
 		}
+	}
+	// The hangup cases need SIGHUP's default action in child processes. Under
+	// nohup it is ignored and exec keeps that (the reference ssh then ignored
+	// HUP, 2026-10-28); a handler installed here is reset to default at exec.
+	if signal.Ignored(syscall.SIGHUP) {
+		signal.Notify(make(chan os.Signal, 1), syscall.SIGHUP)
 	}
 	os.Exit(m.Run())
 }

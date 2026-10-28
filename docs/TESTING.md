@@ -856,3 +856,16 @@ Results before and after are in FORWARDING.md "Throughput". New regression:
 `TestAdapterCloseAfterEOFDeliversQueuedInput` (close right after EOF in both
 directions must still deliver the queued input). The fwdbroker and cmd/pi-sh
 packages pass with Bash 5.3 (also under `-race`, five repetitions) and 5.2.37.
+
+`TestForwardingConcurrencyBenchmark` (same opt-in) runs 1, 16 and 64 concurrent
+256 KiB downloads through the Perl connector with a 40 ms round trip and checks
+every byte; results in FORWARDING.md "Many streams". Regression for the
+connector's eager reads: `TestPerlConnectorDrainsWhileReaderStalls`.
+
+**SIGHUP under nohup.** A test binary started with SIGHUP ignored (for example
+from `nohup`) passes that disposition to every child at exec, so the reference
+ssh and the fixtures ignored the hangup cases of
+`TestOpenSSHLocalSignalsTerminateClient` and
+`TestTTYJobTableCandidateHUPCleanupBeforeCarrierClose`, which then failed. The
+shellbroker TestMain installs a SIGHUP handler in that case, which exec resets
+to the default action.
