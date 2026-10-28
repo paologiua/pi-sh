@@ -312,7 +312,7 @@ _fw_record() {
   esac
 }
 _fw_main() {
-  local head line id seq n plen=${#_ps_prefix}
+  local head line id seq n k plen=${#_ps_prefix}
   exec 2>/dev/null
   trap _fw_cleanup EXIT
   trap 'exit 125' HUP TERM
@@ -336,8 +336,12 @@ _fw_main() {
   while :; do
     _fw_busy=0
     # The client sends whole records, so a started record completes promptly;
-    # read -N fetches an exact length in few syscalls, never more.
-    if IFS= read -r -t 0; then
+    # read -N fetches an exact length in few syscalls, never more. Up to 64
+    # waiting records are handled before the streams are polled: one per
+    # round made every window update cost a poll of every stream, so the
+    # total rate fell with the number of streams.
+    for ((k=0;k<64;k++)); do
+      IFS= read -r -t 0 || break
       _fw_busy=1
       IFS= read -r -N $((plen+2)) head || exit 125
       [[ ${head:0:plen} == "$_ps_prefix" ]] || _fw_fail
@@ -360,7 +364,7 @@ _fw_main() {
           ;;
         *) _fw_fail ;;
       esac
-    fi
+    done
     for id in "${!S_pid[@]}"; do _fw_service "$id"; done
     if ((_fw_busy==0)); then
       IFS= read -r -t 0.002 -u"$idle" line

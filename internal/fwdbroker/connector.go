@@ -114,19 +114,28 @@ const (
 	// adapter's hex records: stdin is hex lines, and each read from the
 	// socket (at most 2040 bytes) becomes one "length\nhex\n" record written
 	// with a single syswrite, below PIPE_BUF so the adapter reads it whole.
-	perlConnector = `use Socket qw(:addrinfo AF_UNIX SOCK_STREAM pack_sockaddr_un);
-$SIG{PIPE}="IGNORE";my($s,$e,$b,$n,$l,@a)=(undef,"failed","","","");
+	// Like sshd filling a channel window, it reads the socket as data comes,
+	// queuing up to 2 MiB (ssh's default channel window) while the adapter
+	// is busy (stdout is non-blocking): a server that closes after sending
+	// must not find its data stuck in the device's socket, or it may reset
+	// the connection and the kernel drops the unread tail (seen with 16
+	// concurrent HTTPS downloads, 2026-10-28).
+	perlConnector = `use Socket qw(:addrinfo AF_UNIX SOCK_STREAM pack_sockaddr_un);use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
+$SIG{PIPE}="IGNORE";my($s,$e,$b,$n,$l,$c,$z,@a,@q)=(undef,"failed","","","","",0);
 if(@ARGV==1){@a=({family=>AF_UNIX,addr=>pack_sockaddr_un($ARGV[0])})}
 else{($e,@a)=getaddrinfo(@ARGV,{socktype=>SOCK_STREAM})}
 for(@a){socket($s,$_->{family},SOCK_STREAM,0)&&connect($s,$_->{addr}) and last;$e="$!";undef $s}
 $s or print(STDERR "pi-sh-perl: $e\n"),exit 1;
 print STDERR "pi-sh-perl: connected\n";
 sub w{my($f,$k,$d)=(@_,0);while($d<length$k){my $r=syswrite($f,$k,length($k)-$d,$d);defined $r or exit 1;$d+=$r}}
+fcntl(STDOUT,F_SETFL,fcntl(STDOUT,F_GETFL,0)|O_NONBLOCK) or exit 1;
 my($i,$o)=(1,1);
-while($i||$o){my $r="";vec($r,0,1)=1 if $i;vec($r,fileno $s,1)=1 if $o;
-select($r,undef,undef,undef)>0 or next;
+while($i||$o||@q||length$c){my($r,$v)=("","");vec($r,0,1)=1 if $i;vec($r,fileno $s,1)=1 if $o&&$z<2097152;vec($v,1,1)=1 if @q||length$c;
+select($r,$v,undef,undef)>0 or next;
+if(vec($v,1,1)){if(!length$c){my $d=shift@q;$z-=length$d;my $h=unpack("H*",$d);$c=length($h)."\n$h\n"}my $k=syswrite(STDOUT,$c);if(defined $k){substr($c,0,$k)=""}elsif(!$!{EAGAIN}){exit 1}}
 if($i&&vec($r,0,1)){$n=sysread(STDIN,$l,65536,length$l);if($n){my $p=rindex($l,"\n")+1;if($p){(my $h=substr($l,0,$p,""))=~tr/\n//d;w($s,pack("H*",$h))}}else{$i=0;shutdown($s,1)}}
-if($o&&vec($r,fileno $s,1)){$n=sysread($s,$b,2040);if($n){my $h=unpack("H*",$b);w(\*STDOUT,length($h)."\n$h\n")}else{$o=0;close STDOUT}}}`
+if($o&&vec($r,fileno $s,1)){$n=sysread($s,$b,2040);if($n){push@q,$b;$z+=$n}else{$o=0}}
+!$o&&!@q&&!length$c&&defined fileno STDOUT and close STDOUT}`
 )
 
 // Select picks the first recognized connector from the adapter's detection

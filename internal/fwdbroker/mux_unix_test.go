@@ -596,3 +596,52 @@ func TestReadAfterCloseBeforeOutputReturns(t *testing.T) {
 		t.Fatal("Read blocked after Close")
 	}
 }
+
+// While the local reader stalls, the Perl connector keeps reading the
+// target's socket into memory (up to 2 MiB, as sshd fills a channel window),
+// so a target can finish sending and close. Before, it read only as fast as
+// records left, the target's data stayed in the device's socket, and an HTTPS
+// server that then reset the connection (16 concurrent forwarded downloads on
+// 2026-10-28) made Linux drop the unread tail.
+func TestPerlConnectorDrainsWhileReaderStalls(t *testing.T) {
+	payload := make([]byte, 1792<<10)
+	for i := range payload {
+		payload[i] = byte(i*7 + i>>8)
+	}
+	source, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	sent := make(chan error, 1)
+	go func() {
+		c, err := source.Accept()
+		if err != nil {
+			sent <- err
+			return
+		}
+		defer c.Close()
+		c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		_, err = c.Write(payload)
+		sent <- err
+	}()
+	m, err := startMux(t, "perl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	s, err := m.Dial(ctx, tcpTarget(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	// Nothing is read until the target has written everything.
+	if err := <-sent; err != nil {
+		t.Fatalf("target could not finish sending while the reader stalled: %v", err)
+	}
+	got, err := io.ReadAll(s)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("%d of %d bytes, %v", len(got), len(payload), err)
+	}
+}

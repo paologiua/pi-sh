@@ -355,9 +355,58 @@ With a round trip the window (16 KiB per stream) is the limit; natively the
 Perl rates imply a round trip of about 30 ms. **Bounds.** At most eight
 records of 2 KiB in flight per stream and direction; 64 streams can therefore
 have about 2 MiB of output hex in flight, which the receive goroutine drains
-without blocking (it never waits on a consumer). Native `-R` throughput after
-the change is unmeasured: it needs a listener on the device, so an approved
-plan. Single sessions on one network; not a load test.
+without blocking (it never waits on a consumer). Native `-R` throughput was
+measured later the same day with an approved plan (about 1.8 s for 1 MiB).
+Single sessions on one network.
+
+## Many streams — 2026-10-28
+
+**Native method (read-only).** `pi-sh --browser -v -N -L
+127.0.0.1:P:speed.cloudflare.com:443` with the Perl connector; on the Mac, K
+concurrent HTTPS downloads of 256 KiB through P (Python `ssl` with ragged-EOF
+detection), each checked for its full length and TLS close_notify.
+
+**Data loss found.** With 16 or more concurrent downloads, most connections
+ended with a TLS EOF without close_notify after about 180–215 KB of 256 KiB;
+up to 8 were complete. A diagnostic build (uncommitted, reporting only to the
+Mac's log) showed the device's socket reads ending in `Connection reset by
+peer` for exactly those connections. The connector read the socket only as
+fast as the adapter took its records (16 KiB in flight per stream), so the
+server's data waited in the device's socket; the server, having sent
+everything and closed, reset the connection and Linux dropped the unread tail.
+Directly from the Mac, the same server delivered 256 KiB and 8 MiB in full even
+to a reader that stalled 30 s, so the slow drain was the trigger. sshd does not
+hit this because it reads the socket into a channel window of up to 2 MiB.
+
+**Fix.** The Perl connector reads the socket as data arrives and queues up to
+2 MiB per stream in memory while the adapter is busy, writing records to a
+non-blocking stdout (each below PIPE_BUF, so still whole).
+`TestPerlConnectorDrainsWhileReaderStalls` (a 1.75 MiB target write must finish
+while the local reader stalls) fails without it. The macOS kernel keeps
+received data readable after a reset, so the loss itself cannot be reproduced
+on the Mac. Netcat cannot buffer this way: with the netcat connector, servers
+that reset after closing can still truncate concurrent slow downloads.
+Worst case memory on the device is 2 MiB per stream (128 MiB for 64 stalled
+streams), as for sshd's windows.
+
+**Aggregate rate.** The adapter handled one record from the carrier per round
+and then polled every stream, so each window update cost a poll of all streams
+and the total rate fell with their number. It now handles up to 64 waiting
+records per round. `TestForwardingConcurrencyBenchmark` (opt-in, 40 ms round
+trip, 256 KiB per stream): 16 streams 1.9 → 3.7–4.1 MiB/s, 64 streams 0.6 →
+4.1–4.3 MiB/s, one stream unchanged (about 325 KiB/s).
+
+| Concurrent downloads (device) | Before both fixes | Connector fix only | Both fixes |
+| --- | --- | --- | --- |
+| 1 | — | — | 327 KiB/s, complete |
+| 8 | 345 KiB/s, 8 of 8 complete | — | — |
+| 16 | 225 KiB/s, 2 of 16 complete | 222 KiB/s, 16 of 16 | 635 KiB/s, 16 of 16 |
+| 32 | — | 132 KiB/s, 32 of 32 | 630 KiB/s, 32 of 32 |
+| 64 | 105 KiB/s, 0 of 64 complete | 72 KiB/s, 64 of 64 | 574 KiB/s, 64 of 64 |
+
+**Limit.** A 65th connection while 64 are open waits for a free stream (it is
+not refused): it completed its download after one of the 64 ended. ssh has no
+such limit.
 
 ## End of session — 2026-10-28
 

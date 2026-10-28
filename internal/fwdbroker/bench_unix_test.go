@@ -3,12 +3,15 @@
 package fwdbroker
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -185,5 +188,66 @@ func TestForwardingThroughputBenchmark(t *testing.T) {
 			kib := float64(size) / 1024
 			t.Logf("connector=%s rtt=%dms download=%.1f KiB/s upload=%.1f KiB/s", connector, rtt, kib/down.Seconds(), kib/up.Seconds())
 		}
+	}
+}
+
+// TestForwardingConcurrencyBenchmark measures the total rate of 1, 16 and 64
+// concurrent 256 KiB downloads through the Perl connector with a 40 ms round
+// trip, and checks every byte. Opt-in like the benchmark above
+// (PI_SH_FWD_BENCH=1). On 2026-10-28 handling one carrier record per adapter
+// round gave about 1.9 MiB/s for 16 streams and 0.6 MiB/s for 64; draining up
+// to 64 records per round gave about 4 MiB/s for both.
+func TestForwardingConcurrencyBenchmark(t *testing.T) {
+	if os.Getenv("PI_SH_FWD_BENCH") == "" {
+		t.Skip("set PI_SH_FWD_BENCH=1 to run the forwarding concurrency benchmark")
+	}
+	payload := make([]byte, 256<<10)
+	for i := range payload {
+		payload[i] = byte(i*7 + i>>8)
+	}
+	source, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	go func() {
+		for {
+			c, err := source.Accept()
+			if err != nil {
+				return
+			}
+			go func() { c.Write(payload); c.Close() }()
+		}
+	}()
+	for _, k := range []int{1, 16, 64} {
+		m, err := startMuxDelayed(t, "perl", 20*time.Millisecond)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		var wg sync.WaitGroup
+		var bad atomic.Int32
+		start := time.Now()
+		for range k {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s, err := m.Dial(ctx, tcpTarget(source))
+				if err != nil {
+					bad.Add(1)
+					return
+				}
+				defer s.Close()
+				if got, err := io.ReadAll(s); err != nil || !bytes.Equal(got, payload) {
+					bad.Add(1)
+				}
+			}()
+		}
+		wg.Wait()
+		cancel()
+		if bad.Load() > 0 {
+			t.Fatalf("%d streams: %d incomplete", k, bad.Load())
+		}
+		t.Logf("streams=%d total=%.0f KiB/s", k, float64(k*256)/time.Since(start).Seconds())
 	}
 }
