@@ -865,3 +865,11 @@ Read-only, browser companion, real terminals through `expect` on the Mac.
 | `pi-cp --browser raspberrypi:/usr/share/common-licenses/GPL-3 <scratch dir>/` | scp-style meter `GPL-3 … 0% 0 0.0KB/s --:-- ETA`, then `100% 34KB 17.3KB/s 00:01`; exit 0; 35 149 bytes, SHA-256 `3972dc97…986` (the GPL-3 text); local copy deleted afterwards |
 
 Nothing was written on the device. Single runs.
+
+## Final build check, 28 October 2026
+
+Read-only, browser companion, `main` at `5a1e4d1` (after the review fixes):
+`pi-sh --browser -v -N -L 127.0.0.1:47206:speed.cloudflare.com:443` selected
+`connector=perl`; 1 MiB down in 1.66 s after the first byte (about 620 KiB/s)
+and 1 MiB up in 2.24 s (about 460 KiB/s), both HTTP 200 with the full count;
+SIGTERM ended pi-sh. Single run.
