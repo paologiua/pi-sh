@@ -7,7 +7,7 @@ import (
 
 func TestKeywordDecisions(t *testing.T) {
 	got, err := Parse(strings.NewReader("Compression no\nAddressFamily ANY\nCanonicalDomains a.example b.example\n"+
-		"CanonicalizeMaxDots 0\nGSSAPIAuthentication false\nRemoteCommand=  printf '%s\\n' \"x  y\" # kept\n"), "pi")
+		"CanonicalizeMaxDots 0\nGSSAPIAuthentication false\nVisualHostKey no\nRemoteCommand=  printf '%s\\n' \"x  y\" # kept\n"), "pi")
 	if err != nil || got["remotecommand"] != `printf '%s\n' "x  y" # kept` {
 		t.Fatalf("%q %v", got["remotecommand"], err)
 	}
@@ -15,6 +15,8 @@ func TestKeywordDecisions(t *testing.T) {
 		"Compression yes", "AddressFamily inet", "SessionType subsystem", "CanonicalizeMaxDots -1",
 		"CanonicalizeFallbackLocal maybe", "IdentityFile secret-path", "Host other\nCiphers secret-cipher",
 		"SetEnv A=b", "RemoteCommand \"a\x00b\"", "Host pi\nRefuseConnection secret-message",
+		// No SSH host key exists, so no fingerprint or visual key can be shown.
+		"FingerprintHash sha256", "VisualHostKey yes",
 	} {
 		_, err := Parse(strings.NewReader(text), "pi")
 		if err == nil || strings.Contains(err.Error(), "secret") {

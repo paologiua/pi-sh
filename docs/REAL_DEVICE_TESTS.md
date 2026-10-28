@@ -854,3 +854,14 @@ held the connection 10 s.
 | `ps -eo pid,ppid,etime,args`, `ss -ltn` afterwards | only the listing session's own processes; listeners 127.0.0.1:11434 and port 22. The `/bin/bash -l` (pid 10666, parent 1134 like every Connect session) was 1 h 16 min old, so it predates this work's sessions |
 
 Single runs; -R connections and a TTY session were checked only locally.
+
+## Matrix review checks: pi-sftp console and pi-cp meter, 28 October 2026
+
+Read-only, browser companion, real terminals through `expect` on the Mac.
+
+| Check | Result |
+| --- | --- |
+| `pi-sftp --browser --read-only raspberrypi`, then `pwd`, `help`, `ls /usr/share/common-licenses`, `df`, `quit` | `/home/patata`; the help text; the directory's 26 names; `pi-sftp: unsupported SFTP command` for `df`; exit 0 |
+| `pi-cp --browser raspberrypi:/usr/share/common-licenses/GPL-3 <scratch dir>/` | scp-style meter `GPL-3 … 0% 0 0.0KB/s --:-- ETA`, then `100% 34KB 17.3KB/s 00:01`; exit 0; 35 149 bytes, SHA-256 `3972dc97…986` (the GPL-3 text); local copy deleted afterwards |
+
+Nothing was written on the device. Single runs.

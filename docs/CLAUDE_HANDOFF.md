@@ -235,6 +235,33 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 `go mod verify` da solo non verifica un replace locale. Leggi
 `third_party/sftp/PI_SH_CHANGES.md` prima di modificare il fork.
 
+## Revisione della matrice (2026-10-28)
+
+Ogni riga di `docs/SSH_COMPATIBILITY.md` è stata ricontrollata: tutti i test citati
+esistono (controllo automatico dei nomi), le prove native corrispondono a
+REAL_DEVICE_TESTS.md, le opzioni che risultavano `U` ma sono rifiutate con motivo
+(scp `-O`, `-3`, `-R`, `-D`, `-S`, `-X`; sftp `-R`, `-r`) sono indicate come tali,
+`-Z` (inesistente in OpenSSH 10.2) e fingerprint/visual host key sono esclusi con
+motivo e test, «Not applicable» indica comportamenti decisi solo sul client.
+Righe ancora aperte (lavoro rimanente):
+
+- Policy di connessione: ConnectTimeout/ConnectionAttempts senza prova nativa del
+  percorso di errore; ServerAlive/TCPKeepAlive e perdita di rete (M3, serve il
+  proprietario); scadenza/revoca/riconnessione e sessioni lunghe.
+- Sessioni multiple: più di due e quote non provate; stress di localio con il Pi.
+- SCP: più sorgenti esplicite, download ricorsivo, nomi con newline/due punti/
+  trattino iniziale e disk-full sul Pi; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
+- SFTP: `mget`/`mput`, `-r` della console, flag di `ls`, `lumask`, `ln`, `chown`/
+  `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
+- Forwarding: sul Pi -R dopo il cambio dei record (velocità, half-close), half-close
+  del nuovo connettore Perl, `-R 0`, bind jolly/IPv6 (piano da approvare);
+  EnableEscapeCommandline; molti stream e sessioni lunghe.
+- Diagnostica: prefisso `pi-sh:` sulle righe fatali; manca `Connection to HOST
+  closed.` di ssh con -tt.
+- Decisioni del proprietario: SetEnv/SendEnv, AddressFamily/BindAddress;
+  LocalCommand e askpass aperti; `~&` escluso (Go non può fare fork).
+- iSH runtime, termini di Connect, licenza e pubblicazione: in mano al proprietario.
+
 ## Backlog necessario per il goal completo
 
 | Area | Lavoro ancora necessario | Documenti da leggere quando la affronti |

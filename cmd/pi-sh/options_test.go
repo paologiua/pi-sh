@@ -32,6 +32,8 @@ func TestOptionsBoundariesAndValidation(t *testing.T) {
 		{"--browser", "--legacy-command", "-T", "device", "true"},
 		{"--browser", "device", "echo"}, {"--browser", "--experimental-command", "device"},
 		{"-G", "-F", ""}, {"-G", "-F", "none", "device\nInjected"}, {"-G", "-oHostName=%h"},
+		// OpenSSH 10.2p1 has no -Z (`ssh: illegal option -- Z`).
+		{"--browser", "-Z", "device"},
 	} {
 		if _, err := parseOptions(args); err == nil {
 			t.Errorf("unsupported/malformed invocation accepted: %q", args)
