@@ -268,3 +268,13 @@ func TestUndeliveredOfferAndStaleAnswer(t *testing.T) {
 		t.Fatalf("exchange got %q", sdp)
 	}
 }
+
+// pi-cp and pi-sftp share the bridge; its advice named pi-sh (seen natively
+// from pi-cp on 2026-10-28).
+func TestFailureAdviceNamesNoProgram(t *testing.T) {
+	for _, code := range []string{"reauthentication_required", "local_companion_failed", "device_mismatch"} {
+		if msg := failureMessage(code); strings.Contains(msg, "pi-sh") {
+			t.Errorf("%s: %q", code, msg)
+		}
+	}
+}

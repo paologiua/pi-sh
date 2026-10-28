@@ -262,7 +262,7 @@ func (b *Bridge) serve(w http.ResponseWriter, r *http.Request) {
 func failureMessage(code string) string {
 	switch code {
 	case "reauthentication_required":
-		return "Connect requires recent sign-in; open Remote shell in Connect, complete authentication, return to Devices, then restart pi-sh"
+		return "Connect requires recent sign-in; open Remote shell in Connect, complete authentication, return to Devices, then run the command again"
 	case "device_not_unique":
 		return "no unique authorised device matches; check the device name or use its ID"
 	case "device_mismatch":
@@ -280,7 +280,7 @@ func failureMessage(code string) string {
 	case "answer_timeout":
 		return "Connect did not return a WebRTC answer before the timeout"
 	case "local_companion_failed":
-		return "local companion request failed; restart pi-sh and attach its new companion"
+		return "local companion request failed; run the command again and attach its new companion"
 	default:
 		return "browser operation failed"
 	}

@@ -5,6 +5,7 @@ package copycli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -16,6 +17,10 @@ import (
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sshdest"
 )
+
+// ErrLocalSource marks a missing local upload operand. As with scp it ends
+// the copy, and pi-cp exits 255.
+var ErrLocalSource = errors.New("stat local")
 
 // Operand is a local path (Device empty) or a remote device path. Account is
 // the Raspberry Pi ID account from email::device:path or an scp:// user.
@@ -113,7 +118,9 @@ func New(args []string) (*Plan, error) {
 	return p, nil
 }
 
-// Run copies each operand in order and stops at the first failing operand.
+// Run copies each operand in order. Like scp, a failing operand is reported
+// and the rest are still copied; the last failure is returned. A lost
+// connection or cancellation stops the copy.
 // Remote download operands are globs like scp's SFTP mode; local operands and
 // the remote upload target are literal (a local shell expands local globs).
 // Remote paths get scp's "~" and "~/" handling.
@@ -138,11 +145,26 @@ func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.Fil
 		}
 	}
 	console := sftpcli.Console{Client: client, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp", Progress: p.Progress}
+	var last error
 	for _, source := range p.Sources {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		var err error
+		if p.Upload {
+			// scp's SFTP-mode upload stats each local operand in turn and
+			// ends the copy when one is missing.
+			if _, serr := os.Stat(source.Path); serr != nil {
+				var pe *os.PathError
+				if errors.As(serr, &pe) {
+					serr = pe.Err
+				}
+				if last != nil {
+					p.report(last)
+				}
+				return fmt.Errorf("%w \"%s\": %w", ErrLocalSource, display(source.Path), serr)
+			}
+		}
 		switch {
 		case !p.Upload:
 			err = p.download(ctx, client, &console, source.Path)
@@ -155,8 +177,19 @@ func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.Fil
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return err
+			// A lost connection ends the copy; any other failure is reported
+			// and the next operand is tried, as scp does.
+			if errors.Is(err, sftp.ErrSSHFxConnectionLost) {
+				return err
+			}
+			if last != nil {
+				p.report(last)
+			}
+			last = err
 		}
 	}
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return last
 }

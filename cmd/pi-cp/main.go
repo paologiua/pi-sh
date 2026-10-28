@@ -116,7 +116,7 @@ func app() int {
 	err = errors.Join(err, session.Close())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || errors.Is(err, copycli.ErrLocalSource) {
 			return 255
 		}
 		return 1

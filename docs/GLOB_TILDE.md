@@ -89,8 +89,10 @@ before login rather than modify the fork. This is the main explicit gap.
 - Bracket sets containing `/` are split at the `/` (undefined in OpenBSD).
 - Windows: `put` does not glob locally (`\` is a separator there); the argument
   is used literally after removing sftp escaping.
-- pi-cp still stops at the first failing operand (scp continues to the next
-  operand); within one glob operand every match is attempted.
+- Like scp, pi-cp reports a failing download operand and continues with the
+  next (since 2026-10-28; before it stopped); a missing local upload source
+  ends the copy with exit 255, as scp. Within one glob operand every match is
+  attempted.
 
 ## Evidence
 
