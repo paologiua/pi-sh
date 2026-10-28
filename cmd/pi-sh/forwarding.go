@@ -77,7 +77,7 @@ func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessi
 		peer.Close()
 		return nil, nil, err
 	}
-	log.Debug(msgForwardCarrier, diag.State("connector", mux.Connector().Name))
+	log.Debug(msgForwardCarrier, diag.State("connector", mux.Connector().Name), diag.State("adapter", mux.Adapter))
 	f := &forwarding{peer: peer, mux: mux}
 	var listeners *forward.Forwarder
 	if len(opts.fwd.Local) > 0 {

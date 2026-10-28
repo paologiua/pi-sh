@@ -203,7 +203,8 @@ selection to one detected tool; it still has to be recognized on the device.
 **Tests.** The adapter suite (binary half-close, concurrency, IPv6 and Unix
 targets, remote-first close with late input, open failure, backpressure and
 cleanup, end-to-end -L/-D/-W) runs once with the netcat double and once with the
-local Perl, under Bash 5.3 and 5.2; `TestSelectPrefersPerlThenNetcat` (order since 2026-10-28) and
+local Perl, under Bash 5.3 and 5.2 (since 2026-10-28 each also through the Perl
+adapter, "Perl adapter" below); `TestSelectPrefersPerlThenNetcat` (order since 2026-10-28) and
 `TestPerlOpenFitsAdapterRecord` check selection and the worst-case record size.
 Native results are in REAL_DEVICE_TESTS.md.
 
@@ -483,9 +484,8 @@ KiB/s for 4 MiB; 16, 32 and 64 connections 654, 667 and 612 KiB/s in total,
 about as before (635, 630, 574). During 64 downloads one Bash process on the
 device, almost certainly the adapter's main loop, used a whole core (96–100 %),
 while the 64 Perl connectors used about 5 % together: past the window, the
-adapter's Bash loop is the limit. Moving the data path out of Bash (for
-example a Perl adapter, perl-base being Essential) would be the next step; it
-is not started.
+adapter's Bash loop is the limit. The data path has since moved to Perl ("Perl
+adapter" below).
 
 **Bounds.** At most 32 records of 2 KiB (4 KiB as hex) per stream and
 direction: with 64 streams up to 8 MiB of output hex in flight towards
@@ -493,6 +493,127 @@ pi-sh, which the receive goroutine drains without blocking, and up to 8 MiB
 of queued input in the adapter's Bash memory on the device (about 3.5 GiB
 was available on the test device). The shell broker keeps its own
 eight-record window (SHELL_BROKER.md).
+
+## Perl adapter — 2026-10-28
+
+**Why.** Past the window, one Bash process on the device carried every byte of
+every stream and used a whole core (see above). `internal/fwdbroker/adapter.pl`
+now carries the data path when the device has Perl. It speaks exactly the
+records of forward.bash, so mux.go and the connectors are unchanged. It uses
+only perl-base modules: Socket for the connector detection already in place,
+plus POSIX and Fcntl.
+
+**Handoff.** forward.bash still stages itself and detects the connectors. When
+the Perl fingerprint is among them, pi-sh sends `P` before opening any stream.
+The adapter then runs `perl -c` on the program, which arrives as a
+single-quoted Bash word (`_fw_perl_src`, prepended by mux.go; adapter.pl may
+not contain an apostrophe, `TestPerlAdapterHasNoApostrophe`).
+
+- If `perl -c` succeeds, the adapter stops its idle pacer and `exec`s
+  `perl -e`. The program receives the prefix, the window and the PID of the
+  carrier relay, which keeps feeding it the carrier. It answers `P`.
+- If it fails, the adapter answers `p` and the Bash loop stays.
+
+Nothing is written on the device. `PI_SH_FORWARD_ADAPTER=bash` keeps the Bash
+loop for diagnosis. The `-v` line now reads `forwarding carrier ready
+connector=… adapter=perl|bash`.
+
+**Behaviour kept.** The adapter keeps these behaviours of the Bash loop:
+- windows and acknowledgements;
+- the 64-stream limit;
+- stderr capped at 4 KiB;
+- the ten-second grace after `G`;
+- `x` statuses, including 127 for a missing program;
+- malformed hex records ending only their own stream;
+- `Z protocol`;
+- `D` after `Q`.
+
+When the carrier is lost or the adapter gets SIGHUP or SIGTERM, it kills its
+connectors and the relay.
+
+**Defects found while writing it:**
+- *Stale select bits (Perl adapter).* A stream opened while records are handled
+  can reuse descriptor numbers that a stream closed in the same batch was
+  polled on. A blocking read on the new stream then stalled the whole adapter;
+  `TestRemoteForwardingBindAddresses` hung once. The adapter now services only
+  the streams it polled, and every connector pipe is non-blocking. The
+  regression test `TestStreamReplacedInOneBatchDoesNotStall` closes a busy
+  stream and opens another 20 times. It hung with the first version and passes
+  with the fix.
+- *Coproc names (Bash adapter, older defect).* The same test also hangs the
+  Bash adapter under Bash 5.3 in about half of the runs. It also failed on
+  `59e152d`, before both today's window change and the Perl adapter, once in
+  six runs. It passed six of six under Bash 5.2.37.
+
+  Bash 5.3 unsets a coproc's array when an earlier coproc of the same name is
+  reaped. Every stream reused `_FW_E`, `_FW_C`, `_FW_W` and `_FW_R`, so a new
+  stream could lose its descriptors. The closing `eval "exec ${_FW_E[0]}<&-
+  ${_FW_E[1]}>&-"` then became `exec <&- >&-` and closed the adapter's carrier.
+  Each stream now has its own names, `_FW_E<id>` and so on, through
+  `_fw_coproc`, which fails the adapter instead of closing 0 and 1. The test
+  passes 10 of 10 runs under 5.3 and 5.2.
+- *Receive queue (transport).* With the Perl adapter the device sends faster.
+  In 64 native downloads pi-sh closed the session: `WebRTC receive queue
+  exhausted queued=261331`, which reached the user only as `WebRTC transport
+  closed`. The device journal logged `Client hung up`. The earlier -R run that
+  lost its connections ("Adapter window") fits the same cause, but this is not
+  proven.
+
+  A full receive queue (4096 messages, 256 KiB) closed the channel. It now
+  waits for the consumer: Pion stops reading that stream and SCTP flow control
+  slows the device, as an ssh window would (TRANSPORT.md). Two tests changed:
+  `TestReceiveQueueHoldsSenderWithoutLoss` and
+  `TestReceiveByteBudgetAndAccounting`; a held message is also released by
+  Close.
+
+**Tests.** `eachConnector` runs the adapter suite in four combinations:
+- the Bash adapter with the netcat double (`nc/bash`);
+- the Bash adapter with the Perl connector (`perl/bash`);
+- the Perl adapter with the netcat double (`nc/perl`);
+- the Perl adapter with the Perl connector (`perl/perl`).
+
+New tests:
+- `TestPerlAdapterFallsBackToBash`: a perl that cannot compile the program;
+- `TestCarrierLossTerminatesConnectors`;
+- `TestStreamReplacedInOneBatchDoesNotStall`.
+
+The full verification adds a run with `PI_SH_FORWARD_ADAPTER=bash`.
+
+**Local benchmarks** (Bash 5.3 PTY, KiB/s; the netcat cases keep Bash because
+only nc is on PATH):
+
+| Case | Bash adapter | Perl adapter |
+| --- | --- | --- |
+| -L Perl connector, one connection, 0 ms (download / upload) | 5355 / 2736 | 33331 / 7816 |
+| -L Perl connector, one connection, 40 ms | 1263 / 617 | 1356 / 1307 |
+| -L, 16 / 64 streams, 40 ms (total) | 4118 / 4047 | 14758 / 31653 |
+| -R, 1 / 16 / 64 connections, 40 ms (each way) | 335 / 646 / 704 | 484 / 878 / 952 |
+
+**On the device** (read-only -L, and the approved -R plan run again twice),
+Bash 5.2.37, rpi-connect 2.13.0, log `adapter=perl`:
+
+| Case | Bash adapter, window 32 | Perl adapter |
+| --- | --- | --- |
+| -L, one 4 MiB download | 749 KiB/s | 1915 KiB/s |
+| -L, 16 / 32 × 256 KiB | 654 / 667 KiB/s | 2289–2344 / 2326–2332 KiB/s |
+| -L, 64 × 256 KiB (three rounds) | 612 KiB/s | 1836–2292 KiB/s |
+| -L, 64 × 1 MiB | 669 KiB/s | 2170 KiB/s (1939 while `top` ran) |
+| -R plan: 16 / 64 / 65 connections | 3.8 / 15.2–15.6 / 15.7 s | 1.0–1.1 / 3.6–4.9 / 3.7–3.8 s |
+
+Every connection was complete. During 64 downloads the adapter's Perl used
+about half a core and the 64 connectors about 10 % together. `rpi-connectd`
+used 90–134 %, and the device stayed about a third idle. The adapter is no
+longer the limit; the Connect agent and the relay path now cost the most.
+Separately, a `bash` at 20–28 % kept running after the transfer ended. It was
+probably the shell broker's idle loop in the `top` session; this was not
+analysed further.
+
+**Bounds.** Per stream, the Perl adapter holds:
+- at most 32 queued input records (as Bash);
+- one partially written record;
+- up to about 8 KiB of a hex connector's output beyond the window.
+
+Carrier output is written blocking, as the Bash loop's printf was.
 
 ## End of session — 2026-10-28
 

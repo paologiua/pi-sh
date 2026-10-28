@@ -1031,3 +1031,20 @@ close checked.
 The larger window doubles one stream's rate; the total over many streams is
 bounded by the adapter's single Bash process, not by the window or the
 connectors. Single runs.
+
+## Perl adapter on the device, 28 October 2026
+
+Uncommitted tree on top of `cae78ba` (FORWARDING.md "Perl adapter"), browser
+companion; Bash 5.2.37 and rpi-connect 2.13.0 on the device (read-only check).
+-L runs are read-only; the -R runs repeat NATIVE_RMANY_PLAN.md unchanged with
+the owner's go-ahead. Connect asked once for recent sign-in; the Remote shell
+page was opened (nothing typed), then Devices again.
+
+| Check | Result |
+| --- | --- |
+| First -L run, Perl adapter (log `adapter=perl`) | 1, 16, 32 × 256 KiB complete: 647, 2344, 2326 KiB/s; the 64 round failed after 4 s (0 complete, TLS EOF) and pi-sh exited 255 with `WebRTC transport closed`; device journal: `Proxy session ended reason="Client hung up"` |
+| Same 64 round with a diagnostic build (uncommitted, deleted afterwards; it printed the channel's closing error and Pion's log to local files) | once complete (2044 KiB/s); once `WebRTC receive queue exhausted queued=261331`: pi-sh's own 256 KiB receive bound closed the session |
+| After the receive queue holds the sender back instead | 1 × 256 KiB 652 KiB/s; 16: 2289; 32: 2332; 64 three times: 2292, 1836, 2018; 1 × 4 MiB: 1915; 64 × 1 MiB: 2170 KiB/s; every download complete with close_notify; exit 0 |
+| 64 × 1 MiB with `top -b -d 3` in a second session | 64 complete, 1939 KiB/s; adapter Perl about 50 % of a core, the 64 connectors about 10 % together, `rpi-connectd` 90–134 %, device about a third idle; a `bash` at 20–28 % went on after the transfer (probably the `top` session's broker) |
+| NATIVE_RMANY_PLAN.md, twice | `k=16 ok=16 of 16, 1.1 s` / `1.0 s`; `k=64 ok=64 of 64, 4.9 s` / `3.6 s`; `k=65 ok=65 of 65, 3.8 s` / `3.7 s`; Mac counter 145 connections of 65536 bytes each time; status 0 |
+| `ps`, `ss -ltn` afterwards | no `perl`, `nc` or `top`; only 22 and 11434 listening |

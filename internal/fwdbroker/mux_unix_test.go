@@ -39,12 +39,26 @@ func TestMain(m *testing.M) {
 }
 
 // eachConnector runs an adapter test with the netcat double and with the
-// Perl connector, which the device's perl-base provides.
+// Perl connector, which the device's perl-base provides, each through the
+// Bash adapter loop and through the Perl data path (adapter.pl).
 func eachConnector(t *testing.T, test func(*testing.T, string)) {
-	for _, c := range []string{"nc", "perl"} {
-		t.Run(c, func(t *testing.T) { test(t, c) })
+	for _, adapter := range []string{"bash", "perl"} {
+		for _, c := range []string{"nc", "perl"} {
+			t.Run(c+"/"+adapter, func(t *testing.T) {
+				testAdapter = adapter
+				t.Cleanup(func() { testAdapter = "" })
+				test(t, c)
+			})
+		}
 	}
 }
+
+// testAdapter, when set, is the adapter startMux must end up with: "bash"
+// forces the Bash loop; "perl" also provides perl beside the netcat double.
+var testAdapter string
+
+// testCarrier is the PTY of the last startMux, for tests that drop it.
+var testCarrier *os.File
 
 type readResult struct {
 	data []byte
@@ -118,6 +132,30 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 			t.Skip("perl unavailable")
 		}
 		link("perl", path)
+	case "perl-nocompile":
+		// A perl whose Socket works but which cannot compile adapter.pl.
+		path, err := exec.LookPath("perl")
+		if err != nil {
+			t.Skip("perl unavailable")
+		}
+		stub := "#!/bin/sh\nfor a; do [ \"$a\" = -c ] && exit 1; done\nexec " + path + " \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(tools, "perl"), []byte(stub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	switch {
+	case testAdapter == "bash":
+		t.Setenv("PI_SH_FORWARD_ADAPTER", "bash")
+	case testAdapter == "perl" && connector == "perl":
+		t.Setenv("PI_SH_FORWARD_ADAPTER", "perl")
+	case testAdapter == "perl" && connector == "nc":
+		t.Setenv("PI_SH_FORWARD_ADAPTER", "perl")
+		path, err := exec.LookPath("perl")
+		if err != nil {
+			t.Skip("perl unavailable")
+		}
+		link("perl", path)
+		t.Setenv("PI_SH_FORWARD_CONNECTOR", "nc")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	cmd := exec.Command("/bin/sh", "-i")
@@ -127,6 +165,7 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 		cancel()
 		t.Fatal(err)
 	}
+	testCarrier = file
 	s := ptyStream{file: file, frames: make(chan readResult, 64)}
 	go func() {
 		for {
@@ -161,6 +200,9 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 		cmd.Process.Signal(syscall.SIGHUP)
 		cmd.Wait()
 	})
+	if err == nil && testAdapter != "" && m.Adapter != testAdapter {
+		t.Fatalf("adapter %q, want %q", m.Adapter, testAdapter)
+	}
 	return m, err
 }
 
@@ -644,4 +686,113 @@ func TestPerlConnectorDrainsWhileReaderStalls(t *testing.T) {
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatalf("%d of %d bytes, %v", len(got), len(payload), err)
 	}
+}
+
+// When adapter.pl does not compile on the device, the Bash loop answers "p"
+// and keeps serving the Perl connector.
+func TestPerlAdapterFallsBackToBash(t *testing.T) {
+	m, err := startMux(t, "perl-nocompile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Adapter != "bash" || m.Connector().Name != "perl" {
+		t.Fatal("adapter", m.Adapter, "connector", m.Connector().Name)
+	}
+	server := reverseServer(t, "tcp4", "127.0.0.1:0")
+	if got, err := roundTrip(context.Background(), m, tcpTarget(server), []byte("ok")); err != nil || string(got) != "ko" {
+		t.Fatal(got, err)
+	}
+}
+
+// Losing the carrier (the device side sees a hangup and end of input) must
+// terminate the connectors on either data path.
+func TestCarrierLossTerminatesConnectors(t *testing.T) {
+	eachConnector(t, func(t *testing.T, connector string) {
+		m, err := startMux(t, connector)
+		if err != nil {
+			t.Fatal(err)
+		}
+		carrier := testCarrier
+		l, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer l.Close()
+		closed := make(chan struct{}, 1)
+		go func() {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			c.SetReadDeadline(time.Now().Add(30 * time.Second))
+			io.Copy(io.Discard, c)
+			c.Close()
+			closed <- struct{}{}
+		}()
+		s, err := m.Dial(context.Background(), tcpTarget(l))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Write([]byte("held open")); err != nil {
+			t.Fatal(err)
+		}
+		carrier.Close()
+		select {
+		case <-closed:
+		case <-time.After(20 * time.Second):
+			t.Fatal("losing the carrier did not terminate the remote connection")
+		}
+	})
+}
+
+// Closing a busy stream and opening another in the same carrier batch can
+// give the new stream the old one's descriptor numbers; the adapter must not
+// treat the old readiness as the new stream's (a blocking read stalled the
+// Perl adapter).
+func TestStreamReplacedInOneBatchDoesNotStall(t *testing.T) {
+	eachConnector(t, func(t *testing.T, connector string) {
+		m, err := startMux(t, connector)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chatty, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer chatty.Close()
+		go func() {
+			for {
+				c, err := chatty.Accept()
+				if err != nil {
+					return
+				}
+				go func() {
+					defer c.Close()
+					big := bytes.Repeat([]byte("y"), 4096)
+					c.SetWriteDeadline(time.Now().Add(30 * time.Second))
+					for {
+						if _, err := c.Write(big); err != nil {
+							return
+						}
+					}
+				}()
+			}
+		}()
+		quiet := reverseServer(t, "tcp4", "127.0.0.1:0")
+		for i := 0; i < 20; i++ {
+			busy, err := m.Dial(context.Background(), tcpTarget(chatty))
+			if err != nil {
+				t.Fatal(err)
+			}
+			go io.Copy(io.Discard, busy)
+			time.Sleep(20 * time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			busy.Close()
+			got, err := roundTrip(ctx, m, tcpTarget(quiet), []byte("ab"))
+			cancel()
+			if err != nil || string(got) != "ba" {
+				t.Fatalf("round %d: %q, %v", i, got, err)
+			}
+		}
+	})
 }

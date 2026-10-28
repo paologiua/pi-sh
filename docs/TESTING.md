@@ -841,6 +841,18 @@ To force the connector on a device for a native check, set
 detected there, and the `-v` line `forwarding carrier ready connector=…` shows
 the choice.
 
+**Perl adapter (2026-10-28).** `eachConnector` now runs every adapter test in
+four subtests, connector/adapter: `nc/bash`, `perl/bash`, `nc/perl` (perl on
+PATH beside the netcat double, `PI_SH_FORWARD_CONNECTOR=nc`) and `perl/perl`;
+startMux checks the adapter it got. `PI_SH_FORWARD_ADAPTER=bash` keeps the
+Bash loop (on a device too); the full verification runs `internal/fwdbroker`
+and `cmd/pi-sh` once more with it. New: `TestPerlAdapterFallsBackToBash`,
+`TestPerlAdapterHasNoApostrophe`, `TestCarrierLossTerminatesConnectors`,
+`TestStreamReplacedInOneBatchDoesNotStall` (it hung the first Perl adapter and,
+under Bash 5.3, the Bash adapter: FORWARDING.md "Perl adapter"); in
+internal/transport `TestReceiveQueueHoldsSenderWithoutLoss` replaces
+`TestReceiveQueueFailsWithoutSilentLoss`.
+
 ## Forwarding throughput benchmark and close regression — 2026-10-28
 
 `TestForwardingThroughputBenchmark` (internal/fwdbroker) is opt-in and measures

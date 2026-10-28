@@ -121,6 +121,13 @@ func TestNetcatRequestsLargeReceiveBuffer(t *testing.T) {
 
 // The adapter and the mux must agree on the window, or the adapter fails the
 // protocol when pi-sh sends more records than it accepts.
+// adapter.pl is embedded in a single-quoted Bash word.
+func TestPerlAdapterHasNoApostrophe(t *testing.T) {
+	if strings.Contains(perlSource, "'") {
+		t.Fatal("adapter.pl contains an apostrophe")
+	}
+}
+
 func TestAdapterWindowMatchesMux(t *testing.T) {
 	m := regexp.MustCompile(`(?m)^_fw_win=([0-9]+) `).FindStringSubmatch(source)
 	if m == nil {

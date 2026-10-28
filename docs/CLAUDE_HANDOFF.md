@@ -268,8 +268,13 @@ Righe ancora aperte (lavoro rimanente):
   dell'adattatore da 8 a 32 record: ~270 KiB/s, due corse complete; una corsa
   precedente ha perso le connessioni WebRTC nel giro da 65, causa non trovata;
   -L nativo con la nuova finestra: 749 KiB/s su una connessione, totale con
-  16–64 invariato ~610–670 KiB/s perché il ciclo Bash dell'adattatore usa un core
-  intero sul Pi: prossimo passo possibile un adattatore Perl, non iniziato);
+  16–64 ~610–670 KiB/s perché il ciclo Bash dell'adattatore usava un core;
+  poi adattatore Perl (adapter.pl, exec dal Bash dopo `perl -c`, ripiego Bash,
+  `PI_SH_FORWARD_ADAPTER=bash`): -L 1,8–2,3 MiB/s con 16–64 stream, -R
+  16/64/65 in ~1/4/4 s; trovati e corretti la coda di ricezione del trasporto
+  che chiudeva la sessione (ora contropressione) e i nomi coproc riusati che
+  con Bash 5.3 chiudevano la portante; FORWARDING.md "Perl adapter"; limite ora
+  rpi-connectd ~130% CPU);
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many
@@ -324,6 +329,8 @@ go test -C third_party/sftp -race ./... -timeout=60s
 go vet ./...
 go vet -C third_party/sftp -stdmethods=false ./...
 go mod verify
+# Adattatore di forwarding Bash anche dove c'è Perl (dal 2026-10-28):
+PI_SH_FORWARD_ADAPTER=bash go test -count=1 ./internal/fwdbroker ./cmd/pi-sh
 ```
 
 Dal 2026-10-26 la toolchain è Go 1.27.3 ufficiale (SHA-256 verificato da go.dev)
@@ -335,6 +342,10 @@ GOMODCACHE il tentativo di download può finire nella directory utente protetta.
 La suite completa richiede PTY, ispezione processi e listener loopback: il sandbox
 li bloccava, mentre l'esecuzione locale normalmente autorizzata è passata.
 Non correggere il prodotto per mascherare un rifiuto del sandbox.
+Sul Mac più profili Chrome hanno l'estensione Claude: Connect è aperto in
+"Personal Chrome". Se Connect rimanda al sign-in, controlla quale browser è
+selezionato (`list_connected_browsers`) prima di chiedere al proprietario di
+rientrare (2026-10-28).
 
 Ultimo stato delle verifiche **locali**: (2026-10-22) suite race completa con Bash 5.3,
 pacchetti shellbroker e cmd con Bash 5.2.37, vet, verifica moduli e i sette

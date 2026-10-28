@@ -23,7 +23,14 @@ import (
 )
 
 //go:embed forward.bash
-var source string
+var bashSource string
+
+//go:embed adapter.pl
+var perlSource string
+
+// source is the staged adapter: forward.bash with the Perl data path as a
+// single-quoted Bash word (adapter.pl holds no apostrophe).
+var source = "_fw_perl_src='" + perlSource + "'\n" + bashSource
 
 const (
 	// MaxStreams bounds concurrent remote connectors (and their processes).
@@ -55,7 +62,9 @@ var (
 type Mux struct {
 	records   *shellbroker.Records
 	connector Connector
-	Detected  map[string][]string
+	// Adapter is "perl" once the Perl data path runs, else "bash".
+	Adapter  string
+	Detected map[string][]string
 
 	mu      sync.Mutex
 	streams map[int]*stream
@@ -132,6 +141,23 @@ func start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
 			m.Detected[f[1]] = append(m.Detected[f[1]], string(line))
 		} else if _, ok := m.Detected[f[1]]; !ok {
 			m.Detected[f[1]] = nil
+		}
+	}
+	m.Adapter = "bash"
+	// Perl, when its sockets work, replaces the Bash loop on the data path:
+	// that loop used a whole device core with many streams (FORWARDING.md
+	// "Perl adapter"). PI_SH_FORWARD_ADAPTER=bash keeps it (docs/TESTING.md).
+	if hasLine(m.Detected["perl"], perlFingerprint) && os.Getenv("PI_SH_FORWARD_ADAPTER") != "bash" {
+		if err := records.Send("P"); err != nil {
+			return nil, err
+		}
+		switch text, err := records.Next(); {
+		case err != nil:
+			return nil, err
+		case text == "P":
+			m.Adapter = "perl"
+		case text != "p":
+			return nil, ErrProtocol
 		}
 	}
 	go m.receive()
@@ -588,4 +614,13 @@ func (s *stream) Close() error {
 		return s.mux.records.Send(fmt.Sprintf("G %d", s.id))
 	}
 	return s.mux.records.Send(fmt.Sprintf("C %d", s.id))
+}
+
+func hasLine(lines []string, needle string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, needle) {
+			return true
+		}
+	}
+	return false
 }

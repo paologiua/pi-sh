@@ -140,6 +140,19 @@ _fw_reader() {
     fi
   done
 }
+# Start "coproc NAME BODY" and move its descriptors to _fw_cr/_fw_cw (in
+# _fw_all); _fw_cpid is its PID. Each stream uses its own coproc names: Bash
+# 5.3 unsets a coproc's array when an earlier coproc of the same name is
+# reaped, so a shared name lost a new stream's descriptors and the closing
+# eval became "exec <&- >&-", closing the carrier (2026-10-28).
+_fw_coproc() {
+  local _fw_n=$1 _fw_r _fw_w
+  eval "coproc $_fw_n $2 2>/dev/null"
+  eval "_fw_r=\${$_fw_n[0]-} _fw_w=\${$_fw_n[1]-} _fw_cpid=\${${_fw_n}_PID-}"
+  [[ $_fw_r =~ ^[0-9]+$ && $_fw_w =~ ^[0-9]+$ ]] || _fw_fail
+  exec {_fw_cr}<&"$_fw_r" {_fw_cw}>&"$_fw_w" {_fw_r}<&- {_fw_w}>&-
+  _fw_all[_fw_cr]=1; _fw_all[_fw_cw]=1
+}
 _fw_open() {
   local id=$1 mode=$2 w er ew co ci wi wa ro rt
   shift 2
@@ -147,33 +160,21 @@ _fw_open() {
   ((${#S_pid[@]}<64 && $#>0)) || _fw_fail
   local -a argv=()
   for w; do _fw_unhex "$w"; argv+=("$REPLY"); done
-  coproc _FW_E { _fw_closeall; exec cat; } 2>/dev/null
-  S_epid[id]=$_FW_E_PID
-  exec {er}<&${_FW_E[0]} {ew}>&${_FW_E[1]}
-  eval "exec ${_FW_E[0]}<&- ${_FW_E[1]}>&-"
-  _fw_all[er]=1; _fw_all[ew]=1
+  _fw_coproc _FW_E$id '{ _fw_closeall; exec cat; }'
+  S_epid[id]=$_fw_cpid er=$_fw_cr ew=$_fw_cw
   # The connector waits for a start line so a fast exit cannot make Bash
   # dispose of the coproc descriptors before they are duplicated.
-  coproc _FW_C { exec 2>&"$ew"; _fw_closeall; IFS= read -r _fw_go || exit 125; exec "${argv[@]}"; } 2>/dev/null
-  S_pid[id]=$_FW_C_PID
-  exec {co}<&${_FW_C[0]} {ci}>&${_FW_C[1]}
-  eval "exec ${_FW_C[0]}<&- ${_FW_C[1]}>&-"
+  _fw_coproc _FW_C$id '{ exec 2>&"$ew"; _fw_closeall; IFS= read -r _fw_go || exit 125; exec "${argv[@]}"; }'
+  S_pid[id]=$_fw_cpid co=$_fw_cr ci=$_fw_cw
   _fw_close "$ew"
-  _fw_all[co]=1; _fw_all[ci]=1
   printf 'go\n' >&"$ci"
-  coproc _FW_W { _fw_closeall "$ci"; _fw_writer "$ci" "$mode"; } 2>/dev/null
-  S_wpid[id]=$_FW_W_PID
-  exec {wa}<&${_FW_W[0]} {wi}>&${_FW_W[1]}
-  eval "exec ${_FW_W[0]}<&- ${_FW_W[1]}>&-"
+  _fw_coproc _FW_W$id '{ _fw_closeall "$ci"; _fw_writer "$ci" "$mode"; }'
+  S_wpid[id]=$_fw_cpid wa=$_fw_cr wi=$_fw_cw
   _fw_close "$ci"
-  _fw_all[wa]=1; _fw_all[wi]=1
   if [[ $mode == r ]]; then
-    coproc _FW_R { _fw_closeall "$co"; _fw_reader "$co"; } 2>/dev/null
-    S_rpid[id]=$_FW_R_PID
-    exec {ro}<&${_FW_R[0]} {rt}>&${_FW_R[1]}
-    eval "exec ${_FW_R[0]}<&- ${_FW_R[1]}>&-"
+    _fw_coproc _FW_R$id '{ _fw_closeall "$co"; _fw_reader "$co"; }'
+    S_rpid[id]=$_fw_cpid ro=$_fw_cr rt=$_fw_cw
     _fw_close "$co"
-    _fw_all[ro]=1; _fw_all[rt]=1
     printf %s "$_fw_tokens" >&"$rt"
     co=$ro S_tok[id]=$rt
   fi
@@ -315,6 +316,22 @@ _fw_record() {
     *) _fw_fail ;;
   esac
 }
+# "P": hand the carrier to the Perl data path (adapter.pl, in _fw_perl_src)
+# when Perl compiles it here and no stream is open yet; otherwise reply "p"
+# and keep this loop. The relay keeps reading the carrier for Perl.
+_fw_perl() {
+  ((${#S_pid[@]}==0)) || _fw_fail
+  if perl -c -e "$_fw_perl_src" </dev/null >/dev/null 2>&1; then
+    kill "$_fw_idle_pid" 2>/dev/null; wait "$_fw_idle_pid" 2>/dev/null
+    _fw_close "$idle"; _fw_close "$idlew"
+    trap - EXIT HUP TERM
+    shopt -s execfail
+    exec perl -e "$_fw_perl_src" -- "$_ps_prefix" "$_fw_win" "$_fw_relay_pid"
+    trap _fw_cleanup EXIT
+    _fw_fail
+  fi
+  _fw_emit p
+}
 _fw_main() {
   local head line id seq n k plen=${#_ps_prefix}
   exec 2>/dev/null
@@ -361,6 +378,7 @@ _fw_main() {
           _fw_input "$id" "$seq" "${line:0:n}"
           ;;
         $'Q\n') _fw_cleanup; _fw_emit D; exit 0 ;;
+        $'P\n') _fw_perl ;;
         [OFACG]' ')
           IFS= read -r line || exit 125
           ((${#line}<=4224)) || _fw_fail
