@@ -861,6 +861,8 @@ packages pass with Bash 5.3 (also under `-race`, five repetitions) and 5.2.37.
 256 KiB downloads through the Perl connector with a 40 ms round trip and checks
 every byte; results in FORWARDING.md "Many streams". Regression for the
 connector's eager reads: `TestPerlConnectorDrainsWhileReaderStalls`.
+`TestRemoteForwardingConcurrencyBenchmark` (same opt-in) does the same for -R
+with 1, 16 and 64 connections exchanging 64 KiB each way.
 
 **SIGHUP under nohup.** A test binary started with SIGHUP ignored (for example
 from `nohup`) passes that disposition to every child at exec, so the reference

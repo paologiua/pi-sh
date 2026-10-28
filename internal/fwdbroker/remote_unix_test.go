@@ -461,3 +461,58 @@ func TestRemoteForwardingConnectionBeyondLimitWaits(t *testing.T) {
 		t.Fatalf("after a slot freed: %q, %v", got, err)
 	}
 }
+
+// TestRemoteForwardingConcurrencyBenchmark measures the total rate of 16 and
+// 64 concurrent -R connections, each sending 64 KiB and receiving it reversed
+// through a 40 ms round trip, and checks every byte. Opt-in with
+// PI_SH_FWD_BENCH=1 (docs/FORWARDING.md "Many streams").
+func TestRemoteForwardingConcurrencyBenchmark(t *testing.T) {
+	if os.Getenv("PI_SH_FWD_BENCH") == "" {
+		t.Skip("set PI_SH_FWD_BENCH=1 to run the -R concurrency benchmark")
+	}
+	request := make([]byte, 64<<10)
+	for i := range request {
+		request[i] = byte(i*7 + i>>8)
+	}
+	want := reversed(request)
+	for _, k := range []int{1, 16, 64} {
+		m, err := startMuxDelayed(t, "perl", 20*time.Millisecond)
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := reverseServer(t, "tcp4", "127.0.0.1:0")
+		logs := &logLines{}
+		if _, err := serveRemote(t, m, forward.RemoteConfig{Forwards: []forwardspec.Forward{remoteForward(t, fmt.Sprintf("0:127.0.0.1:%d", target.Addr().(*net.TCPAddr).Port))}}, logs); err != nil {
+			t.Fatal(err)
+		}
+		address := "127.0.0.1:" + strconv.Itoa(logs.allocatedPort(t))
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		bad := 0
+		start := time.Now()
+		for range k {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				c, err := net.DialTimeout("tcp", address, 10*time.Second)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				defer c.Close()
+				c.SetDeadline(time.Now().Add(50 * time.Second))
+				go func() { c.Write(request); c.(*net.TCPConn).CloseWrite() }()
+				if got, err := io.ReadAll(c); err != nil || !bytes.Equal(got, want) {
+					mu.Lock()
+					bad++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if bad > 0 {
+			t.Fatalf("%d connections: %d incomplete", k, bad)
+		}
+		t.Logf("connections=%d each way=%.0f KiB/s", k, float64(k*64)/time.Since(start).Seconds())
+	}
+}

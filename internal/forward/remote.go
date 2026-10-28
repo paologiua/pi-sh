@@ -141,7 +141,13 @@ type remoteListener struct {
 	reader *bufio.Reader
 	chans  *Channels
 
+	// Frames to the listener are queued under wmu and written by writeLoop,
+	// so a burst of small frames (acknowledgements above all) leaves in one
+	// Write and shares adapter records instead of taking one each.
 	wmu   sync.Mutex
+	wcond *sync.Cond
+	queue []byte
+	werr  error
 	mu    sync.Mutex
 	conns map[uint32]*rconn
 	dead  bool
@@ -183,6 +189,8 @@ func startRemote(ctx context.Context, lst Listener, fwd forwardspec.Forward, per
 			err = rep.err
 		case rep.t == 'L':
 			if l.port, err = strconv.Atoi(string(rep.data)); err == nil && l.port > 0 && l.port <= 65535 {
+				l.wcond = sync.NewCond(&l.wmu)
+				go l.writeLoop()
 				return l, nil
 			}
 			err = errors.New("invalid listener reply")
@@ -217,19 +225,54 @@ func (l *remoteListener) frame() (byte, uint32, []byte, error) {
 	return h[0], binary.BigEndian.Uint32(h[1:5]), data, nil
 }
 
+// send queues one frame; queued data is bounded by the per-connection
+// windows. It fails once the stream failed or the listener closed.
 func (l *remoteListener) send(t byte, id uint32, data []byte) error {
-	b := make([]byte, 9+len(data))
-	b[0] = t
-	binary.BigEndian.PutUint32(b[1:5], id)
-	binary.BigEndian.PutUint32(b[5:9], uint32(len(data)))
-	copy(b[9:], data)
+	var h [9]byte
+	h[0] = t
+	binary.BigEndian.PutUint32(h[1:5], id)
+	binary.BigEndian.PutUint32(h[5:9], uint32(len(data)))
 	l.wmu.Lock()
 	defer l.wmu.Unlock()
-	_, err := l.stream.Write(b)
-	return err
+	if l.werr != nil {
+		return l.werr
+	}
+	l.queue = append(append(l.queue, h[:]...), data...)
+	l.wcond.Signal()
+	return nil
+}
+
+// writeLoop writes everything queued since its last Write in one Write.
+func (l *remoteListener) writeLoop() {
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	for {
+		for len(l.queue) == 0 && l.werr == nil {
+			l.wcond.Wait()
+		}
+		if l.werr != nil {
+			return
+		}
+		b := l.queue
+		l.queue = nil
+		l.wmu.Unlock()
+		_, err := l.stream.Write(b)
+		l.wmu.Lock()
+		if err != nil && l.werr == nil {
+			l.werr = err
+		}
+	}
 }
 
 func (l *remoteListener) close() {
+	l.wmu.Lock()
+	if l.werr == nil {
+		l.werr = net.ErrClosed
+	}
+	if l.wcond != nil {
+		l.wcond.Broadcast()
+	}
+	l.wmu.Unlock()
 	l.stream.Close()
 	l.mu.Lock()
 	l.dead = true

@@ -426,10 +426,25 @@ listener's adapter stream. A 65th connection was accepted and closed at once
 (the client read EOF with no data); it now waits in the backlog
 (`TestRemoteForwardingConnectionBeyondLimitWaits`). On the device (approved
 plan): 16, 64 and 65 concurrent connections, all complete, the 65th after
-waiting; about 80 KiB/s each way in total. The listener writes every frame,
-even a 13-byte acknowledgement, as its own adapter record, so with many
-connections small frames use up the eight-record window; coalescing frames
-into records is the open improvement.
+waiting; about 80 KiB/s each way in total. The listener wrote every frame,
+even a 13-byte acknowledgement, as its own adapter record, and pi-sh wrote
+every frame to the listener with its own Write, so small frames took whole
+records of the eight-record windows. Both sides now queue frames and send them
+together (the listener in records of up to 2040 bytes, flushed before each
+wait; pi-sh through one writer goroutine per listener).
+`TestRemoteForwardingConcurrencyBenchmark` (opt-in, 40 ms round trip, 64 KiB
+each way per connection), KiB/s each way:
+
+| Connections | Before | Listener coalescing | Both sides |
+| --- | --- | --- | --- |
+| 1 | 146–151 | 144–157 | 159 |
+| 16 | 190 | 204–205 | 226–230 |
+| 64 | 191 | 214–215 | 232–233 |
+
+On the device the same plan took 11.3, 45.7 and 47.3 s instead of 13.0, 52.4
+and 55.4 s for 16, 64 and 65 connections (about 90 instead of 80 KiB/s each
+way), all complete. The remaining limit is the single adapter stream shared by
+both directions of every connection of one -R.
 
 ## End of session — 2026-10-28
 

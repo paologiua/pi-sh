@@ -8,8 +8,8 @@
 #               C id (close)
 # Each connection may have at most $W unacknowledged bytes in each direction.
 # The frames travel inside the adapter's hex records: the loader's hin()
-# decodes input into $p, and out() writes "length\nhex\n" records of at most
-# 2040 bytes, each with one syswrite below PIPE_BUF.
+# decodes input into $p, and record() writes "length\nhex\n" records of at
+# most 2040 bytes, each with one syswrite below PIPE_BUF.
 use strict;
 use Socket qw(:addrinfo SOCK_STREAM SOL_SOCKET SO_REUSEADDR SOMAXCONN AF_INET AF_INET6
   IPPROTO_IPV6 IPV6_V6ONLY inet_ntop sockaddr_family pack_sockaddr_in unpack_sockaddr_in
@@ -22,21 +22,27 @@ my $W = 65536;
 my $MAX = 64;
 my (@ls, %c, $next);
 
+# Frames are queued and leave in records of at most 2040 bytes, so a burst of
+# small frames (acknowledgements above all) shares records instead of taking
+# one adapter record each; flush() runs before every wait.
+my $ob = '';
+sub record {
+  my $h = unpack('H*', $_[0]);
+  my $r = length($h) . "\n$h\n";
+  while (length $r) {
+    my $k = syswrite(STDOUT, $r);
+    if (!defined $k) { next if $!{EINTR}; exit 4 }
+    substr($r, 0, $k) = '';
+  }
+}
+sub flush { record(substr($ob, 0, 2040, '')) while length $ob }
 sub frame {
   my ($t, $id, $d) = @_;
   $d = '' unless defined $d;
-  my $b = pack('aNN', $t, $id, length $d) . $d;
-  for (my $o = 0; $o < length $b; $o += 2040) {
-    my $h = unpack('H*', substr($b, $o, 2040));
-    my $r = length($h) . "\n$h\n";
-    while (length $r) {
-      my $k = syswrite(STDOUT, $r);
-      if (!defined $k) { next if $!{EINTR}; exit 4 }
-      substr($r, 0, $k) = '';
-    }
-  }
+  $ob .= pack('aNN', $t, $id, length $d) . $d;
+  record(substr($ob, 0, 2040, '')) while length $ob >= 2040;
 }
-sub fail { frame('F', 0, $_[0]); exit 1 }
+sub fail { frame('F', 0, $_[0]); flush(); exit 1 }
 sub nonblock { my $f = fcntl($_[0], F_GETFL, 0); fcntl($_[0], F_SETFL, $f | O_NONBLOCK) }
 sub addr_port {
   my ($sa) = @_;
@@ -106,11 +112,12 @@ while (1) {
     vec($r, fileno $k->{s}, 1) = 1 if !$k->{reof} && !$k->{closing} && $k->{credit} > 0;
     vec($w, fileno $k->{s}, 1) = 1 if length $k->{out};
   }
+  flush();
   if (select($r, $w, undef, undef) < 0) { next if $!{EINTR}; exit 6 }
   if (vec($r, 0, 1)) {
     my $k = hin();
     if (!defined $k) { exit 6 unless $!{EINTR} }
-    elsif ($k == 0) { exit 0 }
+    elsif ($k == 0) { flush(); exit 0 }
     else { parse() }
   }
   for my $l (@ls) {

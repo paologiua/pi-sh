@@ -986,3 +986,9 @@ with many streams (574–635 KiB/s): all connections of one -R share one adapter
 stream, and the listener sends every frame, including each 13-byte
 acknowledgement, as its own adapter record, so small frames use up the
 eight-record window. Single run.
+
+**After coalescing frames** (both sides, same plan and bounds, run again with
+the owner's go-ahead to measure): `k=16 ok=16 of 16, 11.3 s`, `k=64 ok=64 of
+64, 45.7 s`, `k=65 ok=65 of 65, 47.3 s`; the Mac counter saw 145 connections
+of 65536 bytes; status 0; afterwards no `perl` and nothing on 47141. About 90
+KiB/s each way instead of 80. Single run.
