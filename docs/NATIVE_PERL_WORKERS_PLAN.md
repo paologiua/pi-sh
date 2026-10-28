@@ -87,10 +87,11 @@ Afterwards, a read-only session runs:
 - **Credentials.** None are stored. Reports hold check names and outcomes, not
   remote contents.
 
-## Addendum: 32 KiB SFTP requests — proposed
+## Addendum: 32 KiB SFTP requests — approved and run
 
-Proposed 2026-10-28 after `36037d2` (SFTP_BACKEND.md "Request size").
-**Not approved; not run.**
+Proposed 2026-10-28 after `36037d2` (SFTP_BACKEND.md "Request size"); approved
+by the owner the same evening and run: every check passed, cleanup confirmed
+(REAL_DEVICE_TESTS.md).
 
 One more run of the same probe, with the default Perl workers, at `36037d2`:
 

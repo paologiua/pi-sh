@@ -1118,3 +1118,16 @@ listing session's own broker.
 The 1 MiB upload's 17.8 s against 1.5 s through `wc -c` led to the SFTP
 request size change (SFTP_BACKEND.md "Request size"). After it, a read-only
 `pi-cp` of `/usr/bin/bash` kept its SHA-256 (18.0 s wall time with setup).
+
+**Addendum run with 32 KiB SFTP requests** (owner-approved, `main` at
+`8291e9f`, root `/tmp/pi-sh-probe-a880…`):
+- all 23 checks passed; `broker-completion` code 0, cleanup confirmed;
+- 64 KiB upload / download: 0.27 / 0.14 s;
+- 1 MiB upload / download: 2.1 / 1.2 s, against 17.8 / 3.8 s with 1 KiB
+  requests;
+- the whole probe took 7.5 s instead of 30.4 s (21.4 s of wall time with
+  sign-in, instead of 45.9 s).
+
+Afterwards, a read-only session found the root and `/tmp/pi-sh-probe-*`
+absent and no `sftp-server`. The only `perl` processes were the two readers
+of the listing session's own broker.

@@ -289,8 +289,8 @@ Righe ancora aperte (lavoro rimanente):
   i lavoratori Perl;
   piano Perl workers approvato ed eseguito: 23/23 controlli in entrambe le corse,
   pulizia confermata; richieste SFTP da 1 KiB a 32 KiB (in locale upload a 40 ms
-  da 43 a 1123 KiB/s); upload nativo con la nuova dimensione da verificare con
-  un nuovo piano (SFTP_BACKEND.md "Request size");
+  da 43 a 1123 KiB/s); upload nativo poi verificato (addendum approvato): 1 MiB
+  su in 2,1 s e giù in 1,2 s, prima 17,8 e 3,8 s;
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many

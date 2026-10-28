@@ -213,5 +213,6 @@ OpenSSH sftp-server, 1 MiB, KiB/s:
 
 On the device, a read-only `pi-cp` of `/usr/bin/bash` (1,412,096 bytes) kept
 its SHA-256 and took 18.0 s of wall time, against 19.1 s before. Most of that
-is sign-in and session setup, so it does not isolate the transfer. A native
-upload with the new size needs a new write plan.
+is sign-in and session setup, so it does not isolate the transfer. The approved native
+run with 32 KiB requests (NATIVE_PERL_WORKERS_PLAN.md addendum) moved 1 MiB up
+in 2.1 s and down in 1.2 s (17.8 and 3.8 s before), every check passing.
