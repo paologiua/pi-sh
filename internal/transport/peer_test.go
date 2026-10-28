@@ -211,18 +211,31 @@ func TestCancellationAndLimits(t *testing.T) {
 	}
 }
 
-func TestReceiveQueueFailsWithoutSilentLoss(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+// A full queue holds the next message back until the consumer makes room;
+// nothing is dropped or reordered and the channel stays open.
+func TestReceiveQueueHoldsSenderWithoutLoss(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	p := localPeer(t, ctx)
 	ch, err := p.CreateChannel("queue-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < receiveQueueSize+1; i++ {
+	for i := 0; i < receiveQueueSize; i++ {
 		ch.receive(webrtc.DataChannelMessage{Data: []byte{byte(i)}})
 	}
-	for i := 0; i < receiveQueueSize; i++ {
+	held := make(chan struct{})
+	go func() {
+		last := receiveQueueSize
+		ch.receive(webrtc.DataChannelMessage{Data: []byte{byte(last)}})
+		close(held)
+	}()
+	select {
+	case <-held:
+		t.Fatal("a full queue accepted another message")
+	case <-time.After(100 * time.Millisecond):
+	}
+	for i := 0; i <= receiveQueueSize; i++ {
 		m, err := ch.Receive(ctx)
 		if err != nil {
 			t.Fatal(err)
@@ -231,9 +244,7 @@ func TestReceiveQueueFailsWithoutSilentLoss(t *testing.T) {
 			t.Fatal("queue corrupted or reordered")
 		}
 	}
-	if _, err := ch.Receive(ctx); !errors.Is(err, ErrReceiveOverflow) {
-		t.Fatalf("missing overflow error: %v", err)
-	}
+	<-held
 }
 
 func TestInvalidDescriptionRedactsInput(t *testing.T) {
@@ -358,23 +369,46 @@ func TestReceiveByteBudgetAndAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := receiveByteLimit / MaxMessageSize
-	for i := 0; i < count+1; i++ {
+	for i := 0; i < count; i++ {
 		ch.receive(webrtc.DataChannelMessage{Data: bytes.Repeat([]byte{byte(i)}, MaxMessageSize)})
 	}
-	for i := 0; i < count; i++ {
+	held := make(chan struct{})
+	go func() {
+		ch.receive(webrtc.DataChannelMessage{Data: bytes.Repeat([]byte{byte(count)}, MaxMessageSize)})
+		close(held)
+	}()
+	select {
+	case <-held:
+		t.Fatal("byte budget was not enforced")
+	case <-time.After(100 * time.Millisecond):
+	}
+	for i := 0; i <= count; i++ {
 		m, err := ch.Receive(ctx)
 		if err != nil || len(m.Data) != MaxMessageSize || m.Data[0] != byte(i) {
 			t.Fatal("bounded queue data changed", err)
 		}
 	}
-	if _, err := ch.Receive(ctx); !errors.Is(err, ErrReceiveOverflow) {
-		t.Fatal("byte budget was not enforced", err)
-	}
+	<-held
 	ch.mu.Lock()
 	remaining := ch.queuedBytes
 	ch.mu.Unlock()
 	if remaining != 0 {
 		t.Fatalf("queue byte accounting leaked %d bytes", remaining)
+	}
+	// A message held back by a full queue is released when the channel ends.
+	for i := 0; i < count; i++ {
+		ch.receive(webrtc.DataChannelMessage{Data: make([]byte, MaxMessageSize)})
+	}
+	released := make(chan struct{})
+	go func() {
+		ch.receive(webrtc.DataChannelMessage{Data: make([]byte, MaxMessageSize)})
+		close(released)
+	}()
+	ch.Close()
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("closing the channel did not release a held message")
 	}
 }
 

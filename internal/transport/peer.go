@@ -34,11 +34,13 @@ const (
 )
 
 var (
-	ErrClosed           = errors.New("WebRTC transport closed")
-	ErrPeer             = errors.New("WebRTC peer operation failed")
-	ErrDescription      = errors.New("invalid WebRTC session description")
-	ErrChannelLimit     = errors.New("WebRTC channel limit exceeded")
-	ErrMessageSize      = errors.New("WebRTC message exceeds local limit")
+	ErrClosed       = errors.New("WebRTC transport closed")
+	ErrPeer         = errors.New("WebRTC peer operation failed")
+	ErrDescription  = errors.New("invalid WebRTC session description")
+	ErrChannelLimit = errors.New("WebRTC channel limit exceeded")
+	ErrMessageSize  = errors.New("WebRTC message exceeds local limit")
+	// ErrReceiveOverflow is no longer returned: a full receive queue now holds
+	// the sender back (Channel.receive). Kept for the transfer probe's labels.
 	ErrReceiveOverflow  = errors.New("WebRTC receive queue exhausted")
 	ErrRelayRequired    = errors.New("experimental iSH relay mode requires an authenticated TURN server from session configuration")
 	ErrRelayUnavailable = errors.New("experimental iSH relay mode gathered no relay candidate")

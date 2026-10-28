@@ -41,8 +41,11 @@ interrupts waits; cancelling the owning context closes the peer and all channels
 - Limit the peer to eight channels over its lifetime and each application receive
   queue to 4096 messages and 256 KiB of payload. Both bounds apply: small PTY
   fragments must not exhaust a count-only 32-message queue, while large messages
-  must not multiply its memory cost. Overflow closes the channel with an explicit error after
-  queued messages are drained. This is a provisional local resource policy, not
+  must not multiply its memory cost. A full queue holds the next message back
+  until the consumer makes room (Pion stops reading the stream and SCTP flow
+  control slows the peer); until 2026-10-28 it closed the channel, which ended
+  sessions whose device sent faster than a burst was consumed (FORWARDING.md
+  "Perl adapter"). Close releases a held message. This is a provisional local resource policy, not
   a Connect or OpenSSH limit, and does not bound every Pion/internal allocation.
 - Close is idempotent and safe in upstream callbacks. It uses Pion's non-graceful
   close, so it does not promise that every upstream callback has already exited

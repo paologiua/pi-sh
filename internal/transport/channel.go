@@ -31,12 +31,15 @@ type Channel struct {
 	once        sync.Once
 	openOnce    sync.Once
 	mu          sync.Mutex
+	room        *sync.Cond // signalled when queuedBytes falls or the channel ends
+	closed      bool
 	err         error
 	queuedBytes int
 }
 
 func newChannel(dc *webrtc.DataChannel) *Channel {
 	c := &Channel{dc: dc, opened: make(chan struct{}), done: make(chan struct{}), received: make(chan Message, receiveQueueSize), low: make(chan struct{}, 1), sender: make(chan struct{}, 1)}
+	c.room = sync.NewCond(&c.mu)
 	dc.SetBufferedAmountLowThreshold(sendHighWater / 2)
 	dc.OnBufferedAmountLow(func() {
 		select {
@@ -74,11 +77,18 @@ func (c *Channel) receive(m webrtc.DataChannelMessage) {
 		_ = c.dc.Close()
 		return
 	}
+	// A full queue waits for the consumer instead of failing the channel: Pion
+	// then stops reading this SCTP stream, the receive window closes and the
+	// peer slows down, as an ssh channel window would. Failing here ended
+	// sessions whose device sent faster than a burst could be consumed
+	// (64 forwarded downloads, 2026-10-28). The queue stays bounded by
+	// receiveByteLimit and receiveQueueSize.
 	c.mu.Lock()
-	if len(m.Data) > receiveByteLimit-c.queuedBytes {
+	for c.queuedBytes > 0 && len(m.Data) > receiveByteLimit-c.queuedBytes && !c.closed {
+		c.room.Wait()
+	}
+	if c.closed {
 		c.mu.Unlock()
-		c.finish(ErrReceiveOverflow)
-		_ = c.dc.Close()
 		return
 	}
 	c.queuedBytes += len(m.Data)
@@ -88,17 +98,18 @@ func (c *Channel) receive(m webrtc.DataChannelMessage) {
 	case c.received <- v:
 	case <-c.done:
 		c.consume(v)
-	default:
-		c.consume(v)
-		c.finish(ErrReceiveOverflow)
-		_ = c.dc.Close()
 	}
 }
 
-func (c *Channel) consume(m Message) { c.mu.Lock(); c.queuedBytes -= len(m.Data); c.mu.Unlock() }
+func (c *Channel) consume(m Message) {
+	c.mu.Lock()
+	c.queuedBytes -= len(m.Data)
+	c.room.Broadcast()
+	c.mu.Unlock()
+}
 
 // Receive drains already queued messages before returning the terminal error.
-// A slow consumer exhausts the bounded queue and fails the channel explicitly.
+// A slow consumer holds the sender back (see receive); nothing is dropped.
 func (c *Channel) Receive(ctx context.Context) (Message, error) {
 	if err := ctx.Err(); err != nil {
 		return Message{}, err
@@ -183,7 +194,13 @@ func (c *Channel) Send(ctx context.Context, m Message) error {
 }
 
 func (c *Channel) finish(err error) {
-	c.once.Do(func() { c.mu.Lock(); c.err = err; c.mu.Unlock(); close(c.done) })
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err, c.closed = err, true
+		c.room.Broadcast()
+		c.mu.Unlock()
+		close(c.done)
+	})
 }
 
 func (c *Channel) Close() error {
