@@ -86,3 +86,21 @@ Afterwards, a read-only session runs:
     leading dash (they need their own plan).
 - **Credentials.** None are stored. Reports hold check names and outcomes, not
   remote contents.
+
+## Addendum: 32 KiB SFTP requests — proposed
+
+Proposed 2026-10-28 after `36037d2` (SFTP_BACKEND.md "Request size").
+**Not approved; not run.**
+
+One more run of the same probe, with the default Perl workers, at `36037d2`:
+
+```sh
+./bin/transfer-probe --execute-approved --browser \
+  --root /tmp/pi-sh-probe-a8802ae7a6c124e014bd5bc4f25da43a raspberrypi
+```
+
+Everything else is as above: the same checks and known entries, at most about
+1.25 MiB, cleanup in the same session, and the same read-only check
+afterwards (the root and `/tmp/pi-sh-probe-*` absent; no `sftp-server` or
+stray `perl`). The only new device path is this root. The point is the 1 MiB
+upload time: 17.8 s with 1 KiB requests.
