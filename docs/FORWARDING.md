@@ -260,5 +260,12 @@ upload natively for -L). The listener's reason for a failed bind appears only
 at debug level (sshd sends none). pi-sh waits for each listener's reply before
 starting the session, while ssh may start the session first.
 
-**Native test.** Running -R on the device opens a listener there for the session,
-so it needs the owner's approval of an exact plan.
+**Native test (2026-10-28).** With an owner-approved plan, loopback only:
+256 KiB with half-close through `-R 127.0.0.1:47125:127.0.0.1:<Mac port>` and
+through remote dynamic `-R 127.0.0.1:47126` (SOCKS5) both reached a Mac-local
+counting server and came back as `262144` (about 21 s each, roughly 12 KiB/s);
+`-R 127.0.0.1:22:…` with ExitOnForwardFailure ended with `Error: remote port
+forwarding failed for listen port 22` and exit 255 (prefixed `pi-sh:` by the
+logger, unlike ssh); afterwards no listener or helper process was left
+(REAL_DEVICE_TESTS.md). Single runs: `-R 0`, many connections and long
+sessions remain unexercised on the device.

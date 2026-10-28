@@ -82,8 +82,10 @@ stderr ≈18 KiB/s (prima ~11 KiB/s); l'output resta limitato dalla lettura byte
 byte in Bash (SHELL_BROKER.md). Nella stessa prova l'abort dopo errore di stdin
 locale ha confermato il cleanup (una esecuzione). Resta non verificato il
 cleanup dei discendenti del tentativo read-only fallito del 2026-10-21.
-Prima di una prova reale serve un accesso recente: Remote shell in Connect,
-poi pagina Devices, poi `fetch(…)` stampato dal comando nella console (digitando
+Prima di una prova reale serve un accesso recente: Remote shell in Connect
+(il pulsante Connect apre un popup fuori dal gruppo di tab di Claude in Chrome;
+basta aprire nella tab `/devices/<id>/remote-shell-session`, attendere il
+prompt senza digitare nulla), poi pagina Devices, poi `fetch(…)` stampato dal comando nella console (digitando
 prima `allow pasting`). Bash 5.2.37 di prova era in
 `/private/tmp/claude-501/-Users-paologiua-Projects-pi-sh/9edee8ad-09c5-400f-b5b9-2aaba5b22f3f/scratchpad/bash52/bash-5.2/bash`
 (effimero; ricostruibile da sorgenti GNU ufficiali e patch 001–037).
@@ -158,12 +160,14 @@ processo (forwarding accanto a un comando, oppure i tentativi di
 ConnectionAttempts in modalità browser) andava in timeout.
 
 Aperti: M3 di `scripts/native-shell-check.sh` (perdita di rete: il proprietario
-deve disattivare la rete del Mac); decisione del proprietario su `-R` (oggi
-rifiutato: richiede un listener sul Pi per tutta la sessione); prova half-close
-nativa con un listener temporaneo `nc -l` su loopback (serve un piano approvato);
-`-D` non ancora provato sul Pi; throughput del forwarding non misurato; `~#` non
-elenca i canali inoltrati; alla fine della sessione le connessioni inoltrate
-vengono chiuse invece di attenderle.
+deve disattivare la rete del Mac); velocità del forwarding (upload con -L
+~25 KiB/s, -R ~12 KiB/s); `~#` non elenca i canali inoltrati; alla fine della
+sessione le connessioni inoltrate vengono chiuse invece di attenderle; la riga
+fatale `Error: remote port forwarding failed…` esce con il prefisso `pi-sh:`,
+che ssh non mette (convenzione generale del logger, DIAGNOSTICS.md: valutare
+per tutte le righe fatali). Half-close con -L, `-D` e `-R` (diretto, SOCKS
+inverso, porta privilegiata rifiutata) sono verificati sul Pi
+(REAL_DEVICE_TESTS.md, 2026-10-27/28).
 
 Il ramo CLI (account `-l`/`email::device`/`User`/predefinito, decisione su ogni
 opzione, redazione corretta) è integrato e verificato (28 pacchetti, race). Decisioni
@@ -232,7 +236,7 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
 | File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
-| Forwarding | -R implementato (2026-10-28, regole sshd `GatewayPorts clientspecified`), prova sul Pi da approvare; throughput (upload inoltrato ~25 KiB/s); throughput, molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
+| Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; `-R 0` non provato sul Pi); throughput (upload con -L ~25 KiB/s, -R ~12 KiB/s); molti stream, sessioni lunghe, perdita di connessione; `~#` con i canali inoltrati; attesa delle connessioni a fine sessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 

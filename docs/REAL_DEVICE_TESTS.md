@@ -757,3 +757,32 @@ remote service as EOF while the reverse direction stays open, with both
 connectors. Forwarded upload ran at about 25 KiB/s (1 MiB in about 41 s,
 including the reply), far below the broker's 186 KiB/s upload: forwarding
 input moves in 1 KiB records with a window of 4. Single runs.
+
+## Native remote forwarding (-R), 28 October 2026
+
+Owner-approved plan, browser companion, `main` at `d3157ab` (the `bin/pi-sh` in
+use was byte-identical to a fresh build). Every listener was on loopback: on
+the Mac a temporary Perl server on 127.0.0.1:51125 that reads to EOF and replies
+with the byte count; on the device only the -R listeners themselves. The
+device-side client was `timeout 90 perl -MIO::Socket::INET -e '…'`, run from
+memory. Nothing was written on the device.
+
+| Step | Result |
+| --- | --- |
+| First attempt | Connect asked for recent sign-in; nothing was sent. The official Remote shell page was opened (no input typed), then Devices again |
+| `--experimental-command -T -v -R 127.0.0.1:47125:127.0.0.1:51125 -R 127.0.0.1:47126` | log `connector=openbsd-nc` (the carrier), then `remote forward success` for both listeners before the command session started |
+| a) 256 KiB of random bytes to 127.0.0.1:47125, write shutdown, read reply | reply `262144`, 21 s; Mac server counted 262144 |
+| b) SOCKS5 greeting and CONNECT 127.0.0.1:51125 through 127.0.0.1:47126, same exchange | SOCKS success reply, then `262144`, 22 s; Mac server counted 262144 |
+| Command status | `remote command finished exit_status=0` |
+| `-v -N -o ExitOnForwardFailure=yes -R 127.0.0.1:22:127.0.0.1:1` | debug `remote listener: privileged port`, then `pi-sh: Error: remote port forwarding failed for listen port 22`, exit 255; no session started |
+| `ps -eo pid,etime,args` and `ss -ltnp` afterwards | no `perl`, `nc` or adapter process other than the listing session's own; listeners only 127.0.0.1:11434 and port 22 (pre-existing); nothing on 47125/47126. A `/bin/bash -l` about 3 minutes old was the official Remote shell page's session; a later read-only check found it still running (4 min) after the page was left, and it was left to rpi-connectd |
+
+This proves through the real device that a remote listener opened by pi-sh
+accepts connections, carries binary data with half-close in both directions to
+a Mac-local target, answers SOCKS5 for remote dynamic forwarding, refuses a
+privileged port with ssh's fatal message under ExitOnForwardFailure, and
+disappears at the end of the session. Data through -R moved at about 12 KiB/s
+(256 KiB in about 21 s, including the reply). The `pi-sh:` prefix on the error
+line is the general program prefix of DIAGNOSTICS.md; ssh prints the line
+without it. Single runs; many concurrent connections, long sessions, `-R 0`
+allocation and connection loss were not exercised on the device.
