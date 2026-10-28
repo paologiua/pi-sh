@@ -208,3 +208,15 @@ cleanup, end-to-end -L/-D/-W) runs once with the netcat double and once with the
 local Perl, under Bash 5.3 and 5.2; `TestSelectPrefersNetcatThenPerl` and
 `TestPerlOpenFitsAdapterRecord` check selection and the worst-case record size.
 Native results are in REAL_DEVICE_TESTS.md.
+
+## Native half-close — 2026-10-28
+
+With an owner-approved temporary Perl listener on the device's loopback, 1 MiB
+sent through `-L`, followed by the client's write shutdown, was answered with the
+byte count on the same connection, with the netcat connector and with the Perl
+one; nothing was left running (REAL_DEVICE_TESTS.md). Forwarded upload ran at
+about 25 KiB/s. Raising it (larger input records or a wider window) is open work.
+
+`-R` is the next step. Owner decision (2026-10-28): the remote listener binds the
+loopback by default, and an explicit bind address (`*`, empty, or an address) is
+honored, which is what sshd does with `GatewayPorts clientspecified`.

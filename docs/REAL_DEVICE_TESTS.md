@@ -731,5 +731,29 @@ and a nonexistent Unix socket path; no connection reached anything else.
 | `PI_SH_FORWARD_CONNECTOR=perl -W 127.0.0.1:22`, empty stdin | banner, exit 0 |
 | `ps -eo pid,etime,args` afterwards | only the listing command itself: no `perl`, `nc` or adapter process left |
 
-Half-close with a live remote reader is still unverified natively (it needs a
-temporary listener and the owner's approval). Single runs.
+Half-close with a live remote reader is covered by the next section. Single runs.
+
+## Native half-close with a temporary listener, 28 October 2026
+
+Owner-approved plan (it replaced an earlier `nc -l | wc -c` plan, which would
+probably have deadlocked because netcat does not close its stdout at network
+EOF). Each run was one pi-sh process: `--experimental-command -T -v -L
+127.0.0.1:47124:127.0.0.1:47123` with the command `timeout 60 perl
+-MIO::Socket::INET -e '…'`, a listener on the device's 127.0.0.1:47123 that
+accepts one connection, reads to EOF, replies with the byte count and exits. No
+files were written. A local client sent 1 MiB of random data to 47124, shut down
+its write side and read the reply.
+
+| Run | Result |
+| --- | --- |
+| First attempt | Connect asked for recent sign-in; nothing was sent |
+| Perl connector, listener without `$|=1` | `listening` stayed in Perl's buffer, so no client connected; `timeout` ended the listener, exit 124 |
+| Perl connector (`PI_SH_FORWARD_CONNECTOR=perl`) | reply `1048576`, 41.1 s for the exchange, exit 0 |
+| OpenBSD netcat connector (default) | reply `1048576`, 40.8 s, exit 0 |
+| `ps -eo pid,etime,args` and `ss -ltn` afterwards | only the listing itself; no `perl`, `nc`, adapter process or listener on 47123/47124 |
+
+This proves through the real device that the end of local input reaches the
+remote service as EOF while the reverse direction stays open, with both
+connectors. Forwarded upload ran at about 25 KiB/s (1 MiB in about 41 s,
+including the reply), far below the broker's 186 KiB/s upload: forwarding
+input moves in 1 KiB records with a window of 4. Single runs.
