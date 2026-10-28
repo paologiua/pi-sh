@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"pi-sh/internal/commandrun"
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
@@ -38,6 +40,27 @@ type forwarding struct {
 	remote *forward.Remote
 	cancel context.CancelFunc
 	served sync.WaitGroup
+	failed sync.Once
+}
+
+// reportFailure logs a carrier or adapter failure once (forwarded connections
+// then fail), unless the adapter was closed on purpose.
+func (f *forwarding) reportFailure(ctx context.Context) {
+	if err := f.mux.Err(); err != nil && !errors.Is(err, fwdbroker.ErrClosed) {
+		f.failed.Do(func() { diag.From(ctx).Failure(diag.Error, err) })
+	}
+}
+
+// watch reports a carrier failure while a session runs; ssh would lose the
+// whole connection, pi-sh keeps the session and says forwarding stopped.
+func (f *forwarding) watch(ctx context.Context) {
+	go func() {
+		select {
+		case <-f.mux.Done():
+			f.reportFailure(ctx)
+		case <-ctx.Done():
+		}
+	}()
 }
 
 // startForwarding connects the carrier and stages the adapter. With local
@@ -49,7 +72,7 @@ func startForwarding(ctx context.Context, policy connpolicy.Policy, source sessi
 	if err != nil {
 		return nil, nil, err
 	}
-	mux, err := fwdbroker.Start(context.WithoutCancel(ctx), commandStream{ch})
+	mux, err := fwdbroker.Start(ctx, context.WithoutCancel(ctx), commandStream{ch})
 	if err != nil {
 		peer.Close()
 		return nil, nil, err
@@ -130,6 +153,8 @@ func runForwarding(ctx context.Context, policy connpolicy.Policy, source session
 		return 255, err
 	}
 	defer f.stop(ctx)
+	ctx, stopWatch := watchAuthorization(ctx, source.Failures())
+	defer stopWatch()
 	if opts.fwd.StdioSet {
 		target := forward.Target{Host: opts.fwd.Stdio.Host, Port: opts.fwd.Stdio.Port}
 		if opts.fwd.Stdio.Port == forwardspec.PortStreamLocal {
@@ -139,7 +164,11 @@ func runForwarding(ctx context.Context, policy connpolicy.Policy, source session
 			stdin = eofReader{}
 		}
 		// ssh prints the open failure, then "stdio forwarding failed" (fatal).
-		if err := forward.Stdio(ctx, f.mux, target, stdin, stdout, forwardLog(diag.From(ctx))); err != nil {
+		err := forward.Stdio(ctx, f.mux, target, stdin, stdout, forwardLog(diag.From(ctx)))
+		if lost := authorizationLost(ctx); lost != nil {
+			return 255, lost
+		}
+		if err != nil {
 			return 255, err
 		}
 		return 0, nil
@@ -150,6 +179,9 @@ func runForwarding(ctx context.Context, policy connpolicy.Policy, source session
 	f.serve(ctx, listeners)
 	select {
 	case <-ctx.Done():
+		if lost := authorizationLost(ctx); lost != nil {
+			return 255, lost
+		}
 		// The app's signal context ends together with this channel's delivery.
 		select {
 		case sig := <-signals:
@@ -183,18 +215,47 @@ func (eofReader) Read([]byte) (int, error) { return 0, io.EOF }
 // prints nothing while waiting (its "Waiting for forwarded connections to
 // terminate" was SSH-1 only). It returns false when a termination signal
 // ended the wait; ssh then exits 255. A carrier failure is reported and ends
-// the wait, keeping the session's status.
-func (f *forwarding) await(ctx context.Context, chans *forward.Channels) bool {
+// the wait, keeping the session's status. Lost authorization ends it with
+// false too, reported like a session's.
+func (f *forwarding) await(ctx context.Context, chans *forward.Channels, failures <-chan string) bool {
 	log := diag.From(ctx)
+	ctx, stopWatch := watchAuthorization(ctx, failures)
+	defer stopWatch()
 	if n := chans.Len(); n > 0 {
 		log.Debug(msgForwardWait, diag.Count("connections", n))
 	}
 	err := chans.WaitIdle(ctx, f.mux.Done())
 	if errors.Is(err, forward.ErrWaitStopped) {
-		log.Failure(diag.Error, f.mux.Err())
+		f.reportFailure(ctx)
 		return true
 	}
+	if lost := authorizationLost(ctx); lost != nil {
+		log.Failure(diag.Fatal, lost)
+	}
 	return err == nil
+}
+
+// watchAuthorization cancels the returned context when the source reports
+// lost authorization (the direct periodic check or the browser heartbeat),
+// so forwarding without a session ends as a session would.
+func watchAuthorization(ctx context.Context, failures <-chan string) (context.Context, func()) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	go func() {
+		select {
+		case msg := <-failures:
+			cancel(fmt.Errorf("%w: %s", commandrun.ErrAuthorization, msg))
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, func() { cancel(nil) }
+}
+
+// authorizationLost is the cause set by watchAuthorization, if any.
+func authorizationLost(ctx context.Context) error {
+	if cause := context.Cause(ctx); errors.Is(cause, commandrun.ErrAuthorization) {
+		return cause
+	}
+	return nil
 }
 
 // sessionEnded reports a session that closed by itself, with or without a

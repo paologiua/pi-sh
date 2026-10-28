@@ -60,7 +60,7 @@ func TestSuspendTTYSessionHelper(t *testing.T) {
 	}()
 	if mode == "interactive" {
 		err := runInteractiveSession(ctx, nil, client, channel, local, local, local, '~')
-		if err != nil {
+		if !errors.Is(err, errEscape) {
 			t.Fatalf("interactive session: %v", err)
 		}
 	} else {

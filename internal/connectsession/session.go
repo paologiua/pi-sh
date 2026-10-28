@@ -109,24 +109,49 @@ var retryPause = time.Second
 var ErrConnectTimeout = errors.New("Connect connection establishment timed out before any remote command was sent")
 
 // directSource holds one memory-only web session. Every establishment attempt
-// prepares a fresh Connect connection, because signaling is single-use.
+// prepares a fresh Connect connection, because signaling is single-use. A
+// connection whose exchange succeeded may carry a live session (such as the
+// forwarding carrier next to the shell), so its authorization watcher keeps
+// running until Close; only an attempt abandoned before its answer is closed
+// when the next one starts. Failures merges every watcher into one channel.
 type directSource struct {
 	client      *webauth.Client
 	lifetime    context.Context
 	destination string
 	log         *diag.Logger
+	failures    chan string
 	mu          sync.Mutex
-	current     *webauth.Connection
+	current     signaling
+	used        bool
+	live        []signaling
+}
+
+// signaling is the part of a prepared Connect connection the source keeps:
+// its single-use exchange and its authorization watcher.
+type signaling interface {
+	Exchange(context.Context, webrtc.SessionDescription) (webrtc.SessionDescription, error)
+	Failures() <-chan string
+	Close() error
+}
+
+func newDirectSource(client *webauth.Client, lifetime context.Context, destination string, log *diag.Logger) *directSource {
+	return &directSource{client: client, lifetime: lifetime, destination: destination, log: log, failures: make(chan string, 1)}
+}
+
+// relay forwards a connection's authorization failure to the merged channel.
+func (s *directSource) relay(c signaling) {
+	select {
+	case msg := <-c.Failures():
+		select {
+		case s.failures <- msg:
+		default: // one undelivered failure already ends every session
+		}
+	case <-s.lifetime.Done():
+	}
 }
 
 func (s *directSource) Configuration(ctx context.Context) (browserauth.Configuration, error) {
-	s.mu.Lock()
-	old := s.current
-	s.current = nil
-	s.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
+	s.adopt(nil)
 	preparing, cancel := context.WithTimeout(ctx, prepareLimit)
 	defer cancel()
 	s.log.Debug(MsgDiscovery)
@@ -136,15 +161,28 @@ func (s *directSource) Configuration(ctx context.Context) (browserauth.Configura
 		return browserauth.Configuration{}, err
 	}
 	s.log.Debug(MsgDiscoveryDone, diag.Elapsed("elapsed", time.Since(started)), diag.Count("ice_servers", len(connection.ICE.ICEServers)))
-	s.mu.Lock()
-	s.current = connection
-	s.mu.Unlock()
+	s.adopt(connection)
 	var c browserauth.Configuration
 	c.Device.ID, c.Device.Name, c.ICE = connection.Device.ID, connection.Device.Name, connection.ICE
 	return c, nil
 }
 
-func (s *directSource) connection() *webauth.Connection {
+// adopt makes c (or nothing) the current attempt. The previous attempt is
+// closed only if no exchange succeeded on it; c's failures are relayed.
+func (s *directSource) adopt(c signaling) {
+	s.mu.Lock()
+	old, used := s.current, s.used
+	s.current, s.used = c, false
+	s.mu.Unlock()
+	if old != nil && !used {
+		_ = old.Close()
+	}
+	if c != nil {
+		go s.relay(c)
+	}
+}
+
+func (s *directSource) connection() signaling {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.current
@@ -155,19 +193,29 @@ func (s *directSource) Exchange(ctx context.Context, offer webrtc.SessionDescrip
 	if c == nil {
 		return webrtc.SessionDescription{}, errors.New("Connect device preparation must precede signaling")
 	}
-	return c.Exchange(ctx, offer)
+	answer, err := c.Exchange(ctx, offer)
+	if err == nil {
+		s.mu.Lock()
+		if s.current == c && !s.used {
+			s.used = true
+			s.live = append(s.live, c)
+		}
+		s.mu.Unlock()
+	}
+	return answer, err
 }
 
-func (s *directSource) Failures() <-chan string {
-	if c := s.connection(); c != nil {
-		return c.Failures()
-	}
-	return nil
-}
+func (s *directSource) Failures() <-chan string { return s.failures }
 
 func (s *directSource) Close() error {
-	if c := s.connection(); c != nil {
-		return c.Close()
+	s.mu.Lock()
+	conns := append([]signaling(nil), s.live...)
+	if s.current != nil && !s.used {
+		conns = append(conns, s.current)
+	}
+	s.mu.Unlock()
+	for _, c := range conns {
+		_ = c.Close()
 	}
 	return nil
 }
@@ -266,7 +314,7 @@ func AuthenticateWithPolicy(ctx context.Context, destination string, direct bool
 		log.Debug(MsgLoginDone)
 		log.Verbose(MsgAuthenticated, diag.State("method", "direct-login"))
 		log.Info(MsgSignedIn)
-		return &directSource{client: client, lifetime: ctx, destination: destination, log: log}, nil
+		return newDirectSource(client, ctx, destination, log), nil
 	}
 	if policy.DefaultAccount != "" {
 		// The default only replaces the direct-login email prompt; the

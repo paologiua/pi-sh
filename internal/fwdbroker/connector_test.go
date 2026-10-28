@@ -1,9 +1,12 @@
 package fwdbroker
 
 import (
+	"context"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"pi-sh/internal/forward"
 )
@@ -52,5 +55,47 @@ func TestPerlOpenFitsAdapterRecord(t *testing.T) {
 	}
 	if _, err := perlSockets.Argv(forward.Target{Path: "/" + strings.Repeat("s", 107)}); err == nil {
 		t.Fatal("path longer than sockaddr_un accepted")
+	}
+}
+
+// The adapter's own failure record reaches the caller with its reason; any
+// other text after Z is not echoed. Before, "Z protocol" fell through to the
+// generic ErrProtocol and the reason was lost.
+func TestAdapterFailureRecordIsReported(t *testing.T) {
+	m := &Mux{streams: map[int]*stream{}}
+	if err := m.dispatch("Z protocol"); err == nil || err.Error() != "forwarding adapter failed: protocol" {
+		t.Fatal(err)
+	}
+	if err := m.dispatch("Z \x1b[2J"); err == nil || strings.Contains(err.Error(), "\x1b") {
+		t.Fatal(err)
+	}
+}
+
+// silentCarrier accepts every send and never answers, like a device that
+// stalls before the adapter is ready.
+type silentCarrier struct{}
+
+func (silentCarrier) Send(ctx context.Context, b []byte) error { return ctx.Err() }
+func (silentCarrier) Receive(ctx context.Context) ([]byte, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// Staging is bounded by time and by the setup context. Before, a device that
+// never finished detection held pi-sh (and ignored Ctrl-C) indefinitely.
+func TestStartIsBounded(t *testing.T) {
+	old := stageTimeout
+	stageTimeout = 200 * time.Millisecond
+	defer func() { stageTimeout = old }()
+	life, stop := context.WithCancel(context.Background())
+	defer stop()
+	if _, err := Start(context.Background(), life, silentCarrier{}); !errors.Is(err, ErrStageTimeout) {
+		t.Fatal(err)
+	}
+	stageTimeout = time.Minute
+	setup, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+	if _, err := Start(setup, life, silentCarrier{}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
 	}
 }

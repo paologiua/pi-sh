@@ -63,9 +63,41 @@ type Mux struct {
 	once    sync.Once
 }
 
+// ErrStageTimeout reports a device that did not finish staging the adapter and
+// detecting connectors in time.
+var ErrStageTimeout = errors.New("forwarding adapter setup timed out")
+
+// stageTimeout bounds staging and connector detection (a test may shorten it).
+var stageTimeout = 30 * time.Second
+
 // Start stages the adapter over the carrier and selects a connector. ctx must
-// remain live while the Mux is used; the carrier is caller-owned.
-func Start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
+// remain live while the Mux is used; setup (a signal, for example) or
+// stageTimeout abandon the staging, after which the caller closes the
+// carrier, which also ends the abandoned exchange. The carrier is
+// caller-owned.
+func Start(setup, ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
+	type result struct {
+		m   *Mux
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		m, err := start(ctx, carrier)
+		done <- result{m, err}
+	}()
+	timer := time.NewTimer(stageTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.m, r.err
+	case <-setup.Done():
+		return nil, setup.Err()
+	case <-timer.C:
+		return nil, ErrStageTimeout
+	}
+}
+
+func start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
 	adapter, err := shellbroker.NewAdapter(source, []string{"cat"}, "forwarding adapter requires existing Bash >=4.3 and cat")
 	if err != nil {
 		return nil, err
@@ -177,11 +209,15 @@ func (m *Mux) receive() {
 }
 
 func (m *Mux) dispatch(text string) error {
+	// The adapter's own failure ("Z protocol") has two fields; check it first.
+	if reason, ok := strings.CutPrefix(text, "Z "); ok {
+		if reason != "protocol" {
+			reason = "unrecognized reason" // never echo device-chosen text
+		}
+		return errors.New("forwarding adapter failed: " + reason)
+	}
 	f := strings.Fields(text)
 	if len(f) < 2 {
-		if strings.HasPrefix(text, "Z ") {
-			return errors.New("forwarding adapter failed: " + text[2:])
-		}
 		return ErrProtocol
 	}
 	id, err := strconv.Atoi(f[1])
@@ -271,6 +307,7 @@ func (m *Mux) finish(s *stream) {
 		return
 	}
 	s.released = true
+	close(s.goneCh)
 	if !s.inClosed {
 		s.inClosed = true
 		close(s.inClosedCh)
@@ -326,7 +363,7 @@ func (m *Mux) start(ctx context.Context, argv []string, readyText string, hexStd
 	m.mu.Lock()
 	m.next++
 	s := &stream{mux: m, id: m.next, readyText: readyText, events: make(chan []byte, outWindow+1), readyCh: make(chan struct{}),
-		exitCh: make(chan struct{}), inClosedCh: make(chan struct{}), wake: make(chan struct{}, 1)}
+		exitCh: make(chan struct{}), inClosedCh: make(chan struct{}), goneCh: make(chan struct{}), wake: make(chan struct{}, 1)}
 	m.streams[s.id] = s
 	m.mu.Unlock()
 	mode := "r"
@@ -369,6 +406,7 @@ type stream struct {
 	outSeq, outRead             int
 	outEOF, gotData, ready      bool
 	readyCh, exitCh, inClosedCh chan struct{}
+	goneCh                      chan struct{} // closed when the adapter forgot the stream
 	inClosed, exited, released  bool
 	status                      int
 	stderr                      []byte
@@ -451,6 +489,14 @@ func (s *stream) eof() error {
 	}
 	select {
 	case <-s.exitCh:
+	case <-s.goneCh:
+		// Closed (C) before it opened or exited: nothing more will come.
+		s.mu.Lock()
+		exited := s.exited
+		s.mu.Unlock()
+		if !exited {
+			return io.EOF
+		}
 	case <-s.mux.done:
 		return s.mux.Err()
 	}

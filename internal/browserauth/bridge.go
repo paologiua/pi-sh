@@ -41,6 +41,7 @@ type Bridge struct {
 	config      chan Configuration
 	offers      chan webrtc.SessionDescription
 	answers     chan webrtc.SessionDescription
+	undelivered chan webrtc.SessionDescription // an offer whose response write failed
 	failures    chan string
 	authorized  chan struct{}
 	// watch starts one authorization watcher for all exchanges: several
@@ -62,7 +63,7 @@ func New(ctx context.Context, destination string) (*Bridge, error) {
 		return nil, errors.New("cannot create browser companion capability")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	b := &Bridge{listener: l, prefix: "/" + hex.EncodeToString(nonce[:]) + "/", destination: destination, config: make(chan Configuration, 1), offers: make(chan webrtc.SessionDescription), answers: make(chan webrtc.SessionDescription, 1), failures: make(chan string, 1), ctx: ctx, cancel: cancel}
+	b := &Bridge{listener: l, prefix: "/" + hex.EncodeToString(nonce[:]) + "/", destination: destination, config: make(chan Configuration, 1), offers: make(chan webrtc.SessionDescription), answers: make(chan webrtc.SessionDescription, 1), undelivered: make(chan webrtc.SessionDescription, 1), failures: make(chan string, 1), ctx: ctx, cancel: cancel}
 	b.authorized = make(chan struct{}, 1)
 	b.heartbeat = 90 * time.Second
 	b.server = &http.Server{Handler: http.HandlerFunc(b.serve), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 130 * time.Second, WriteTimeout: 130 * time.Second, MaxHeaderBytes: 8192}
@@ -93,6 +94,16 @@ func (b *Bridge) Configuration(ctx context.Context) (Configuration, error) {
 }
 
 func (b *Bridge) Exchange(ctx context.Context, offer webrtc.SessionDescription) (webrtc.SessionDescription, error) {
+	// An abandoned earlier exchange may have left its answer or its offer here;
+	// neither belongs to this offer.
+	select {
+	case <-b.answers:
+	default:
+	}
+	select {
+	case <-b.undelivered:
+	default:
+	}
 	select {
 	case b.offers <- offer:
 	case message := <-b.failures:
@@ -168,10 +179,18 @@ func (b *Bridge) serve(w http.ResponseWriter, r *http.Request) {
 			dest, _ := json.Marshal(b.destination)
 			_, _ = io.WriteString(w, "("+companion+")("+string(base)+","+string(dest)+");")
 		case "offer":
+			var offer webrtc.SessionDescription
 			select {
-			case offer := <-b.offers:
-				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(offer)
+			case offer = <-b.undelivered:
+			default:
+			}
+			if offer.SDP != "" {
+				b.deliver(w, r, offer)
+				return
+			}
+			select {
+			case offer = <-b.offers:
+				b.deliver(w, r, offer)
 			case <-r.Context().Done():
 			case <-b.ctx.Done():
 				w.WriteHeader(http.StatusGone)
@@ -264,5 +283,26 @@ func failureMessage(code string) string {
 		return "local companion request failed; restart pi-sh and attach its new companion"
 	default:
 		return "browser operation failed"
+	}
+}
+
+// deliver writes an offer to a polling companion. If the poll already ended
+// (the browser's long-poll timeout), the offer is kept for the next poll
+// instead of being lost while Exchange waits for its answer.
+func (b *Bridge) deliver(w http.ResponseWriter, r *http.Request, offer webrtc.SessionDescription) {
+	w.Header().Set("Content-Type", "application/json")
+	err := r.Context().Err()
+	if err == nil {
+		err = json.NewEncoder(w).Encode(offer)
+	}
+	if err == nil {
+		err = http.NewResponseController(w).Flush()
+	}
+	if err == nil {
+		return
+	}
+	select {
+	case b.undelivered <- offer:
+	default:
 	}
 }

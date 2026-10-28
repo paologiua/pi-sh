@@ -155,7 +155,9 @@ func (c *Console) globGet(ctx context.Context, src string, dst *string, options 
 			}
 			local = c.local(base)
 		}
-		f.add(matchError(several, remote, c.get(remote, local, options)))
+		opts := options
+		opts.named = dst == nil
+		f.add(matchError(several, remote, c.get(remote, local, opts)))
 	}
 	return f.last
 }
@@ -185,7 +187,9 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 		if dst != nil {
 			remote = *dst
 		}
-		f.add(matchError(several, local, c.put(local, c.remote(remote), options)))
+		opts := options
+		opts.named = dst == nil
+		f.add(matchError(several, local, c.put(local, c.remote(remote), opts)))
 	}
 	return f.last
 }

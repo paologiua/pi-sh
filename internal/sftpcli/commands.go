@@ -456,7 +456,9 @@ func (c *Console) get(remote, local string, options transferOptions) (result err
 	if !info.Mode().IsRegular() {
 		return errors.New("get requires a regular file")
 	}
-	if info, err := os.Stat(local); err == nil && info.IsDir() {
+	if info, err := os.Stat(local); err == nil && info.IsDir() && options.named {
+		return errors.New("local destination is a directory")
+	} else if err == nil && info.IsDir() {
 		base, err := localBase(remote)
 		if err != nil {
 			return err
@@ -522,7 +524,9 @@ func (c *Console) put(local, remote string, options transferOptions) (result err
 		}
 		metadata.mtime, metadata.mode = info.ModTime(), info.Mode().Perm()
 	}
-	if info, err := c.Client.Stat(remote); err == nil && info.IsDir() {
+	if info, err := c.Client.Stat(remote); err == nil && info.IsDir() && options.named {
+		return errors.New("remote destination is a directory")
+	} else if err == nil && info.IsDir() {
 		remote = strings.TrimSuffix(remote, "/") + "/" + filepath.Base(local)
 	}
 	destination, err := c.Client.Stat(remote)

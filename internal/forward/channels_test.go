@@ -147,3 +147,18 @@ func TestChannelsReleaseListeners(t *testing.T) {
 		t.Fatal("nil table")
 	}
 }
+
+// A -R peer from the device is listed by ~# only as an address and a port:
+// anything else (here a terminal escape sequence) is a protocol error.
+func TestParsePeerRejectsDeviceText(t *testing.T) {
+	for in, want := range map[string]string{"127.0.0.1 5000": "127.0.0.1 5000", "::1 1": "::1 1", "::ffff:7f00:1 2": "::ffff:127.0.0.1 2"} {
+		if got, ok := parsePeer(in); !ok || got != want {
+			t.Errorf("%q: %q %v", in, got, ok)
+		}
+	}
+	for _, in := range []string{"\x1b]52;c;AAAA\a 1", "127.0.0.1", "127.0.0.1 65536", "127.0.0.1 01", "host 22", "127.0.0.1 2 3"} {
+		if got, ok := parsePeer(in); ok {
+			t.Errorf("%q accepted as %q", in, got)
+		}
+	}
+}

@@ -23,7 +23,7 @@ func globFixture(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"a1", "a2", "b*x", ".hid", "q?", "[x]", "x", "sp ace", `back\slash`, "A9", "sub/s1"} {
+	for _, name := range []string{"a1", "a2", "b*x", ".hid", "q?", "[x]", "x", "sp ace", `back\slash`, "A9", "sub/s1", "l"} {
 		if err := os.WriteFile(filepath.Join(root, "r", name), []byte("data "+name), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -135,6 +135,10 @@ func TestGlobCommandsAgainstLocalOpenSSH(t *testing.T) {
 		{"rename r/a1 'r/n?w'", "", false},
 		{"symlink 'x*' r/lnk", "", false},
 		{"cd 'r/s*'", "", false},
+		// Without a target the destination is the source's name, never a
+		// directory to write into: "l" is a local and a remote directory.
+		{"get r/l", "", false},
+		{"put r/l", "", false},
 	} {
 		reference := tc.reference
 		if reference == "" {

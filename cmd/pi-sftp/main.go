@@ -14,6 +14,7 @@ import (
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
+	"pi-sh/internal/forwardspec"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
 	"pi-sh/internal/sshconfig"
@@ -33,7 +34,7 @@ func app() int {
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
 	readOnly := f.Bool("read-only", false, "start the existing server in read-only mode; reject remote writes")
 	flush := f.Bool("f", false, "request a flush after each transfer (upload requires server fsync extension)")
-	resume := f.Bool("a", false, "resume transfers from destination size; existing prefixes must match")
+	resume := f.Bool("a", false, "resume transfers from the destination's size; the existing prefix is trusted, not compared")
 	preserve := f.Bool("p", false, "preserve regular-file permission bits and access/modification times")
 	batch := f.String("b", "", "batch file, or - for stdin")
 	config := f.String("F", "none", "explicit configuration file, or none")
@@ -45,13 +46,13 @@ func app() int {
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	cliargs.Refuse(f, map[string]string{
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
-		"A": sshconfig.ReasonForwarding,
+		"A": forwardspec.ErrAgentForwarding.Error(),
 		"N": "pi-sftp's connection layer is not quiet by default; use -v/-q or LogLevel",
 		"r": "recursive console transfers are not implemented; use pi-cp -r",
 	}, map[string]string{
 		"B": "SFTP buffer size tuning is not implemented", "R": "SFTP request count tuning is not implemented",
 		"X": "SFTP buffer and request tuning is not implemented",
-		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": sshconfig.ReasonForwarding,
+		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
 		"l": "bandwidth limiting is not implemented",
 		"D": "a local SFTP server program cannot replace the Connect session",
 		"S": "pi-sftp always connects through Raspberry Pi Connect; the transport program cannot be replaced",

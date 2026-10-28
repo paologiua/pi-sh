@@ -28,7 +28,7 @@ const perlLoader = `my($l,$p)=("","");` +
 	`my $n=substr($p,0,8,"");eval substr($p,0,$n,"");exit 3`
 
 // ErrNoListener reports a device without the Perl that -R needs.
-var ErrNoListener = errors.New("remote forwarding needs Perl (perl-base) on the device; pi-sh does not install software")
+var ErrNoListener = fmt.Errorf("%w: remote forwarding needs Perl (perl-base) on the device; pi-sh does not install software", forward.ErrNoRemoteListener)
 
 // CanListen reports whether -R listeners can run on the device.
 func (m *Mux) CanListen() bool {

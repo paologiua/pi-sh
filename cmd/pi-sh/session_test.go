@@ -44,7 +44,7 @@ func TestSessionEndReasons(t *testing.T) {
 		want     error
 		wantText string
 	}{
-		{name: "local-disconnect", input: errEscape},
+		{name: "local-disconnect", input: errEscape, want: errEscape},
 		{name: "remote-close", output: io.EOF, wantText: "has not supplied a remote exit status"},
 		{name: "input-failure", input: sentinel, want: sentinel},
 		{name: "output-failure", output: sentinel, want: sentinel},

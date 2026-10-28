@@ -391,3 +391,24 @@ func TestRemoteForwardingBindAddresses(t *testing.T) {
 		r.Close()
 	}
 }
+
+// A refusal of one forwarding (here a scoped IPv6 address) gets only ssh's
+// warning; only a device without Perl adds an error line. Before, every
+// Listen error was labelled "remote listener unavailable" at error level.
+func TestRemoteListenRefusalIsOnlyAWarning(t *testing.T) {
+	m, err := startMux(t, "perl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := &logLines{}
+	fwd, ok := forwardspec.Remote("[fe80::1%lo0]:0:127.0.0.1:1", nil)
+	if !ok {
+		t.Skip("scoped listen address not parsed")
+	}
+	if _, err := forward.ListenRemote(context.Background(), m, forward.RemoteConfig{Forwards: []forwardspec.Forward{fwd}}, logs.log()); err != nil {
+		t.Fatal(err)
+	}
+	if !logs.has("info: Warning: remote port forwarding failed for listen port 0") || logs.has("error:") {
+		t.Fatal(logs.lines)
+	}
+}

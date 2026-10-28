@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -230,5 +231,40 @@ func TestSecondExchangeSharesOneAuthorizationWatcher(t *testing.T) {
 		case <-stop:
 			return
 		}
+	}
+}
+
+// An offer taken by a poll that already ended is kept for the next poll, and an
+// answer left by an abandoned exchange is not handed to the next offer. Before,
+// the first lost the offer (Exchange then waited for an answer that could not
+// come) and the second paired a new offer with a stale answer.
+func TestUndeliveredOfferAndStaleAnswer(t *testing.T) {
+	b := testBridge(t)
+	ended, cancelPoll := context.WithCancel(context.Background())
+	cancelPoll()
+	poll := httptest.NewRequest("GET", "http://"+b.listener.Addr().String()+b.prefix+"offer", nil).WithContext(ended)
+	b.deliver(httptest.NewRecorder(), poll, webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: "kept-offer"})
+	o := request(t, b, "GET", b.prefix+"offer", Origin, "")
+	var offer webrtc.SessionDescription
+	if err := json.NewDecoder(o.Body).Decode(&offer); err != nil || offer.SDP != "kept-offer" {
+		t.Fatalf("offer %q %v", offer.SDP, err)
+	}
+	o.Body.Close()
+
+	stale := request(t, b, "POST", b.prefix+"answer", Origin, `{"type":"answer","sdp":"stale-answer"}`)
+	stale.Body.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got := make(chan string, 1)
+	go func() {
+		a, _ := b.Exchange(ctx, webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: "new-offer"})
+		got <- a.SDP
+	}()
+	o = request(t, b, "GET", b.prefix+"offer", Origin, "")
+	o.Body.Close()
+	fresh := request(t, b, "POST", b.prefix+"answer", Origin, `{"type":"answer","sdp":"fresh-answer"}`)
+	fresh.Body.Close()
+	if sdp := <-got; sdp != "fresh-answer" {
+		t.Fatalf("exchange got %q", sdp)
 	}
 }

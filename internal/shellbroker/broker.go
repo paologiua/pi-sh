@@ -178,9 +178,26 @@ type recordResult struct {
 	err  error
 }
 
+// ErrStageTimeout reports a device that did not complete staging in time.
+var ErrStageTimeout = errors.New("remote adapter setup timed out before the command was started")
+
+// stageTimeout bounds staging (a test may shorten it).
+var stageTimeout = time.Minute
+
 // stage uploads adapter source and command bytes without committing execution.
-func (p *Plan) stage(ctx context.Context, stream Stream, script string) (*wire, error) {
+// It is bounded by stageTimeout: before the command starts, a stalled device
+// (or a login shell that cannot run the bootstrap) would otherwise hold the
+// client, with a TTY session's local terminal already raw, indefinitely.
+func (p *Plan) stage(life context.Context, stream Stream, script string) (_ *wire, err error) {
+	ctx, cancel := context.WithTimeoutCause(life, stageTimeout, ErrStageTimeout)
+	defer cancel()
 	w := &wire{ctx: ctx, stream: stream, prefix: p.prefix}
+	defer func() {
+		if err != nil && errors.Is(context.Cause(ctx), ErrStageTimeout) {
+			err = ErrStageTimeout
+		}
+		w.ctx = life // later records use the caller's lifetime
+	}()
 	if err := stream.Send(ctx, []byte(p.bootstrap)); err != nil {
 		return nil, err
 	}

@@ -37,6 +37,9 @@ func TestSCPOptionDecisions(t *testing.T) {
 		{[]string{"--direct-login", "-B", "source", "pi:x"}, 255, "BatchMode"},
 		{[]string{"--direct-login", "-sT", "-oBatchMode=yes", "source", "pi:x"}, 255, "BatchMode"},
 		{[]string{"--direct-login", "-3", "pi:a", "pi:b"}, 1, "remote-to-remote"},
+		// -A is agent forwarding and -J ProxyJump (not X11 or tunnels).
+		{[]string{"--direct-login", "-A", "source", "pi:x"}, 1, "agent forwarding"},
+		{[]string{"--direct-login", "-J", "jump", "source", "pi:x"}, 1, "ProxyJump"},
 		{[]string{"--direct-login", "-4", "source", "pi:x"}, 1, "address family"},
 		{[]string{"--direct-login", "-6", "source", "pi:x"}, 1, "address family"},
 		{[]string{"--direct-login", "-C", "source", "pi:x"}, 1, "compression"},

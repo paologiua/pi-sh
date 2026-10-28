@@ -13,6 +13,7 @@ import (
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/copycli"
 	"pi-sh/internal/diag"
+	"pi-sh/internal/forwardspec"
 	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
@@ -45,10 +46,10 @@ func app() int {
 	cliargs.Refuse(f, map[string]string{
 		"3": "remote-to-remote copies are not implemented",
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
-		"A": sshconfig.ReasonForwarding, "O": "the legacy SCP protocol is not implemented; pi-cp always uses SFTP",
+		"A": forwardspec.ErrAgentForwarding.Error(), "O": "the legacy SCP protocol is not implemented; pi-cp always uses SFTP",
 		"R": "remote-to-remote copies are not implemented",
 	}, map[string]string{
-		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": sshconfig.ReasonForwarding,
+		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
 		"l": "bandwidth limiting is not implemented",
 		"D": "a local SFTP server program cannot replace the Connect session",
 		"S": "pi-cp always connects through Raspberry Pi Connect; the transport program cannot be replaced",

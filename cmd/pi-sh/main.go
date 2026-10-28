@@ -128,6 +128,7 @@ func app() int {
 			session = chans.Open(sessionChannel)
 			ctx = withChannels(ctx, chans)
 			f.serve(ctx, listeners)
+			f.watch(ctx)
 			defer f.stop(ctx)
 			fwd = f
 		}
@@ -138,7 +139,7 @@ func app() int {
 		err = connectWithPolicy(ctx, opts.policy, source, escape, plan, brokerPlan, ttyCommand, stdin, !opts.broker && !opts.legacy)
 		if fwd != nil && sessionEnded(err) {
 			chans.Release(session)
-			if !fwd.await(ctx, chans) {
+			if !fwd.await(ctx, chans, source.Failures()) {
 				return 255
 			}
 		}

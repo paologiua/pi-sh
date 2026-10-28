@@ -129,8 +129,9 @@ func TestInteractiveSessionQuiescesBorrowedIO(t *testing.T) {
 			}
 			switch name {
 			case "escape-idle", "escape-backpressure", "escape-help":
-				if err != nil {
-					t.Fatal("intentional disconnect failed", err)
+				// ~. reports errEscape (exit 255, as ssh); before, nil (exit 0).
+				if !errors.Is(err, errEscape) {
+					t.Fatal("intentional disconnect", err)
 				}
 			case "remote-exit":
 				if err == nil || !strings.Contains(err.Error(), "has not supplied a remote exit status") {

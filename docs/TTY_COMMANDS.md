@@ -50,8 +50,8 @@ one-byte read/status23 are detailed in [TTY_COMPLETION.md](TTY_COMPLETION.md).
 - Ctrl-C/Ctrl-D bytes reach the remote terminal. External local termination,
   auth loss, transport/resize failure and local disconnect cannot invent remote
   success or confirmed cleanup. External cancellation returns 255. Intentional
-  ~. disconnect returns local 0 with an explicit missing-cleanup diagnostic,
-  matching the existing local-disconnect status contract, not remote exit 0.
+  ~. disconnect returns local 255 with an explicit missing-cleanup diagnostic,
+  as ssh does (no remote status exists); since 2026-10-28 also in --legacy-shell.
   No C record or guessed signal request is sent to a running TTY program.
 - The coordinator restores local state on completion/error and preserves
   ordinary exits 130/143 separately from remote signal termination (255).

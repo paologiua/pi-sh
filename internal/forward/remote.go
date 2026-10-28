@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -74,7 +75,7 @@ func ListenRemote(ctx context.Context, lst Listener, cfg RemoteConfig, log Log) 
 		if err != nil {
 			log.debug("remote forward failure for: listen %s%d, connect %s", shown, fwd.Listen.Port, connectString(fwd.Connect))
 			log.debug("remote listener: %v", err)
-			if errors.Is(err, errNoRemoteListener) {
+			if errors.Is(err, ErrNoRemoteListener) {
 				log.error("%v", err)
 			}
 			if cfg.ExitOnFail {
@@ -93,9 +94,9 @@ func ListenRemote(ctx context.Context, lst Listener, cfg RemoteConfig, log Log) 
 	return r, nil
 }
 
-// errNoRemoteListener wraps a Listener refusal that applies to every
+// ErrNoRemoteListener is wrapped by a Listener refusal that applies to every
 // forwarding (no Perl on the device).
-var errNoRemoteListener = errors.New("remote listener unavailable")
+var ErrNoRemoteListener = errors.New("remote listener unavailable")
 
 // connectString is ssh's "host:port" for a forwarding's connect side, with
 // "socks:0" for dynamic and "path:-2" for a Unix socket.
@@ -161,7 +162,7 @@ func bindHost(e forwardspec.Endpoint) string {
 func startRemote(ctx context.Context, lst Listener, fwd forwardspec.Forward, permit []string, chans *Channels, log Log) (*remoteListener, error) {
 	stream, err := lst.Listen(ctx, bindHost(fwd.Listen), fwd.Listen.Port)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errNoRemoteListener, err)
+		return nil, err // only ErrNoRemoteListener is shown above debug, as ssh shows no reason
 	}
 	l := &remoteListener{fwd: fwd, bind: bindHost(fwd.Listen), permit: permit, log: log, stream: stream, chans: chans,
 		reader: bufio.NewReaderSize(stream, remoteMaxFrame+9), conns: map[uint32]*rconn{}}
@@ -253,7 +254,12 @@ func (l *remoteListener) run(ctx context.Context, wg *sync.WaitGroup) {
 			return
 		}
 		if t == 'N' {
-			c := newRconn(l, id, string(data))
+			peer, ok := parsePeer(string(data))
+			if !ok {
+				l.log.debug("remote listener for port %d: protocol error", l.port)
+				return
+			}
+			c := newRconn(l, id, peer)
 			l.mu.Lock()
 			if l.dead || l.conns[id] != nil {
 				l.mu.Unlock()
@@ -589,3 +595,20 @@ func (a remoteAddr) String() string  { return string(a) }
 
 func (c *rconn) LocalAddr() net.Addr  { return remoteAddr(c.l.bind + " " + strconv.Itoa(c.l.port)) }
 func (c *rconn) RemoteAddr() net.Addr { return remoteAddr(c.peer) }
+
+// parsePeer accepts the listener's "address port" for an accepted connection
+// only as an IP address and a port, so device-supplied text never reaches ~#
+// or diagnostics (terminal control sequences included). It returns the
+// canonical form.
+func parsePeer(s string) (string, bool) {
+	host, port, ok := strings.Cut(s, " ")
+	if !ok || len(s) > 128 {
+		return "", false
+	}
+	addr, err := netip.ParseAddr(host)
+	p, perr := strconv.Atoi(port)
+	if err != nil || perr != nil || p < 0 || p > 65535 || strconv.Itoa(p) != port {
+		return "", false
+	}
+	return addr.String() + " " + port, true
+}

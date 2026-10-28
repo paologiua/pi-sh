@@ -149,7 +149,7 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 	if oneWay > 0 {
 		carrier = newDelayed(ctx, s, oneWay)
 	}
-	m, err := Start(ctx, carrier)
+	m, err := Start(ctx, ctx, carrier)
 	t.Cleanup(func() {
 		if m != nil {
 			if err := m.Close(); err != nil {
@@ -552,5 +552,47 @@ func testAdapterCloseAfterEOFDeliversQueuedInput(t *testing.T, connector string)
 		}
 	case <-time.After(20 * time.Second):
 		t.Fatal("queued input not delivered after close")
+	}
+}
+
+// A stream without a readiness marker (netcat to a Unix socket) that is closed
+// before any output must not block Read: the adapter's "d" forgets it without
+// an exit status. Before, eof waited for an exit that never came, so Pipe and
+// with it the end of the session hung until the whole adapter closed.
+func TestReadAfterCloseBeforeOutputReturns(t *testing.T) {
+	m, err := startMux(t, "nc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp("", "pf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "s")
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		c, err := l.Accept()
+		if err == nil {
+			defer c.Close()
+			io.Copy(io.Discard, c) // never answers
+		}
+	}()
+	s, err := m.Dial(context.Background(), forward.Target{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	s.Close()
+	read := make(chan error, 1)
+	go func() { _, err := s.Read(make([]byte, 16)); read <- err }()
+	select {
+	case <-read:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Read blocked after Close")
 	}
 }

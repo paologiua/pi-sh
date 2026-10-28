@@ -50,7 +50,8 @@ func waitSession(ctx context.Context, cancel context.CancelFunc, tty localTermin
 			}
 			intentional = true
 			cancel()
-			return nil
+			// As ssh after ~.: no remote status exists, so app() exits 255.
+			return errEscape
 		}
 		return err
 	case err := <-outputError:

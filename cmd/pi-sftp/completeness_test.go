@@ -12,6 +12,9 @@ func TestSFTPOptionDecisions(t *testing.T) {
 		diagnostic string
 	}{
 		{[]string{"--direct-login", "-4", "pi"}, "address family"},
+		// -A is agent forwarding and -J ProxyJump (not X11 or tunnels).
+		{[]string{"--direct-login", "-A", "pi"}, "agent forwarding"},
+		{[]string{"--direct-login", "-J", "jump", "pi"}, "ProxyJump"},
 		{[]string{"--direct-login", "-6", "pi"}, "address family"},
 		{[]string{"--direct-login", "-C", "pi"}, "compression"},
 		{[]string{"--direct-login", "-N", "pi"}, "not quiet"},

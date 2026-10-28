@@ -235,6 +235,14 @@ l'intera directory. Il test di provenienza rifiuta modifiche non registrate;
 `go mod verify` da solo non verifica un replace locale. Leggi
 `third_party/sftp/PI_SH_CHANGES.md` prima di modificare il fork.
 
+## Revisione del codice e prove da approvare (2026-10-28)
+
+Revisione completa in quattro aree: difetti corretti con test e quelli registrati
+ma non modificati in `docs/CODE_REVIEW_2026-10-28.md`. Il piano esatto delle prove
+sul Pi che scrivono o aprono porte (half-close con il nuovo connettore Perl,
+velocità e `~#` di -R, `-R 0`) è in `docs/NATIVE_FORWARD_PLAN.md`: non ancora
+approvato dal proprietario.
+
 ## Revisione della matrice (2026-10-28)
 
 Ogni riga di `docs/SSH_COMPATIBILITY.md` è stata ricontrollata: tutti i test citati

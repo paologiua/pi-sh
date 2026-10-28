@@ -9,7 +9,9 @@ import (
 )
 
 // transferFlags stops at an operand or --; unsupported flags fail before I/O.
-type transferOptions struct{ flush, resume, preserve bool }
+// named marks a destination derived from the source name because no target
+// was given: as in OpenSSH sftp it is never a directory to write into.
+type transferOptions struct{ flush, resume, preserve, named bool }
 
 func transferFlags(args []string, options transferOptions) ([]string, transferOptions, error) {
 	for i, arg := range args {

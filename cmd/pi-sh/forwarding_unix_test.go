@@ -21,6 +21,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/pion/webrtc/v4"
 	"pi-sh/internal/browserauth"
+	"pi-sh/internal/commandrun"
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/forward"
@@ -41,6 +42,7 @@ type agentSource struct {
 	sessions int
 	peers    []*transport.Peer
 	shells   []*exec.Cmd
+	failures chan string
 }
 
 func newAgentSource(t *testing.T, lifetime context.Context) *agentSource {
@@ -85,8 +87,8 @@ func newAgentSource(t *testing.T, lifetime context.Context) *agentSource {
 func (*agentSource) Configuration(context.Context) (browserauth.Configuration, error) {
 	return browserauth.Configuration{}, nil
 }
-func (*agentSource) Failures() <-chan string { return nil }
-func (*agentSource) Close() error            { return nil }
+func (s *agentSource) Failures() <-chan string { return s.failures }
+func (*agentSource) Close() error              { return nil }
 
 func (s *agentSource) Exchange(ctx context.Context, offer webrtc.SessionDescription) (webrtc.SessionDescription, error) {
 	peer, err := transport.New(s.lifetime, transport.Config{})
@@ -546,7 +548,7 @@ func TestSessionEndWaitsForForwardedConnections(t *testing.T) {
 	}
 	chans.Release(session)
 	waited := make(chan bool, 1)
-	go func() { waited <- f.await(ctx, chans) }()
+	go func() { waited <- f.await(ctx, chans, nil) }()
 	// A connection opened during the wait is still forwarded.
 	late, err := net.Dial("tcp4", address)
 	if err != nil {
@@ -590,10 +592,123 @@ func TestSessionEndWaitsForForwardedConnections(t *testing.T) {
 	}
 	signalled, cancel := context.WithCancel(ctx)
 	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
-	if f.await(signalled, chans) {
+	if f.await(signalled, chans, nil) {
 		t.Fatal("signal did not end the wait")
 	}
 	if sessionEnded(errEscape) || sessionEnded(transport.ErrClosed) {
 		t.Fatal("~. or a transport failure must not wait")
 	}
+}
+
+// Lost authorization ends -N forwarding (and the end-of-session wait) with
+// 255 and the session's authorization error. Before, only a session read the
+// source's failures, so -N kept serving after the device was de-authorized.
+func TestForwardingEndsOnLostAuthorization(t *testing.T) {
+	lifetime, stop := context.WithTimeout(context.Background(), 60*time.Second)
+	defer stop()
+	source := newAgentSource(t, lifetime)
+	source.failures = make(chan string, 1)
+	_, port := echoServer(t)
+	local := freePort(t)
+	var logged bytes.Buffer
+	ctx := diag.With(lifetime, diag.Default(&logged, "pi-sh"))
+	opts, err := parseOptions([]string{"--browser", "-N", "-L", "127.0.0.1:" + strconv.Itoa(local) + ":127.0.0.1:" + strconv.Itoa(port), "pi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		code int
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		code, err := runForwarding(ctx, connpolicy.Default(), source, opts, nil, io.Discard)
+		done <- result{code, err}
+	}()
+	for deadline := time.Now().Add(20 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if c, err := net.Dial("tcp4", "127.0.0.1:"+strconv.Itoa(local)); err == nil {
+			c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("listener not ready")
+		}
+	}
+	source.failures <- "browser companion heartbeat expired"
+	select {
+	case r := <-done:
+		if r.code != 255 || !errors.Is(r.err, commandrun.ErrAuthorization) {
+			t.Fatalf("code %d err %v", r.code, r.err)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("-N kept serving after the authorization failure")
+	}
+
+	// The same during the wait after a session.
+	chans := forward.NewChannels()
+	opts, _ = parseOptions([]string{"--browser", "--experimental-command", "-T", "-L", "127.0.0.1:" + strconv.Itoa(freePort(t)) + ":127.0.0.1:" + strconv.Itoa(port), "pi", "true"})
+	f, listeners, err := startForwarding(ctx, opts.policy, source, opts, chans)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.stop(ctx)
+	f.serve(ctx, listeners)
+	chans.Open("held")
+	failures := make(chan string, 1)
+	failures <- "direct Connect authorization check failed"
+	if f.await(ctx, chans, failures) {
+		t.Fatal("wait survived the authorization failure")
+	}
+	if !strings.Contains(logged.String(), "session authorization check failed") {
+		t.Fatalf("not reported: %q", logged.String())
+	}
+}
+
+// A carrier that fails while the session runs is reported once. Before,
+// nothing watched it and stop's Close returned nil, so forwarding stopped
+// silently and every later connection just failed.
+func TestForwardingCarrierFailureIsReported(t *testing.T) {
+	lifetime, stop := context.WithTimeout(context.Background(), 60*time.Second)
+	defer stop()
+	source := newAgentSource(t, lifetime)
+	_, port := echoServer(t)
+	var logged guardedLog
+	ctx := diag.With(lifetime, diag.Default(&logged, "pi-sh"))
+	opts, err := parseOptions([]string{"--browser", "--experimental-command", "-T", "-L", "127.0.0.1:" + strconv.Itoa(freePort(t)) + ":127.0.0.1:" + strconv.Itoa(port), "pi", "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, listeners, err := startForwarding(ctx, opts.policy, source, opts, forward.NewChannels())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.serve(ctx, listeners)
+	f.watch(ctx)
+	f.peer.Close()
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(logged.String(), "forwarding carrier failed"); time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("not reported: %q", logged.String())
+		}
+	}
+	f.stop(ctx)
+	if n := strings.Count(logged.String(), "forwarding carrier failed"); n != 1 {
+		t.Fatalf("reported %d times: %q", n, logged.String())
+	}
+}
+
+type guardedLog struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (g *guardedLog) Write(p []byte) (int, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.b.Write(p)
+}
+
+func (g *guardedLog) String() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.b.String()
 }

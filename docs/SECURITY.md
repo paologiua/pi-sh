@@ -98,7 +98,7 @@ full-size staging and first output have local evidence, while Connect lifecycle
 and independent descendant cleanup remain unverified. TERM is quoted and bounded;
 dimensions are validated before inclusion in staged source, and no system setting
 or remote file is changed. Full local termios negotiation is not claimed.
-Intentional ~. disconnect returns local0 with missing-cleanup diagnostics;
+Intentional ~. disconnect returns local 255 (as ssh) with missing-cleanup diagnostics;
 restoration failures cannot be masked by that status or by a command result.
 See TTY_COMMANDS.md.
 
