@@ -462,10 +462,11 @@ func TestRemoteForwardingConnectionBeyondLimitWaits(t *testing.T) {
 	}
 }
 
-// TestRemoteForwardingConcurrencyBenchmark measures the total rate of 16 and
-// 64 concurrent -R connections, each sending 64 KiB and receiving it reversed
-// through a 40 ms round trip, and checks every byte. Opt-in with
-// PI_SH_FWD_BENCH=1 (docs/FORWARDING.md "Many streams").
+// TestRemoteForwardingConcurrencyBenchmark measures the total rate of 1, 16
+// and 64 concurrent -R connections, each sending 64 KiB and receiving it
+// reversed through a 40 ms round trip (PI_SH_FWD_BENCH_RTT, in ms, changes
+// it), and checks every byte. Opt-in with PI_SH_FWD_BENCH=1
+// (docs/FORWARDING.md "Many streams").
 func TestRemoteForwardingConcurrencyBenchmark(t *testing.T) {
 	if os.Getenv("PI_SH_FWD_BENCH") == "" {
 		t.Skip("set PI_SH_FWD_BENCH=1 to run the -R concurrency benchmark")
@@ -476,7 +477,7 @@ func TestRemoteForwardingConcurrencyBenchmark(t *testing.T) {
 	}
 	want := reversed(request)
 	for _, k := range []int{1, 16, 64} {
-		m, err := startMuxDelayed(t, "perl", 20*time.Millisecond)
+		m, err := startMuxDelayed(t, "perl", benchHalfRTT(t))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -500,7 +501,7 @@ func TestRemoteForwardingConcurrencyBenchmark(t *testing.T) {
 					return
 				}
 				defer c.Close()
-				c.SetDeadline(time.Now().Add(50 * time.Second))
+				c.SetDeadline(time.Now().Add(300 * time.Second))
 				go func() { c.Write(request); c.(*net.TCPConn).CloseWrite() }()
 				if got, err := io.ReadAll(c); err != nil || !bytes.Equal(got, want) {
 					mu.Lock()
@@ -515,4 +516,17 @@ func TestRemoteForwardingConcurrencyBenchmark(t *testing.T) {
 		}
 		t.Logf("connections=%d each way=%.0f KiB/s", k, float64(k*64)/time.Since(start).Seconds())
 	}
+}
+
+// benchHalfRTT is the one-way carrier delay for PI_SH_FWD_BENCH_RTT (default
+// 40 ms round trip).
+func benchHalfRTT(t *testing.T) time.Duration {
+	if v := os.Getenv("PI_SH_FWD_BENCH_RTT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			t.Fatal("invalid PI_SH_FWD_BENCH_RTT")
+		}
+		return time.Duration(n) * time.Millisecond / 2
+	}
+	return 20 * time.Millisecond
 }

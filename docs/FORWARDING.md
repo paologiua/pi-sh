@@ -353,9 +353,10 @@ connection, KiB/s):
 | Perl, 40 ms | 81 → 339 | 76 → 327 |
 | Perl, 150 ms | 24 → 99 | 24 → 98 |
 
-With a round trip the window (16 KiB per stream) is the limit; natively the
-Perl rates imply a round trip of about 30 ms. **Bounds.** At most eight
-records of 2 KiB in flight per stream and direction; 64 streams can therefore
+With a round trip the window (then 16 KiB per stream) is the limit; natively the
+Perl rates imply a round trip of about 30 ms (the window is now 64 KiB: "Adapter
+window" below). **Bounds** (then). At most eight
+records of 2 KiB in flight per stream and direction; 64 streams could therefore
 have about 2 MiB of output hex in flight, which the receive goroutine drains
 without blocking (it never waits on a consumer). Native `-R` throughput was
 measured later the same day with an approved plan (about 1.8 s for 1 MiB).
@@ -445,6 +446,46 @@ On the device the same plan took 11.3, 45.7 and 47.3 s instead of 13.0, 52.4
 and 55.4 s for 16, 64 and 65 connections (about 90 instead of 80 KiB/s each
 way), all complete. The remaining limit is the single adapter stream shared by
 both directions of every connection of one -R.
+
+## Adapter window — 2026-10-28
+
+The coalescing gain was small because the shared stream was not short of
+records but of window: eight unacknowledged 2 KiB records per stream and
+direction (16 KiB) cross the carrier once per round trip, whatever the
+number of connections behind the stream. The window is now 32 records
+(64 KiB), set once in forward.bash (`_fw_win`) and in mux.go (`inputWindow`,
+`outWindow`); `TestAdapterWindowMatchesMux` checks that they agree. It applies
+to every adapter stream, -L included.
+
+Local benchmarks (Bash 5.3, simulated round trip, KiB/s; -R each way in
+total, `PI_SH_FWD_BENCH_RTT` sets the round trip of the -R benchmark):
+
+| Case | Window 8 | Window 32 |
+| --- | --- | --- |
+| -R, 1 connection, 40 ms | 160 | 317–325 |
+| -R, 16 connections, 40 ms | 221–231 | 618–623 |
+| -R, 64 connections, 40 ms | 226–233 | 685–688 |
+| -R, 1 / 16 connections, 150 ms | 45 / 65 | 128 / 254 |
+| -R, 64 connections, 150 ms | 9 of 64 incomplete: at about 65 KiB/s the round needs about 63 s, beyond the harness mux's 60 s context | 263 |
+| -L Perl, one connection, 40 ms (download / upload) | 332 / 325 | 1270 / 569 |
+| -L Perl, 64 streams, 40 ms (total) | 4149 | 4180 |
+
+On the device (NATIVE_RMANY_PLAN.md, run again with the owner's go-ahead):
+16, 64 and 65 connections in 3.8, 15.2–15.6 and 15.7 s instead of 11.3,
+45.7 and 47.3 s (about 270 instead of 90 KiB/s each way in total), every
+connection complete in two runs. An earlier run the same day took 8.6 and
+27.2 s for 16 and 64 connections and then lost both of its WebRTC
+connections during the 65 round (`WebRTC transport closed`; the device's
+Connect journal logged both proxy sessions ending within a second); the
+cause was not found and did not recur in the two runs that followed (REAL_DEVICE_TESTS.md).
+Native -L with the larger window was not measured again.
+
+**Bounds.** At most 32 records of 2 KiB (4 KiB as hex) per stream and
+direction: with 64 streams up to 8 MiB of output hex in flight towards
+pi-sh, which the receive goroutine drains without blocking, and up to 8 MiB
+of queued input in the adapter's Bash memory on the device (about 3.5 GiB
+was available on the test device). The shell broker keeps its own
+eight-record window (SHELL_BROKER.md).
 
 ## End of session — 2026-10-28
 

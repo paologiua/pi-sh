@@ -11,6 +11,10 @@ _fw_emit() { printf '%s%s\n' "$_ps_prefix" "$*"; }
 _fw_fail() { _fw_emit 'Z protocol'; exit 125; }
 declare -a _fw_all=() S_pid=() S_wpid=() S_epid=() S_rpid=() S_out=() S_tok=() S_err=() S_wi=() S_wa=() S_mode=()
 declare -a S_oseq=() S_oack=() S_oeof=() S_eeof=() S_iseq=() S_ifwd=() S_iack=() S_ifin=() S_iclosed=() S_waeof=() S_ebytes=() S_grace=() S_q=()
+# Unacknowledged records per stream and direction (inputWindow and outWindow
+# in mux.go); each raw reader starts with one token per record.
+_fw_win=32 _fw_tokens=
+for ((_fw_k=0;_fw_k<_fw_win;_fw_k++)); do _fw_tokens+=$'\n'; done
 _fw_idle_pid= _fw_relay_pid=
 _fw_closeall() {
   local f k
@@ -26,7 +30,7 @@ _fw_kill_stream() {
     [[ $p =~ ^[0-9]+$ ]] && kill -KILL "$p" 2>/dev/null
   done
 }
-_fw_unqueue() { local id=$1 k; for ((k=id*8;k<id*8+8;k++)); do unset "S_q[k]"; done; }
+_fw_unqueue() { local id=$1 k; for ((k=id*_fw_win;k<id*_fw_win+_fw_win;k++)); do unset "S_q[k]"; done; }
 _fw_drop() {
   local id=$1
   _fw_kill_stream "$id"
@@ -170,7 +174,7 @@ _fw_open() {
     eval "exec ${_FW_R[0]}<&- ${_FW_R[1]}>&-"
     _fw_close "$co"
     _fw_all[ro]=1; _fw_all[rt]=1
-    printf '\n\n\n\n\n\n\n\n' >&"$rt"
+    printf %s "$_fw_tokens" >&"$rt"
     co=$ro S_tok[id]=$rt
   fi
   S_out[id]=$co; S_err[id]=$er; S_wi[id]=$wi; S_wa[id]=$wa; S_mode[id]=$mode
@@ -200,7 +204,7 @@ _fw_pump() {
   local id=$1 seq h
   ((S_iclosed[id]==0 && S_ifwd[id]==S_iack[id])) || return 0
   if ((S_ifwd[id]<S_iseq[id])); then
-    seq=$((S_ifwd[id]+1)) h=${S_q[id*8+(S_ifwd[id]+1)%8]}
+    seq=$((S_ifwd[id]+1)) h=${S_q[id*_fw_win+(S_ifwd[id]+1)%_fw_win]}
     printf '%s %s\n%s\n' "$seq" "${#h}" "$h" >&"${S_wi[id]}" || { _fw_inclosed "$id"; return 0; }
     S_ifwd[id]=$seq
   elif ((S_ifin[id])); then
@@ -221,7 +225,7 @@ _fw_service() {
           'A '*)
             line=${line#A }
             ((line==S_iack[id]+1 && line==S_ifwd[id])) || _fw_fail
-            S_iack[id]=$line; unset "S_q[id*8+line%8]"; _fw_emit "a $id $line"; _fw_pump "$id" ;;
+            S_iack[id]=$line; unset "S_q[id*_fw_win+line%_fw_win]"; _fw_emit "a $id $line"; _fw_pump "$id" ;;
           K) ((S_iclosed[id])) || _fw_inclosed "$id" ;;
           *) _fw_fail ;;
         esac
@@ -241,7 +245,7 @@ _fw_service() {
     fi
     if ((_fw_eof)); then S_eeof[id]=1; _fw_close "$err"; S_err[id]=; _fw_busy=1; fi
   fi
-  while ((S_oeof[id]==0 && S_oseq[id]-S_oack[id]<8)) && IFS= read -r -t 0 -u"$out"; do
+  while ((S_oeof[id]==0 && S_oseq[id]-S_oack[id]<_fw_win)) && IFS= read -r -t 0 -u"$out"; do
     _fw_busy=1
     if IFS= read -r -u"$out" n && [[ $n != F ]]; then
       if [[ $n =~ ^[1-9][0-9]{0,3}$ ]] && ((n%2==0 && n<=4096)) && IFS= read -r -N $((n+1)) -u"$out" hex &&
@@ -263,14 +267,14 @@ _fw_service() {
     _fw_busy=1
   fi
 }
-# "I id seq length hex": up to eight unacknowledged records of at most 2048
+# "I id seq length hex": up to _fw_win unacknowledged records of at most 2048
 # bytes per stream, queued here and written one at a time.
 _fw_input() {
   local id=$1 seq=$2 hex=$3
   [[ -n ${S_pid[id]} ]] || return 0
   ((S_iclosed[id])) && return 0
-  ((seq==S_iseq[id]+1 && S_iseq[id]-S_iack[id]<8 && S_ifin[id]==0)) || _fw_fail
-  S_iseq[id]=$seq; S_q[id*8+seq%8]=$hex
+  ((seq==S_iseq[id]+1 && S_iseq[id]-S_iack[id]<_fw_win && S_ifin[id]==0)) || _fw_fail
+  S_iseq[id]=$seq; S_q[id*_fw_win+seq%_fw_win]=$hex
   _fw_pump "$id"
 }
 _fw_record() {

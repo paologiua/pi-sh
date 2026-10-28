@@ -27,10 +27,14 @@ var source string
 
 const (
 	// MaxStreams bounds concurrent remote connectors (and their processes).
-	MaxStreams  = 64
-	inputChunk  = 2048
-	inputWindow = 8
-	outWindow   = 8
+	MaxStreams = 64
+	inputChunk = 2048
+	// inputWindow and outWindow are the unacknowledged records per stream and
+	// direction; both must equal _fw_win in forward.bash. At 8 (16 KiB) the
+	// round trip, not the device, bounded a stream: one -R carries every
+	// connection of that forward (FORWARDING.md "Adapter window").
+	inputWindow = 32
+	outWindow   = 32
 	outChunk    = 2048
 	maxStderr   = 4096
 	// maxOpen and maxWord are the adapter's record and argv-word bounds

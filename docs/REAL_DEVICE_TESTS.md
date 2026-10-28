@@ -992,3 +992,24 @@ the owner's go-ahead to measure): `k=16 ok=16 of 16, 11.3 s`, `k=64 ok=64 of
 64, 45.7 s`, `k=65 ok=65 of 65, 47.3 s`; the Mac counter saw 145 connections
 of 65536 bytes; status 0; afterwards no `perl` and nothing on 47141. About 90
 KiB/s each way instead of 80. Single run.
+
+**Window of 32 records** (FORWARDING.md "Adapter window"; same plan and
+bounds, run again with the owner's go-ahead, uncommitted tree on top of
+`59e152d`). The first run gave `k=16 ok=16 of 16, 8.6 s` and `k=64 ok=64 of
+64, 27.2 s`, then the 65 round stopped advancing and after about 46 s pi-sh
+reported `forwarding carrier failed: WebRTC transport closed` and exited 255
+(the Mac counter had all 145 requests of 65536 bytes; the replies of the last
+round were cut). The device's Connect journal logged both proxy sessions of
+that pi-sh (command and forwarding carrier) ending within a second with
+`sending reset packet in non-established state: state=Closed`; pi-sh's log
+gives no reason. Meanwhile Claude in Chrome had switched to another,
+signed-out Chrome profile, which delayed the cleanup check; the tab holding
+the companion stayed open on Devices. The next two runs, with Pion's logs
+written to a local file (since deleted; no ICE or DTLS problem logged before
+the normal close), both completed: `k=16 ok=16 of 16, 3.8 s`, `k=64 ok=64 of
+64, 15.2 s` (15.6 s), `k=65 ok=65 of 65, 15.7 s` (15.7 s); Mac counter 145
+connections of 65536 bytes each time; status 0. One run in between is not
+counted: a counter from the previous run still held the Mac port, so most
+connections were refused on the Mac (`connect_to 127.0.0.1 port 51141:
+failed.`, as ssh). Afterwards (read-only `ps` and `ss -ltn`): no `perl` or
+`nc`, nothing on 47141, only 22 and 11434 listening.

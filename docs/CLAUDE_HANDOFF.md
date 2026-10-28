@@ -264,8 +264,10 @@ Righe ancora aperte (lavoro rimanente):
 - SFTP: `mget`/`mput`, `-r` della console, flag di `ls`, `lumask`, `ln`, `chown`/
   `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
 - Forwarding: bind jolly/IPv6 di -R verificati sul Pi (2026-10-28, NATIVE_RBIND_PLAN.md); -R con molte connessioni verificato (16/64/65, tutte complete; frame uniti
-  in record: ~90 KiB/s per direzione invece di ~80; limite residuo: un solo
-  stream dell'adattatore per -R);
+  in record: ~90 KiB/s per direzione invece di ~80; poi finestra
+  dell'adattatore da 8 a 32 record: ~270 KiB/s, due corse complete; una corsa
+  precedente ha perso le connessioni WebRTC nel giro da 65, causa non trovata;
+  -L nativo con la nuova finestra non rimisurato);
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many

@@ -862,7 +862,10 @@ packages pass with Bash 5.3 (also under `-race`, five repetitions) and 5.2.37.
 every byte; results in FORWARDING.md "Many streams". Regression for the
 connector's eager reads: `TestPerlConnectorDrainsWhileReaderStalls`.
 `TestRemoteForwardingConcurrencyBenchmark` (same opt-in) does the same for -R
-with 1, 16 and 64 connections exchanging 64 KiB each way.
+with 1, 16 and 64 connections exchanging 64 KiB each way; `PI_SH_FWD_BENCH_RTT`
+(one value, ms) replaces its 40 ms round trip. `TestAdapterWindowMatchesMux`
+checks that forward.bash and mux.go use the same window (FORWARDING.md
+"Adapter window").
 
 **SIGHUP under nohup.** A test binary started with SIGHUP ignored (for example
 from `nohup`) passes that disposition to every child at exec, so the reference

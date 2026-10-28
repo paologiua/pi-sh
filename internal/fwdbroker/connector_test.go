@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,5 +116,20 @@ func TestNetcatRequestsLargeReceiveBuffer(t *testing.T) {
 	argv, err = openBSDNetcat.Argv(forward.Target{Path: "/run/x.sock"})
 	if err != nil || strings.Contains(strings.Join(argv, " "), "-I") {
 		t.Fatalf("unix argv %q, %v", argv, err)
+	}
+}
+
+// The adapter and the mux must agree on the window, or the adapter fails the
+// protocol when pi-sh sends more records than it accepts.
+func TestAdapterWindowMatchesMux(t *testing.T) {
+	m := regexp.MustCompile(`(?m)^_fw_win=([0-9]+) `).FindStringSubmatch(source)
+	if m == nil {
+		t.Fatal("_fw_win not found in forward.bash")
+	}
+	n, _ := strconv.Atoi(m[1])
+	for name, w := range map[string]int{"inputWindow": inputWindow, "outWindow": outWindow} {
+		if w != n {
+			t.Errorf("_fw_win=%d, %s=%d", n, name, w)
+		}
 	}
 }
