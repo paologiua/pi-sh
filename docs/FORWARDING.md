@@ -478,7 +478,14 @@ connection complete in two runs. An earlier run the same day took 8.6 and
 connections during the 65 round (`WebRTC transport closed`; the device's
 Connect journal logged both proxy sessions ending within a second); the
 cause was not found and did not recur in the two runs that followed (REAL_DEVICE_TESTS.md).
-Native -L with the larger window was not measured again.
+Native -L with the larger window (REAL_DEVICE_TESTS.md): one connection 749
+KiB/s for 4 MiB; 16, 32 and 64 connections 654, 667 and 612 KiB/s in total,
+about as before (635, 630, 574). During 64 downloads one Bash process on the
+device, almost certainly the adapter's main loop, used a whole core (96–100 %),
+while the 64 Perl connectors used about 5 % together: past the window, the
+adapter's Bash loop is the limit. Moving the data path out of Bash (for
+example a Perl adapter, perl-base being Essential) would be the next step; it
+is not started.
 
 **Bounds.** At most 32 records of 2 KiB (4 KiB as hex) per stream and
 direction: with 64 streams up to 8 MiB of output hex in flight towards

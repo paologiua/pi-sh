@@ -1013,3 +1013,21 @@ counted: a counter from the previous run still held the Mac port, so most
 connections were refused on the Mac (`connect_to 127.0.0.1 port 51141:
 failed.`, as ssh). Afterwards (read-only `ps` and `ss -ltn`): no `perl` or
 `nc`, nothing on 47141, only 22 and 11434 listening.
+
+## Native -L with the 32-record window and device CPU, 28 October 2026
+
+Read-only (nothing listened or was written on the device), browser companion,
+`main` at `4665bc1`. `pi-sh --browser -N -v -L 127.0.0.1:P:speed.cloudflare.com:443
+raspberrypi`; on the Mac K concurrent HTTPS downloads through it, every TLS
+close checked.
+
+| Check | Result |
+| --- | --- |
+| K = 1, 16, 32, 64 downloads of 256 KiB | all complete with close_notify; 450 (one connection, including the TLS handshake), 654, 667, 612 KiB/s in total (window 8: 327, 635, 630, 574) |
+| K = 1, 4 MiB | complete, 5.5 s, 749 KiB/s |
+| K = 64 downloads of 1 MiB, with a second session running `top -b -d 3 -n 8` on the device | all complete, 98 s, 669 KiB/s in total; during the transfer one `bash` process at 96–100 % CPU throughout (one core; almost certainly the forwarding adapter's main loop), `rpi-connectd` 56–108 %, a second `bash` 25 %, the 64 `perl` connectors about 5 % together; the device 35–45 % idle overall (4 cores) |
+| `ps`, `ss -ltn` afterwards | no `perl`, `nc` or `top`; only 22 and 11434 listening |
+
+The larger window doubles one stream's rate; the total over many streams is
+bounded by the adapter's single Bash process, not by the window or the
+connectors. Single runs.

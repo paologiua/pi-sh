@@ -267,7 +267,9 @@ Righe ancora aperte (lavoro rimanente):
   in record: ~90 KiB/s per direzione invece di ~80; poi finestra
   dell'adattatore da 8 a 32 record: ~270 KiB/s, due corse complete; una corsa
   precedente ha perso le connessioni WebRTC nel giro da 65, causa non trovata;
-  -L nativo con la nuova finestra non rimisurato);
+  -L nativo con la nuova finestra: 749 KiB/s su una connessione, totale con
+  16–64 invariato ~610–670 KiB/s perché il ciclo Bash dell'adattatore usa un core
+  intero sul Pi: prossimo passo possibile un adattatore Perl, non iniziato);
   EnableEscapeCommandline. Molti stream (64) e una sessione di 23 minuti
   verificati 2026-10-28, dopo due correzioni (connettore Perl che svuota il
   socket, adattatore che elabora più record per giro: FORWARDING.md "Many
