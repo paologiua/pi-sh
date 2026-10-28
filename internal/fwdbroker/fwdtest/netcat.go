@@ -6,18 +6,21 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
 
 // Netcat is an OpenBSD-netcat test double for the forwarding adapter: it
-// accepts the connector argv pi-sh builds (-N, -v, -U, --) and relays stdio to
-// one connection with half-close. Tests run their own binary under the name
-// "nc" and call it from TestMain.
+// accepts the connector argv pi-sh builds (-N, -I length, -v, -U, --) and
+// relays stdio to one connection with half-close. Tests run their own binary
+// under the name "nc" and call it from TestMain.
 func Netcat(args []string) int {
 	verbose, unix := false, false
+	receive := 0
 	var operands []string
-	for i, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
 		if a == "--" {
 			operands = args[i+1:]
 			break
@@ -31,6 +34,17 @@ func Netcat(args []string) int {
 		case "-U":
 			unix = true
 		case "-N":
+		case "-I":
+			// As OpenBSD nc: a positive length, applied as SO_RCVBUF.
+			if i+1 == len(args) {
+				return 2
+			}
+			i++
+			n, err := strconv.Atoi(args[i])
+			if err != nil || n <= 0 {
+				return 2
+			}
+			receive = n
 		default:
 			return 2
 		}
@@ -47,6 +61,9 @@ func Netcat(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "nc: connect to %s failed: Connection refused\n", strings.Join(operands, " port "))
 		return 1
+	}
+	if tcp, ok := conn.(*net.TCPConn); ok && receive > 0 {
+		tcp.SetReadBuffer(receive)
 	}
 	if verbose && !unix {
 		fmt.Fprintf(os.Stderr, "Connection to %s %s port [tcp/*] succeeded!\n", operands[0], operands[1])

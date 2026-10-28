@@ -384,8 +384,16 @@ non-blocking stdout (each below PIPE_BUF, so still whole).
 `TestPerlConnectorDrainsWhileReaderStalls` (a 1.75 MiB target write must finish
 while the local reader stalls) fails without it. The macOS kernel keeps
 received data readable after a reset, so the loss itself cannot be reproduced
-on the Mac. Netcat cannot buffer this way: with the netcat connector, servers
-that reset after closing can still truncate concurrent slow downloads.
+on the Mac. Netcat cannot buffer in memory, and Bash reads its output one byte
+at a time, so with netcat the drain stays slow; it now asks for a 4 MiB TCP
+receive buffer instead (`-I`, capped by the device's `net.core.rmem_max`, 4 MiB
+on Raspberry Pi OS), so a server can hand over its whole reply and close
+normally. Natively with `PI_SH_FORWARD_CONNECTOR=nc`: 3 of 48 downloads were
+truncated without it (16 and 32 concurrent), 0 of 80 with it (16, 16, 32 and
+16 concurrent; about 58 KiB/s in total, the netcat rate). A reply larger than
+that buffer can still be cut if the server resets after closing; Perl, which
+is Essential on Raspberry Pi OS and chosen first, has no such limit.
+`TestNetcatRequestsLargeReceiveBuffer` checks the argv.
 Worst case memory on the device is 2 MiB per stream (128 MiB for 64 stalled
 streams), as for sshd's windows.
 

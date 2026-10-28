@@ -99,3 +99,20 @@ func TestStartIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// OpenBSD netcat asks for a large TCP receive buffer so a slowly drained
+// server can finish its reply instead of resetting the connection (native
+// concurrent downloads, 2026-10-28); a Unix socket has no such option.
+func TestNetcatRequestsLargeReceiveBuffer(t *testing.T) {
+	argv, err := openBSDNetcat.Argv(forward.Target{Host: "example.org", Port: 443})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(argv, " "), "nc -N -I 4194304 -v -- example.org 443"; got != want {
+		t.Fatalf("argv %q, want %q", got, want)
+	}
+	argv, err = openBSDNetcat.Argv(forward.Target{Path: "/run/x.sock"})
+	if err != nil || strings.Contains(strings.Join(argv, " "), "-I") {
+		t.Fatalf("unix argv %q, %v", argv, err)
+	}
+}

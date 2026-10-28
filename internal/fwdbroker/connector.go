@@ -39,7 +39,13 @@ func (c Connector) Argv(t forward.Target) ([]string, error) { return c.argv(t) }
 
 var (
 	// OpenBSD netcat (Debian netcat-openbsd): -N shuts the socket down after
-	// stdin EOF; -v reports "Connection to ... succeeded!".
+	// stdin EOF; -v reports "Connection to ... succeeded!". Netcat reads the
+	// socket only as fast as the adapter takes its output, so -I asks for a
+	// large TCP receive buffer (capped by the device's net.core.rmem_max, 4 MiB
+	// on Raspberry Pi OS): a server can then hand over its whole reply and
+	// close normally instead of resetting a slowly drained connection, which
+	// would drop the unread tail (16 and 32 concurrent HTTPS downloads,
+	// 2026-10-28: 3 of 48 truncated without it, 0 of 64 with it).
 	openBSDNetcat = Connector{Name: "openbsd-nc", Ready: " succeeded!", argv: func(t forward.Target) ([]string, error) {
 		if t.Path != "" {
 			if err := checkPath(t.Path); err != nil {
@@ -50,7 +56,7 @@ var (
 		if err := checkHostPort(t); err != nil {
 			return nil, err
 		}
-		return []string{"nc", "-N", "-v", "--", t.Host, strconv.Itoa(t.Port)}, nil
+		return []string{"nc", "-N", "-I", strconv.Itoa(netcatReceiveBuffer), "-v", "--", t.Host, strconv.Itoa(t.Port)}, nil
 	}}
 	// Nmap ncat half-closes by default (it documents --no-shutdown to disable it).
 	nmapNcat = Connector{Name: "ncat", Ready: "Ncat: Connected to", argv: func(t forward.Target) ([]string, error) {
@@ -104,7 +110,9 @@ var (
 )
 
 const (
-	perlReady = "pi-sh-perl: connected"
+	// netcatReceiveBuffer is the TCP receive buffer netcat requests (-I).
+	netcatReceiveBuffer = 4 << 20
+	perlReady           = "pi-sh-perl: connected"
 	// Printed by the adapter's detection only when Socket loads.
 	perlFingerprint = "pi-sh perl sockets"
 	// perlConnector behaves like nc -N: one connection (getaddrinfo order,

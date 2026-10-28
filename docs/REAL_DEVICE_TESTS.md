@@ -955,6 +955,9 @@ page was opened (nothing typed), then Devices again.
 | `-o ConnectTimeout=1 --experimental-command -T raspberrypi 'echo should-not-run'` | `Connect connection establishment timed out before any remote command was sent` during signaling, exit 255, no output |
 | `ps`, `ss -ltn`, `ss -tn` to :443, `free -m` afterwards | only the listing session's processes and Connect's `/bin/bash -l`; listeners 127.0.0.1:11434 and port 22; no `perl` or `nc`; 3.8 GB memory, 3.5 GB available |
 
+| `PI_SH_FORWARD_CONNECTOR=nc`, K concurrent 256 KiB downloads | K = 16: 14 of 16 complete; K = 32: 31 of 32 (truncated ones without close_notify) |
+| Same with netcat asked for a 4 MiB receive buffer (`nc -N -I 4194304`; first a test build, then the final binary) | K = 16 three times and K = 32 once: 80 of 80 complete, about 58 KiB/s in total. Read-only facts: `net.core.rmem_max` 4194304, `tcp_rmem` max 30852736, netcat-openbsd 1.229-1 (priority important, not Essential), perl-base Essential |
+
 The pi-cp, browser-message, connector and adapter defects are in
 CODE_REVIEW_2026-10-28.md; FORWARDING.md "Many streams" has the analysis.
 Single runs except where several are listed.
