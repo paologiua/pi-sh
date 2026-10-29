@@ -2,7 +2,7 @@
 # process substitution, named pipes, files or Python. Bash >=4.3 is required.
 # Unacknowledged input records (inputWindow in broker.go, which must match)
 # and output records per stream (this side only; broker.go "inputWindow").
-_ps_in_win=8 _ps_out_win=32
+_ps_in_win=32 _ps_out_win=32
 # The whole broker runs in Perl (broker.pl, in _ps_perl_src) when the device's
 # perl compiles it; this Bash broker is the fallback, kept as it is
 # (SHELL_BROKER.md "Perl broker"). PI_SH_REMOTE_IMPL=bash keeps it here. It runs

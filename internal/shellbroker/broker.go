@@ -47,16 +47,18 @@ func brokerScript() string {
 // negotiated limit.
 //
 // Input keeps at most inputWindow records unacknowledged (_ps_in_win in
-// broker.bash, which must match): Run sends input on the goroutine that also
-// consumes output, so in-flight input must fit the carrier's buffers (PTY,
-// relay pipe, broker memory). At 32 records (130 KiB) a slow broker blocked
-// writing output while Run blocked writing input, and neither moved again
-// (SHELL_BROKER.md "Window"). Output keeps up to 32 records per stream
-// (_ps_out_win, broker-side only): at 8 the round trip bounded it.
+// broker.bash, which must match). Run sends them from its own goroutine, so a
+// blocked send never stops output from being consumed; when it did, 32
+// records could deadlock and the window stayed at 8 (SHELL_BROKER.md "Input
+// window", "Run sender"). Output keeps up to outputWindow records per stream.
 const maxRecord = 4224
 const inputChunk = 2048
 const outputChunk = 2048
-const inputWindow = 8
+const inputWindow = 32
+
+// outputWindow is _ps_out_win in broker.bash: output records per stream that
+// the broker sends before an acknowledgement.
+const outputWindow = 32
 
 // uploadChunk is the source and command bytes per L or C record, one round
 // trip each (4096 hex digits, like an I record; the loader checks it). It was
@@ -329,14 +331,24 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 			}
 		}
 	}()
+	// senderDone closes when the record sender (below) has returned; until it
+	// starts there is none.
+	senderDone := make(chan struct{})
+	close(senderDone)
 	defer func() {
 		// End local reads/writes before abnormal cleanup, while retaining the
 		// independent receive pump and carrier for the C/D acknowledgment.
+		// stopIO cancels the context of the sender's Send.
 		stopIO()
 		if result != nil {
-			if err := p.abort(stream, records); err != nil {
+			if err := p.abort(stream, records, senderDone); err != nil {
 				result = errors.Join(result, err)
 			}
+			return
+		}
+		select {
+		case <-senderDone:
+		case <-time.After(cleanupTimeout):
 		}
 	}()
 	// Install cleanup before committing launch: Send can fail after the peer
@@ -355,6 +367,45 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 		}
 		if ready.text != "R" {
 			return 0, ErrProtocol
+		}
+	}
+	// From here one goroutine writes every record (SHELL_BROKER.md "Run
+	// sender"), so a blocked send never stops output from being consumed:
+	// sending input and consuming output on one goroutine could block both
+	// ("Input window"). The queue cannot fill while the broker keeps its
+	// windows: at most inputWindow I records, F, and one A per output record
+	// of the two streams wait. A broker that sends more fails the protocol.
+	outbox := make(chan string, inputWindow+2*outputWindow+1)
+	sendErr := make(chan error, 1)
+	senderDone = make(chan struct{})
+	go func(done chan struct{}) {
+		defer close(done)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case record := <-outbox:
+				if err := w.send(record); err != nil {
+					if record == "F" || strings.HasPrefix(record, "I ") {
+						err = inputSendError{err}
+					}
+					sendErr <- err
+					return
+				}
+			}
+		}
+	}(senderDone)
+	queue := func(record string) error {
+		select {
+		case err := <-sendErr:
+			return err
+		default:
+		}
+		select {
+		case outbox <- record:
+			return nil
+		default:
+			return ErrProtocol
 		}
 	}
 	reads := make(chan readResult, 1)
@@ -383,7 +434,7 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 			}
 		}()
 	} else {
-		if err = w.send("F"); err != nil {
+		if err = queue("F"); err != nil {
 			return 0, err
 		}
 	}
@@ -407,10 +458,7 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 				return errors.New("local stdin read failed")
 			}
 			inputDone = true
-			if err := w.send("F"); err != nil {
-				return inputSendError{err}
-			}
-			return nil
+			return queue("F")
 		}
 		if inSeq-inAck < inputWindow {
 			reading = true
@@ -464,6 +512,8 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 		select {
 		case <-ctx.Done():
 			return 0, ctx.Err()
+		case err := <-sendErr:
+			return afterSend(err)
 		case r := <-reads:
 			reading = false
 			if inputDone {
@@ -472,8 +522,8 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 			if len(r.data) > 0 {
 				inSeq++
 				encoded := hex.EncodeToString(r.data)
-				if err = w.send(fmt.Sprintf("I %d %d %s", inSeq, len(encoded), encoded)); err != nil {
-					return afterSend(inputSendError{err})
+				if err = queue(fmt.Sprintf("I %d %d %s", inSeq, len(encoded), encoded)); err != nil {
+					return afterSend(err)
 				}
 			}
 			if r.err != nil {
@@ -523,8 +573,8 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 				if n != len(data) {
 					return 0, io.ErrShortWrite
 				}
-				if err = w.send("A " + f[0] + " " + f[1]); err != nil {
-					return 0, err
+				if err = queue("A " + f[0] + " " + f[1]); err != nil {
+					return afterSend(err)
 				}
 			case "F":
 				if len(f) != 2 {
@@ -594,9 +644,18 @@ func completion(f []string) (int, error) {
 
 // abort never reports remote command success. Late output is drained without
 // writing to caller streams; only D confirms that abnormal cleanup finished.
-func (p *Plan) abort(stream Stream, records <-chan recordResult) error {
+//
+// C goes out only once the record sender has returned, so the two never
+// write together; a Send that ignores its context leaves cleanup unconfirmed
+// rather than holding the client.
+func (p *Plan) abort(stream Stream, records <-chan recordResult, senderDone <-chan struct{}) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
+	select {
+	case <-senderDone:
+	case <-ctx.Done():
+		return ErrCleanupUnconfirmed
+	}
 	w := &wire{ctx: ctx, stream: stream, prefix: p.prefix}
 	if err := w.send("C"); err != nil {
 		return ErrCleanupUnconfirmed

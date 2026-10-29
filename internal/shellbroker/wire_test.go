@@ -87,6 +87,14 @@ func TestBrokerWindowMatchesClient(t *testing.T) {
 	if n, _ := strconv.Atoi(m[1]); n != inputWindow {
 		t.Fatalf("_ps_in_win=%d, inputWindow=%d", n, inputWindow)
 	}
+	// Run's send queue is sized from the output window.
+	m = regexp.MustCompile(`(?m) _ps_out_win=([0-9]+)$`).FindStringSubmatch(source)
+	if m == nil {
+		t.Fatal("_ps_out_win not found in broker.bash")
+	}
+	if n, _ := strconv.Atoi(m[1]); n != outputWindow {
+		t.Fatalf("_ps_out_win=%d, outputWindow=%d", n, outputWindow)
+	}
 }
 
 // The Perl broker reaches the device inside a single-quoted Bash word.

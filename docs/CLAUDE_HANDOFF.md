@@ -173,9 +173,11 @@ proprietario.
   tty.bash fa ancora stty e poi `exec perl`; stesso pid e gruppo. Tutta la
   suite TTY con OpenSSH identica con i due supervisori, Bash 5.2 e 5.3,
   anche sotto carico. Non ancora provato sul Pi (serve una sessione -tt).
-- Da fare: commit 4 (`Run` con mittente separato, finestra di input 32) e il
-  piano di scrittura `NATIVE_PERL_BROKER_PLAN.md` (transfer-probe, -R), da
-  far approvare.
+- **Fatto: `Run` con mittente separato e finestra di input 32** (SHELL_BROKER.md
+  "Run sender and input window of 32"): upload 1 MiB sul Pi 0,47 s.
+- Da fare: il piano di scrittura `NATIVE_PERL_BROKER_PLAN.md`
+  (transfer-probe, -R), da far approvare; merge su main a giudizio del
+  proprietario.
 
 ## Correzioni recenti da preservare
 

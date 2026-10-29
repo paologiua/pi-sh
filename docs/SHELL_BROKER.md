@@ -628,3 +628,63 @@ once, "owned descendant still running". The slower Bash broker had left time
 for it to die. The Perl broker now confirms only once `kill 0` finds no
 process in the group, or after one second. After the change the test passed
 50 of 50 runs under load.
+
+## Run sender and input window of 32 — 2026-10-29
+
+**Change.** After R, one goroutine in `Run` writes every record (I, F, and
+the A acknowledgements of output). The loop that consumes output only queues
+them, so a blocked send no longer stops output from being consumed. That was
+the cycle of "Input window": `Run` blocked sending input, the broker blocked
+writing output, and neither moved again.
+
+The queue holds `inputWindow + 2*outputWindow + 1` records. While the broker
+keeps its windows it cannot fill: at most `inputWindow` I records, one F, and
+one A per output record of the two streams can wait. A broker that sends more
+fails the protocol instead of blocking. `outputWindow` equals `_ps_out_win`
+(`TestBrokerWindowMatchesClient`).
+
+**Abort.** `abort` writes C only after the sender has returned. `stopIO`
+cancels the context of the sender's `Send`, and Stream implementations honor
+it, so the wait is short. A `Send` that ignored its context would leave
+cleanup unconfirmed after `cleanupTimeout`, without a second writer on the
+stream. A failed send of input still lets a status already in flight win
+("Perl broker").
+
+**Tests.**
+- `TestBrokerConsumesOutputWhileInputSendBlocks`: the first I record's
+  `Send` blocks until 40 output records reach the local stdout. The previous
+  `Run` hung until its deadline (checked by putting it back); the new one
+  completes.
+- `TestBrokerAbortWaitsForBlockedSender`: C is never sent beside a running
+  `Send`. A `Send` that ignores its context gives `ErrCleanupUnconfirmed`
+  within the bound, with no C.
+
+**Window.** With the cycle gone, the input window is back to 32 records
+(`inputWindow`, `_ps_in_win`; the Perl broker takes it as an argument).
+
+Local benchmark (Bash 5.3, Perl broker, KiB/s), input window 8 → 32:
+
+| RTT | Upload | Download | Roundtrip | SFTP upload, 32 KiB requests |
+| --- | --- | --- | --- | --- |
+| 0 ms | 4689 → 3726 | 17310 → 20079 | 9806 → 10573 | 8540 → 8678 |
+| 10 ms | 1891 → 3477 | 5699 → 5249 | 3726 → 6616 | |
+| 40 ms | 541 → 1219 | 1740 → 1681 | 1073 → 2466 | 480 → 1202 |
+
+At 0 ms single runs vary by about a quarter; with a round trip, upload more
+than doubles.
+
+On the device (read-only, single runs, REAL_DEVICE_TESTS.md "Input window of
+32"), 1 MiB to `wc -c` took 0.47 s: 1.01 s with window 8, and 1.64 s for
+`7500852`. 1 MiB from `head -c` took 0.49 s. `pi-cp` of `/usr/bin/bash` took
+1.80 s from channel open (1.59 s with window 8, single runs of a download),
+with the device's SHA-256.
+
+**Loaded runs.** In the first loaded run with window 32,
+`TestShellBrokerSlowOutputWithFastInput/bash` (the Bash broker with Bash
+workers) went past its 60 s limit twice. Two later loaded runs, alone, passed
+every time (480 of 480 for the whole timing set; that test took 16–17 s with
+window 32 and with window 8). No stack was captured. The overruns are
+recorded as unexplained and not reproduced. In a run with double load, one overrun of
+`TestShellBrokerCancellationDuringWorkerStartup` stalled before the broker
+started: the carrier shell had not printed its first record within
+15 s.

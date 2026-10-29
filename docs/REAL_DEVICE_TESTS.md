@@ -1191,3 +1191,15 @@ typed). One run of `pi-sh --browser --experimental-command -tt -v raspberrypi
 Not checked on the device: Ctrl-Z, the interactive login shell, resize, and
 hangup with the Perl supervisor. Those need a local terminal and are covered
 only by the local OpenSSH differentials (TTY_JOB_CONTROL.md "Perl supervisor").
+
+## Input window of 32, 29 October 2026
+
+Read-only, browser companion, branch `perl-remote` with the separate `Run`
+sender. Connect asked once for recent sign-in (Remote shell page opened,
+nothing typed). Single runs.
+
+| Check | Result |
+| --- | --- |
+| 1 MiB stdin to `wc -c` (timed on the device), then `head -c 1048576 /dev/zero` | 1048576, 473 ms (window 8: 1010 ms; `7500852`: 1636 ms); 1048576 bytes in 0.49 s |
+| `pi-cp --browser -v raspberrypi:/usr/bin/bash`, channel open to exit | 1.80 s; SHA-256 `ccbd5106945d1095…` as on the device |
+| `ps -eo pid,ppid,etime,comm`, `ss -ltn` afterwards | only the listing session's `perl` broker and its `bash`; listening only 127.0.0.1:11434 and port 22 |

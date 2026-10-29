@@ -3,6 +3,7 @@ package shellbroker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync/atomic"
@@ -277,5 +278,190 @@ func TestBrokerCompletionWinsOverFailedInputSend(t *testing.T) {
 				t.Fatalf("code %d, err %v, aborted %v", code, err, s.aborted)
 			}
 		})
+	}
+}
+
+// sendBlockedStream is a broker whose carrier input stays full until the
+// client has written all the output it was sent: the first I record blocks in
+// Send until the local stdout holds every O record. A Run that sent input on
+// the goroutine consuming output never got there.
+type sendBlockedStream struct {
+	plan    *Plan
+	replies chan []byte
+	written func() int
+	want    int
+	aborted bool
+}
+
+func (s *sendBlockedStream) reply(r string) { s.replies <- []byte(s.plan.prefix + r + "\n") }
+
+func (s *sendBlockedStream) Send(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	text := string(data)
+	switch text {
+	case s.plan.bootstrap:
+		s.reply("P")
+		return nil
+	case s.plan.loader + "\n":
+		s.reply("B")
+		return nil
+	}
+	f := strings.Fields(strings.TrimSuffix(strings.TrimPrefix(text, s.plan.prefix), "\n"))
+	switch f[0] {
+	case "L", "C":
+		if len(f) == 3 {
+			s.reply("A " + f[0] + " " + f[1])
+		} else {
+			s.aborted = true
+			s.reply("D")
+		}
+	case "G":
+		s.reply("R")
+	case "I":
+		for i := 1; i <= 40; i++ {
+			s.reply(fmt.Sprintf("O %d 41", i))
+		}
+		for s.written() < s.want {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Millisecond):
+			}
+		}
+		s.reply("A 1")
+	case "F":
+		s.reply("F O")
+		s.reply("F E")
+		s.reply("X 0")
+	case "A":
+	default:
+		return ErrProtocol
+	}
+	return nil
+}
+
+func (s *sendBlockedStream) Receive(ctx context.Context) ([]byte, error) {
+	select {
+	case data := <-s.replies:
+		return data, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// countingWriter counts bytes for a concurrent observer.
+type countingWriter struct{ n atomic.Int64 }
+
+func (w *countingWriter) Write(b []byte) (int, error) { w.n.Add(int64(len(b))); return len(b), nil }
+
+// Output keeps being consumed while an input send is blocked
+// (SHELL_BROKER.md "Run sender"; "Input window" for the cycle it removes).
+func TestBrokerConsumesOutputWhileInputSendBlocks(t *testing.T) {
+	p, err := New("cat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out countingWriter
+	s := &sendBlockedStream{plan: p, replies: make(chan []byte, 128), written: func() int { return int(out.n.Load()) }, want: 40}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	code, err := p.Run(ctx, s, IO{Stdin: strings.NewReader("x"), Stdout: &out})
+	if code != 0 || err != nil || out.n.Load() != 40 || s.aborted {
+		t.Fatalf("code %d, %v, %d bytes, aborted %v", code, err, out.n.Load(), s.aborted)
+	}
+}
+
+// stuckSendStream blocks the first I record's Send: until its context ends,
+// or, with ignoreContext, until release closes. It records whether C was
+// sent while that Send was still running.
+type stuckSendStream struct {
+	plan          *Plan
+	replies       chan []byte
+	ignoreContext bool
+	release       chan struct{}
+	inSend        atomic.Bool
+	overlapped    atomic.Bool
+	aborted       atomic.Bool
+}
+
+func (s *stuckSendStream) reply(r string) { s.replies <- []byte(s.plan.prefix + r + "\n") }
+
+func (s *stuckSendStream) Send(ctx context.Context, data []byte) error {
+	text := string(data)
+	switch text {
+	case s.plan.bootstrap:
+		s.reply("P")
+		return nil
+	case s.plan.loader + "\n":
+		s.reply("B")
+		return nil
+	}
+	f := strings.Fields(strings.TrimSuffix(strings.TrimPrefix(text, s.plan.prefix), "\n"))
+	switch f[0] {
+	case "L", "C":
+		if len(f) == 3 {
+			s.reply("A " + f[0] + " " + f[1])
+			return nil
+		}
+		s.overlapped.Store(s.inSend.Load())
+		s.aborted.Store(true)
+		s.reply("D")
+	case "G":
+		s.reply("R")
+	case "I":
+		s.inSend.Store(true)
+		defer s.inSend.Store(false)
+		if s.ignoreContext {
+			<-s.release
+			return errors.New("released")
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (s *stuckSendStream) Receive(ctx context.Context) ([]byte, error) {
+	select {
+	case data := <-s.replies:
+		return data, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// Cancellation while the sender is blocked: C goes out only after the
+// sender returned, never beside it; a Send that ignores its context leaves
+// cleanup unconfirmed within the cleanup bound instead of a second writer.
+func TestBrokerAbortWaitsForBlockedSender(t *testing.T) {
+	for _, ignore := range []bool{false, true} {
+		p, err := New("cat")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := &stuckSendStream{plan: p, replies: make(chan []byte, 16), ignoreContext: ignore, release: make(chan struct{})}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			for !s.inSend.Load() {
+				time.Sleep(time.Millisecond)
+			}
+			cancel()
+		}()
+		start := time.Now()
+		_, err = p.Run(ctx, s, IO{Stdin: strings.NewReader("x")})
+		elapsed := time.Since(start)
+		close(s.release)
+		if !errors.Is(err, context.Canceled) || s.overlapped.Load() {
+			t.Fatalf("ignore=%v: %v, C beside a running Send: %v", ignore, err, s.overlapped.Load())
+		}
+		if ignore {
+			if !errors.Is(err, ErrCleanupUnconfirmed) || s.aborted.Load() || elapsed > cleanupTimeout+time.Second {
+				t.Fatalf("stuck Send: %v, C sent %v, after %v", err, s.aborted.Load(), elapsed)
+			}
+		} else if errors.Is(err, ErrCleanupUnconfirmed) || !s.aborted.Load() {
+			t.Fatalf("abort not confirmed: %v, C sent %v", err, s.aborted.Load())
+		}
 	}
 }
