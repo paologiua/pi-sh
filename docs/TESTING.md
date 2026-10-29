@@ -971,3 +971,9 @@ was slow or a rare missed cleanup in the frozen Bash broker is not proven.
 An overlapping load run once rebuilt the shared test binary under another;
 the forwarding tests' `nc` double is that binary, so those failures were
 artifacts. The load script now gives every run its own binary and logs.
+
+**The carrier-loss overrun, explained.** The 8 s overrun of
+`TestShellBrokerCarrierLossKillsCommandGroup` described above was not
+slowness. It was the Bash broker exiting during its own cleanup on a second
+hangup; SHELL_BROKER.md "Second hangup during cleanup" has the cause and the
+fix.

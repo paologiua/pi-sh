@@ -146,7 +146,8 @@ _pt_main() {
   # Never allow PID 1 to become kill's special process-selection operand -1.
   ((_pt_owner>1)) || exit 125
   _pt_abort() {
-    trap - EXIT CHLD HUP TERM
+    # A second hangup during cleanup must not end it: ignore, never default.
+    trap '' HUP TERM; trap - EXIT CHLD
     # A job-control shell (the login shell) leaves this group. Like sshd's
     # session leader it gets HUP (and CONT), which it resends to its jobs.
     if [[ $_pt_child =~ ^[0-9]+$ ]] && ((_pt_child>1)); then

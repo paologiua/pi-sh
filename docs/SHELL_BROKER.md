@@ -597,3 +597,34 @@ read-only, single runs; REAL_DEVICE_TESTS.md):
   device's SHA-256;
 - with `PI_SH_REMOTE_IMPL=bash` the device ran the Bash broker: 3.4 s and
   56.4 s, the historical all-Bash figures.
+
+## Second hangup during cleanup — 2026-10-29
+
+`TestShellBrokerCarrierLossKillsCommandGroup` closes the carrier PTY of a
+command whose group would outlive it. Under load the Bash broker sometimes
+left the group running: 8 of 240 runs with one `yes` per core. A process
+snapshot showed why. The command shell had PID 1 as its parent, so the broker
+had exited without killing the group.
+
+Losing the carrier delivers two hangups: the kernel's, and the one from the
+process that owns the terminal (here the test harness, on the device perhaps
+the agent).
+- The first runs `exit 125`, which starts the EXIT trap, `_ps_cleanup`.
+- If the second arrived before the cleanup reset its traps, the handler ran
+  `exit 125` again inside the EXIT trap, and Bash exited at once, before the
+  group was killed. Resetting HUP to its default, as the cleanup then did,
+  had the same effect a moment later.
+
+The handler now ignores HUP and TERM before it exits, and the cleanup
+ignores them instead of restoring the default. forward.bash
+(`_fw_cleanup`) and tty.bash (`_pt_abort`) had the same pattern and are fixed
+the same way. After the fix: 0 of 240 runs under the same load. The Perl
+programs already ignore HUP and TERM first in their cleanup.
+
+**Perl broker: wait for the group.** On C the Perl broker reaped its command
+and answered D at once. A descendant hit by `KILL` could still be running at
+that moment: `TestShellBrokerCancellationReapsBeforeCarrierClose/perl` failed
+once, "owned descendant still running". The slower Bash broker had left time
+for it to die. The Perl broker now confirms only once `kill 0` finds no
+process in the group, or after one second. After the change the test passed
+50 of 50 runs under load.

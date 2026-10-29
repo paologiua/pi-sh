@@ -18,7 +18,8 @@ trap '' PIPE
 _ps_emit() { printf '%s%s\n' "$_ps_prefix" "$*"; }
 _ps_fail() { _ps_emit 'Z protocol'; exit 125; }
 _ps_cleanup() {
-  trap - EXIT HUP TERM CHLD
+  # A second hangup during cleanup must not end it: ignore, never default.
+  trap '' HUP TERM; trap - EXIT CHLD
   [[ ${_ps_done:-0} == 1 ]] || {
     [[ ${_ps_pid:-} =~ ^[0-9]+$ ]] && kill -KILL -- "-$_ps_pid" 2>/dev/null
     # Also cover cancellation before the command worker has entered setsid.
@@ -115,7 +116,9 @@ _ps_main() {
   local _ps_pid _ps_writer_pid _ps_err_pid _ps_out_pid _ps_eout_pid _ps_meta_pid _ps_idle_pid _ps_relay_pid _ps_done=0
   exec 2>/dev/null
   trap _ps_cleanup EXIT
-  trap 'exit 125' HUP TERM
+  # The handler ignores further hangups first: a second one during cleanup
+  # (from the EXIT trap) would otherwise exit before the group is killed.
+  trap 'trap "" HUP TERM; exit 125' HUP TERM
   coproc _PS_ERR { exec cat 2>/dev/null; }
   _ps_err_pid=$_PS_ERR_PID
   exec 3<&${_PS_ERR[0]} 4>&${_PS_ERR[1]}

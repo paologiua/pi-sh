@@ -58,6 +58,9 @@ sub cleanup {
   return if $done || !defined $pid;
   kill("KILL", -$pid); kill("KILL", $pid); kill("KILL", -$pid);
   if (!defined $status) { 1 while waitpid($pid, 0) < 0 && $!{EINTR}; $status = $? }
+  # Descendants take KILL asynchronously: confirm only once the group is gone
+  # (or only zombies, which init reaps, remain), within one second.
+  for (1 .. 100) { last if !kill(0, -$pid); select(undef, undef, undef, 0.01) }
 }
 sub fail { emit("Z protocol"); cleanup(); finish(125) }
 $SIG{HUP} = $SIG{TERM} = sub { cleanup(); exit 125 };

@@ -51,7 +51,8 @@ _fw_drop() {
     "S_waeof[id]" "S_ebytes[id]" "S_grace[id]"
 }
 _fw_cleanup() {
-  trap - EXIT HUP TERM
+  # A second hangup during cleanup must not end it: ignore, never default.
+  trap '' HUP TERM; trap - EXIT
   local id
   for id in "${!S_pid[@]}"; do _fw_kill_stream "$id"; done
   [[ $_fw_idle_pid =~ ^[0-9]+$ ]] && kill "$_fw_idle_pid" 2>/dev/null
@@ -345,7 +346,9 @@ _fw_main() {
   local head line id seq n k plen=${#_ps_prefix} quiet=0 nap
   exec 2>/dev/null
   trap _fw_cleanup EXIT
-  trap 'exit 125' HUP TERM
+  # The handler ignores further hangups first: a second one during cleanup
+  # (from the EXIT trap) would otherwise exit before the group is killed.
+  trap 'trap "" HUP TERM; exit 125' HUP TERM
   # Timed reads on this never-written pipe pace the loop; protocol data is
   # only polled with read -t 0 (Bash 5.2 timed reads can lose a newline).
   coproc _FW_IDLE { exec cat; }
