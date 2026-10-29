@@ -688,3 +688,11 @@ recorded as unexplained and not reproduced. In a run with double load, one overr
 `TestShellBrokerCancellationDuringWorkerStartup` stalled before the broker
 started: the carrier shell had not printed its first record within
 15 s.
+
+Further serial load runs on 2026-10-29: `SlowOutputWithFastInput/bash` passed
+100/100 with Bash 5.3 (15.74–37.68 s) and 100/100 with Bash 5.2.37
+(14.91–17.08 s). Temporary pprof timers at 45/55 s never fired. A normal
+reference run captured two stacks at 10/12 s and then passed in 16.59 s.
+The old overruns remain unclassified: these normal stacks cannot establish
+whether a failed run was stalled or slow. TESTING.md "Further serial load
+investigation" records the method and limits; no timeout or product code changed.

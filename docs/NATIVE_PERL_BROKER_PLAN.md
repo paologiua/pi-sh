@@ -1,7 +1,9 @@
-# Native writes through the Perl broker and adapter — proposed
+# Native writes through the Perl broker and adapter — approved and run
 
-Proposed 2026-10-29, awaiting the owner's approval. Nothing here runs before
-it.
+Proposed and approved 2026-10-29 by the owner: **«Autorizzo il piano Perl broker»**.
+**Approvato ed eseguito** the same day on `perl-remote` at `c70712d`: both
+transfer probes and both -R runs passed, with cleanup verified independently
+(REAL_DEVICE_TESTS.md "Native Perl broker plan"). No cleanup-only run was needed.
 
 ## Why
 

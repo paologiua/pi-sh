@@ -236,6 +236,10 @@ func TestRecursiveCopyAgainstLocalSCP(t *testing.T) {
 							if err := plan.Run(ctx, client, nil); err != nil {
 								t.Fatal(err)
 							}
+							// Observe each destination immediately after its copy. Waiting for
+							// scp first gave external readers another whole copy in which to
+							// change our destination's atime. Keep every metadata assertion.
+							got := recursiveSnapshot(t, client, dst, preserve)
 							args := []string{"-D", server, "-r"}
 							if preserve {
 								args = append(args, "-p")
@@ -244,7 +248,7 @@ func TestRecursiveCopyAgainstLocalSCP(t *testing.T) {
 							if output, err := exec.CommandContext(ctx, scp, args...).CombinedOutput(); err != nil {
 								t.Fatalf("reference: %v %s", err, output)
 							}
-							got, want := recursiveSnapshot(t, client, dst, preserve), recursiveSnapshot(t, client, ref, preserve)
+							want := recursiveSnapshot(t, client, ref, preserve)
 							if !reflect.DeepEqual(got, want) {
 								for name, g := range got {
 									w, ok := want[name]

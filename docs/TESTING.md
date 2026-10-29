@@ -984,3 +984,110 @@ for the Bash one), as TTY_JOB_CONTROL.md "Perl supervisor" records.
 slowness. It was the Bash broker exiting during its own cleanup on a second
 hangup; SHELL_BROKER.md "Second hangup during cleanup" has the cause and the
 fix.
+
+## Further serial load investigation — 2026-10-29
+
+Mac, eight `yes` processes (one per logical core), only one test binary at a
+time, no simultaneous verification. Unique binaries/logs in a temporary local
+scratchpad; all load processes stopped after each driver. Product source
+unchanged during these measurements (`c70712d`). Both Bash binaries were still
+present, so no rebuild/download was needed.
+
+### Bash broker slow output / fast input
+
+`TestShellBrokerSlowOutputWithFastInput/bash`, 1 MiB through `cat`, slow local
+stdout, input window 32, `PI_SH_REMOTE_IMPL=bash` (Bash broker and workers):
+
+| Carrier | Repetitions | Result | Per-test time | Total wall time |
+| --- | --- | --- | --- | --- |
+| Bash 5.3 | 100 | 100 passed | 15.74–37.68 s | 1900.002 s |
+| Bash 5.2.37 | 100 | 100 passed | 14.91–17.08 s | 1618.528 s |
+
+A temporary Go overlay added `time.AfterFunc` timers at 45 and 55 seconds
+around each subtest; each called `pprof.Lookup("goroutine").WriteTo(os.Stderr, 2)`.
+Neither fired: no new 60 s overrun. A separate loaded reference run used 10 s
+and 12 s timers: both captured stacks, then the exact byte comparison and exit
+status passed (16.59 s test, 17.216 s driver). At both snapshots `Run` was in
+its main select; its sender was waiting for queued records, rather than stuck
+writing input. These are normal-run reference stacks, **not** evidence about
+the historical failed run. All instrumentation stayed outside the working tree.
+
+**Conclusion:** no reproduced deadlock, and no basis to classify the old >60 s
+events as mere slowness. The maximum observed 37.68 s shows timing variability
+under load but does not explain those events. The historical overruns remain
+unclassified; no product change or increased timeout is justified by this run.
+
+### Bash TTY supervisor
+
+`PI_SH_REMOTE_IMPL=bash`, `TestTTYCommandSessionOverWebRTC`, 40 full repetitions
+with each Bash, same load and serial execution:
+
+| Carrier / run | Cases | Outcome | Wall time |
+| --- | --- | --- | --- |
+| Bash 5.3 | 680 | 679 passed, one `ctrl-z-handler` failure | 282.616 s |
+| Bash 5.2.37 | 680 | 680 passed | 257.597 s |
+| Bash 5.3, isolated `ctrl-z-handler` with diagnostics, 200 repetitions | 200 | 200 passed | 90.974 s |
+| Bash 5.3, full sequence again with diagnostics, 40 repetitions | 680 | 680 passed | 250.120 s |
+
+The failure was `session did not finish` (18.11 s including cleanup), **after**
+`fixture-ready`, the TSTP handler's `caught-suspend` and `seen:x` had all arrived.
+It is different from both the old missing-line Bash 3.2 fixture defect and the
+five consecutive readiness timeouts. No readiness timeout recurred.
+
+The diagnostic overlay armed a 10 s timer for each carrier, recording goroutines,
+the last 4096 carrier bytes and `ps` PID/PPID/PGID/foreground-group/state/command
+on a slow case. No timer fired in either rerun. It did not reproduce even when
+the full case order was retained. No supervisor/transport attribution or fix is
+claimed: the new isolated completion failure remains open, alongside the old
+readiness episode. No synthetic fixture uses Pi credentials or a native session.
+
+To repeat, build a **unique** test executable before starting the load, then run
+it alone with `-test.v -test.count=100` and
+`-test.run='^TestShellBrokerSlowOutputWithFastInput$/^bash$'`, or with
+`-test.count=40 -test.run='^TestTTYCommandSessionOverWebRTC$'` for the CLI binary.
+Set `PI_SH_TEST_BASH` to each test Bash and `PI_SH_REMOTE_IMPL=bash`. An optional
+Go overlay can add the timers above without editing the checkout. Never rebuild
+that executable while another test uses it as its `setsid`/`nc` helper. Stop all
+`yes` children before starting the complete verification.
+
+### Recursive-copy atime observation
+
+`TestRecursiveCopyAgainstLocalSCP` now snapshots our destination immediately
+after `plan.Run`, before invoking the reference `scp`; it snapshots the reference
+immediately after that copy. Previously our destination was exposed to external
+readers for the entire reference copy before its metadata was observed. Mode,
+atime, mtime, contents, root metadata and diagnostics are still checked; the
+untouched control still reports interference. There is no retry, skip, tolerance
+or ignored atime. An external reader between copy completion and snapshot can
+still fail this strict test; this narrows a race rather than claiming filesystem
+isolation. Ten focused race repetitions (480 paired cases) passed.
+
+The commit gate remains the complete verification checklist above, including
+both forced-Bash runs, seven CGO-disabled targets and all four native binaries.
+The diagnostic overlays are excluded from that verification and from the commit.
+
+### Context fixture and macOS PTY newline processing
+
+The first complete verification ended `RESULT fail=1`: only
+`TestTTYSupervisorsGiveCommandSameContext` failed, in the forced-Bash 5.2.37
+step. Both contexts had identical environment values, ignored signals, groups
+and original terminal modes; one capture had one additional CR. An overlay that
+reported only lengths/control-byte counts, preserving the exact assertion,
+reproduced 18 failures in 100 runs, then 6 in 30. Every difference was a doubled
+CR before LF; neither implementation exclusively produced it.
+
+Reduced to a standalone local PTY, with no shell, supervisor, protocol or
+personal environment: a forked process writes synthetic lines; a delayed reader
+drains the master in small chunks. With OPOST/ONLCR, 3 of 200 runs gained exactly
+one CR; with OPOST disabled, 200 of 200 preserved every byte. An ordinary fast
+reader passed 200/200 in each mode. This reproduces the newline artifact outside
+the product; it does not explain the unrelated completion/readiness episodes.
+
+The context fixture now captures `stty -g` **before** changing anything, disables
+output processing only for reporting, and prints the saved original modes at
+the end. The exact environment/signal/group/mode comparison remains; no CR
+normalization or ignored difference is introduced. Failure diagnostics no longer
+dump inherited environment values. The corrected fixture passed 100 race
+repetitions with each Bash (both carrier types and both supervisors per run).
+The product's terminal handling is unchanged. A new complete verification is
+required after this fixture change; the first failed run is not treated as a pass.

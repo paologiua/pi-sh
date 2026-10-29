@@ -22,8 +22,8 @@ Questo documento indica il punto di ripresa; non riduce il contratto originale.
 `docs/STATUS.md` contiene anche aggiornamenti storici: gli esiti recenti in testa
 e `docs/REAL_DEVICE_TESTS.md` prevalgono sulle vecchie note di attesa.
 
-**Prima priorità: voci aperte del backlog (vedi sotto), partendo dai difetti
-emersi nella prova nativa CLI del 2026-10-22.** Su Pi sono verificati anche
+**Prima priorità: voci ancora aperte del backlog e intermittenze locali
+registrate in TESTING.md; le prove native Perl approvate sono concluse.** Su Pi sono verificati anche
 pi-sftp/pi-cp di produzione (glob, tilde, ripresa, `-r -p`) e `pi-sh -v`, con
 pulizia verificata (REAL_DEVICE_TESTS.md, NATIVE_CLI_PLAN.md). Lo stallo dell'input binario è stato diagnosticato, corretto
 e verificato sul Pi il 2026-10-22, insieme al piano di trasferimento completo
@@ -92,47 +92,39 @@ prima `allow pasting`). Bash 5.2.37 di prova era in
 
 ## Prossima sequenza di lavoro
 
-1. Controlla stato Git e file attuali, poi leggi `docs/SSH_COMPATIBILITY.md` e i
-   documenti dell'area scelta dal backlog.
-2. Prosegui la milestone dei trasferimenti con le voci aperte del backlog File:
-   prove native delle CLI `pi-cp`/`pi-sftp` (non solo del transfer-probe),
-   glob/tilde, errori/interruzioni. Ogni
-   nuova scrittura sul Pi richiede un'autorizzazione specifica: quella esistente
-   copre solo il piano `NATIVE_TRANSFER_PLAN.md` e la sua root.
-3. Registra separatamente risultati locali e sul Pi e aggiorna la matrice.
+1. Controlla stato Git, matrice e TESTING.md: il lavoro Perl e le prove native
+   approvate sono conclusi; il merge su main resta decisione del proprietario.
+2. Scegli una voce ancora aperta: episodi locali non riprodotti, perdita di
+   rete/revoca, job annidati/staccati, runtime iSH o funzioni CLI/SFTP mancanti.
+   Le prove sul Pi in sola lettura sono consentite. Nuove scritture, listener
+   o fault injection richiedono un piano esatto approvato dal proprietario.
+3. Aggiorna evidenze e matrice; prima di ogni commit esegui l'intera verifica
+   di TESTING.md, fino a `RESULT fail=0`. Mai push o merge senza richiesta.
 
-Comandi esistenti, da usare solo rispettando il piano e dopo aver ricostruito
-lo stato corrente:
-
-```sh
-./bin/transfer-probe --execute-approved --browser \
-  --root /tmp/pi-sh-probe-7470c80bcf6721dd82f13486e142579c raspberrypi
-
-# Solo se una prova ha realmente creato quella root e non l'ha rimossa:
-./bin/transfer-probe --execute-approved --cleanup-only --browser \
-  --root /tmp/pi-sh-probe-7470c80bcf6721dd82f13486e142579c raspberrypi
-```
-
-I flag non costituiscono da soli autorizzazione. Il piano limita i contenuti
-sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
+I piani nativi già segnati come eseguiti documentano esperimenti conclusi;
+i flag `--execute-approved` non autorizzano a ripeterli o ad ampliare radici,
+contenuti, porte o carico.
 
 ## Cosa funziona già
 
 - **Autenticazione/trasporto:** login HTTPS Go con password e TOTP, senza Chrome
   obbligatorio; companion browser opzionale; discovery, signaling e Pion WebRTC.
   Login diretto e comando reale con uscita 23 sono stati verificati sul Pi.
-- **Comandi senza TTY:** broker Bash con stdin binario, stdout/stderr separati,
+- **Comandi senza TTY:** broker Perl con ripiego Bash, stdin binario e stdout/stderr separati,
   EOF indipendente, stato finale, cancellazione e handshake di cleanup. Esistono
   prove native con tutti i valori dei byte, duplex e uscite/segnali selezionati.
 - **Terminale:** shell interattiva con companion verificata; `-t/-tt/-T`,
   RequestTTY, TERM, modi canonici/raw e resize integrati nella CLI dei comandi.
   Sul Pi sono verificati dimensioni iniziali, resize, input, uscita 23 e handler
   di Ctrl-C/Ctrl-Z più Ctrl-D su riga canonica vuota. Non estendere questi esiti
-  a sospensione reale, segnali predefiniti o cleanup dopo perdita del trasporto.
+  a sospensione reale, job arbitrari o cleanup dopo perdita del trasporto.
+  Il 2026-10-29 il supervisore Perl ha superato anche login/resize, Ctrl-C
+  predefinito, Ctrl-Z con/senza handler, `~.` e uscita 23, con pulizia separata.
 - **Trasferimenti:** get/put regolari, ripresa, `-p`, flush negoziato e ricorsione
   SCP hanno implementazioni e confronti locali. Sul Pi il piano completo (vuoto, 64KiB, 1MiB,
   preservazione, ripresa, flush, piccolo albero ricorsivo, errore, pulizia) è
-  passato una volta tramite transfer-probe, 2026-10-22.
+  passato tramite transfer-probe; il 2026-10-29 entrambe le corse Perl/Bash
+  complete sono passate, con pulizia indipendente confermata.
 - **CLI/configurazione:** subset esplicito di `-F/-o`, Host/Include/HostName,
   precedenza, `-G/-V/-Q`, escape e opzioni dopo la destinazione fino al comando.
   Ci sono confronti locali con OpenSSH_10.2p1 / LibreSSL 3.3.6.
@@ -147,37 +139,28 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
 
 ## Logica remota in Perl (branch `perl-remote`, 2026-10-29)
 
-Obiettivo del proprietario: tutta la logica remota in Perl, Bash solo per
-caricare, `perl -c` ed `exec`, più il ripiego congelato. Piano in quattro
-commit: broker, riduzione di forward.bash, supervisore TTY (solo se i
-differenziali TTY restano identici), invio separato da ricezione in `Run`
-con finestra di input a 32. Nessun push; il merge su main lo decide il
-proprietario.
+Broker, rilevamento/connettori di forwarding e supervisore TTY sono in Perl
+quando `perl -c` compila il rispettivo programma; Bash resta loader e ripiego.
+`PI_SH_REMOTE_IMPL=bash` forza tutto il ripiego. `Run` invia da una goroutine
+separata, finestra input 32; pulizia robusta al secondo hangup. Conservare i
+test differenziali, `use strict`, assenza di apostrofi nei programmi incorporati
+e soli moduli perl-base. Dettagli nei documenti dell'area.
 
-- **Fatto: broker in Perl** (`broker.pl`, SHELL_BROKER.md "Perl broker").
-  Stessi record, ripiego broker.bash; `PI_SH_REMOTE_IMPL=bash` forza Bash
-  ovunque. Trovati e corretti: SIGPIPE ignorato passato al comando, stallo
-  output/input senza il relay `cat`, stato perso se l'invio dell'input
-  fallisce dopo X, avvio lento per la decodifica byte per byte del loader
-  (ora una sostituzione con Bash ≥5.2, chunk 2048). Verificato sul Pi in
-  sola lettura (REAL_DEVICE_TESTS.md "Perl broker").
-- **Fatto: adattatore di forwarding in Perl dall'avvio** (FORWARDING.md
-  "Perl adapter from the start"): adapter.pl rileva anche i connettori;
-  forward.bash solo carica e resta ripiego. Verificato -L sul Pi in sola
-  lettura.
-- **Fatto: pulizia con doppio hangup** (SHELL_BROKER.md "Second hangup
-  during cleanup"): i tre script Bash uscivano a metà pulizia al secondo
-  SIGHUP lasciando vivo il gruppo del comando; il broker Perl conferma C
-  solo quando il gruppo è sparito.
-- **Fatto: supervisore TTY in Perl** (TTY_JOB_CONTROL.md "Perl supervisor"):
-  tty.bash fa ancora stty e poi `exec perl`; stesso pid e gruppo. Tutta la
-  suite TTY con OpenSSH identica con i due supervisori, Bash 5.2 e 5.3,
-  anche sotto carico. Non ancora provato sul Pi (serve una sessione -tt).
-- **Fatto: `Run` con mittente separato e finestra di input 32** (SHELL_BROKER.md
-  "Run sender and input window of 32"): upload 1 MiB sul Pi 0,47 s.
-- Da fare: il piano di scrittura `NATIVE_PERL_BROKER_PLAN.md`
-  (transfer-probe, -R), da far approvare; merge su main a giudizio del
-  proprietario.
+Il piano `NATIVE_PERL_BROKER_PLAN.md` è **approvato ed eseguito** (proprietario:
+«Autorizzo il piano Perl broker», 2026-10-29). Entrambi i transfer-probe e -R
+16/64/65, default Perl e Bash forzato, sono passati; radici assenti, nessun
+sftp-server/Perl residuo e nessun listener sulla 47151. Nessun cleanup-only.
+Sul Pi sono passati anche login interattivo, resize, Ctrl-C, Ctrl-Z con e senza
+handler, `~.` e uscita 23 con PTY locale reale; pulizia verificata separatamente.
+Evidenze e tempi in REAL_DEVICE_TESTS.md. Questi piani sono esauriti: non
+riutilizzarli come autorizzazione per nuove scritture o listener.
+
+Aperti: broker lento Bash 200/200 passati sotto carico, ma vecchi >60 s non
+classificati; prontezza TTY non riprodotta; un nuovo `ctrl-z-handler` Bash 5.3
+ha perso la conclusione dopo `seen:x` (679/680, poi 200/200 isolati e 680/680
+con diagnostica). Nessuna causa o correzione dimostrata (TESTING.md). Restano
+le prove di perdita rete/revoca e job staccati, runtime iSH/Linux/Windows e resto della
+matrice. Nessun push; il merge su main lo decide il proprietario.
 
 ## Correzioni recenti da preservare
 
@@ -314,10 +297,8 @@ Righe ancora aperte (lavoro rimanente):
   lettore dell'output del broker in Perl (sysread; ripiego Bash,
   `PI_SH_BROKER_WORKERS=bash`): 1 MiB di stdout da 56 s a 1,3 s, pi-cp di
   1,4 MB da 94 s a 22 s; SHELL_BROKER.md "Perl output reader";
-  finestre del broker: output 32 record (`_ps_out_win`), input di nuovo 8
-  (`_ps_in_win`/`inputWindow`): con 32 in input Run poteva bloccarsi in un ciclo
-  invio-input/output-non-letto (stack della verifica fallita; SHELL_BROKER.md
-  "Input window"); separare invio e ricezione in Run è il passo robusto, non fatto;
+  finestre del broker: output e input 32 record; il mittente separato in
+  `Run` elimina il ciclo input/output (SHELL_BROKER.md "Run sender and input window of 32");
   scrittore dell'input del broker in Perl: upload 1 MiB sul Pi da 3,1 a 1,5 s;
   interruttore rinominato `PI_SH_BROKER_WORKERS=bash` (lettori e scrittore);
   per elencare processi sul Pi usare `ps -eo …,comm`: `grep -v "\["` nasconde
@@ -341,19 +322,29 @@ Righe ancora aperte (lavoro rimanente):
 | Area | Lavoro ancora necessario | Documenti da leggere quando la affronti |
 | --- | --- | --- |
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
-| File | Prove native delle CLI pi-cp/pi-sftp oltre al transfer-probe; verifica sul Pi di glob/tilde; `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
+| File | Prove native CLI mancanti (le verifiche base e glob/tilde sono già in REAL_DEVICE_TESTS.md); `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
 | Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; dopo il cambio dei record rifatti sul Pi half-close, velocità, `~#` e `-R 0`); molti stream, sessioni lunghe, perdita di connessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |
 | Sicurezza/rilascio | Sessioni lunghe/scadenza/revoca; dipendenze e fork; licenza originale da scegliere; condizioni del servizio prima di pubblicare | SECURITY, DEPENDENCIES, THIRD_PARTY_NOTICES |
 
-Il forwarding usa l'adattatore Bash in memoria e Perl tramite `perl-base`
+Il forwarding usa l'adattatore Perl in memoria quando compila, altrimenti Bash,
+e i connettori già disponibili, con preferenza per Perl tramite `perl-base`
 (Essential, verificato sul Pi il 2026-10-27; FORWARDING.md "Perl connector"),
 altrimenti il `nc.openbsd` già presente (OpenBSD netcat 1.229, `-N`). Python non si
 usa (priorità optional). Il candidato Bash `/dev/tcp` resta escluso per
 l'half-close. Non installare connettori e non inventare canali Connect. Opzioni
 SSH senza equivalente devono essere rifiutate chiaramente.
 
+Il confronto del contesto TTY salva i modi originali e disattiva OPOST solo
+per stampare il rapporto: un PTY Mac nudo può raddoppiare un CR sotto
+contropressione (TESTING.md). Il confronto resta esatto; i messaggi di errore
+non stampano più l'ambiente ereditato. 100 ripetizioni race per Bash passate.
+
+Il test ricorsivo acquisisce ora ogni destinazione subito dopo la propria
+copia, senza attendere la copia di riferimento, mantenendo tutti i confronti
+(480 casi differenziali passati sotto race). L'interferenza tra fine copia e
+snapshot resta possibile.
 La discrepanza isolata sugli atime nelle prove ricorsive è stata classificata
 (2026-10-22) come lettore esterno sul Mac di test (probabilmente Trend Micro):
 il test ora riporta un file di controllo intatto in caso di fallimento.
@@ -402,7 +393,7 @@ Sul Mac più profili Chrome hanno l'estensione Claude: Connect è aperto in
 selezionato (`list_connected_browsers`) prima di chiedere al proprietario di
 rientrare (2026-10-28).
 
-Ultimo stato delle verifiche **locali**: (2026-10-22) suite race completa con Bash 5.3,
+Ultimo stato delle verifiche **locali**: (2026-10-29; dettagli in TESTING.md) suite race completa con Bash 5.3,
 pacchetti shellbroker e cmd con Bash 5.2.37, vet, verifica moduli e i sette
 target CGO-disabled passati dopo la correzione; prima: suite race completa passata; race del
 modulo annidato passata; root vet e verifica moduli passati. Il vet annidato

@@ -71,24 +71,29 @@ func TestTTYSupervisorsGiveCommandSameContext(t *testing.T) {
 	if _, err := exec.LookPath("perl"); err != nil {
 		t.Skip("perl unavailable")
 	}
-	text := `env | LC_ALL=C sort | grep -Ev '^(_|PATH|PI_SH_[A-Z_]*)='; perl -e 'print "ignored:", join(",", grep { ($SIG{$_} // "") eq "IGNORE" } sort keys %SIG), "\n"'; ` +
+	// macOS PTYs can duplicate CR during ONLCR output under backpressure,
+	// even with a bare writer and no adapter. Capture the original modes,
+	// then report the context without output processing, still comparing
+	// every byte and the original modes rather than normalizing differences.
+	text := `PI_SH_CONTEXT_MODES=$(stty -g) || exit; stty -opost || exit; env | LC_ALL=C sort | grep -Ev '^(_|PATH|PI_SH_[A-Z_]*)='; perl -e 'print "ignored:", join(",", grep { ($SIG{$_} // "") eq "IGNORE" } sort keys %SIG), "\n"'; ` +
 		`[ "$(ps -o pgid= -p $$ | tr -d " ")" = "$(ps -o pgid= -p $PPID | tr -d " ")" ] && echo same-group-as-supervisor; ` +
-		`[ "$(ps -o tpgid= -p $$ | tr -d " ")" = "$(ps -o pgid= -p $$ | tr -d " ")" ] && echo foreground; stty -g`
+		`[ "$(ps -o tpgid= -p $$ | tr -d " ")" = "$(ps -o pgid= -p $$ | tr -d " ")" ] && echo foreground; printf '%s\n' "$PI_SH_CONTEXT_MODES"`
 	for _, carrier := range []string{"/bin/sh", modernTTYBash(t)} {
 		got := map[string]string{}
 		for _, impl := range []string{"", "bash"} {
 			t.Setenv("PI_SH_REMOTE_IMPL", impl)
 			code, out, err := runStagedTTYCarrier(t, carrier, text, nil, false)
 			if err != nil || code != 0 {
-				t.Fatalf("%s %q: code %d, %v, %q", carrier, impl, code, err, out)
+				t.Fatalf("%s %q: code %d, %v, context output %d bytes", carrier, impl, code, err, len(out))
 			}
 			got[impl] = out
 		}
 		if got[""] != got["bash"] {
-			t.Fatalf("%s: perl supervisor:\n%s\nbash supervisor:\n%s", carrier, got[""], got["bash"])
+			// The context includes inherited environment values; never dump them.
+			t.Fatalf("%s: command contexts differ (%d/%d output bytes)", carrier, len(got[""]), len(got["bash"]))
 		}
 		if !strings.Contains(got[""], "same-group-as-supervisor") || !strings.Contains(got[""], "foreground") {
-			t.Fatalf("%s: command not in the foreground carrier group:\n%s", carrier, got[""])
+			t.Fatalf("%s: command not in the foreground carrier group", carrier)
 		}
 	}
 }

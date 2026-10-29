@@ -1188,9 +1188,10 @@ typed). One run of `pi-sh --browser --experimental-command -tt -v raspberrypi
 | `test -t 0`, `TERM` | a TTY; `xterm-256color` |
 | Status | 23, `adapter=broker-tty` |
 
-Not checked on the device: Ctrl-Z, the interactive login shell, resize, and
-hangup with the Perl supervisor. Those need a local terminal and are covered
-only by the local OpenSSH differentials (TTY_JOB_CONTROL.md "Perl supervisor").
+At this first check, Ctrl-Z, the interactive login shell, resize and hangup
+were still unverified on the device. The later same-day real-PTY checks below
+("Native Perl TTY controls") cover login, resize, Ctrl-C, Ctrl-Z and `~.`;
+network-loss/revocation and arbitrary detached-job cleanup remain open.
 
 ## Input window of 32, 29 October 2026
 
@@ -1203,3 +1204,92 @@ nothing typed). Single runs.
 | 1 MiB stdin to `wc -c` (timed on the device), then `head -c 1048576 /dev/zero` | 1048576, 473 ms (window 8: 1010 ms; `7500852`: 1636 ms); 1048576 bytes in 0.49 s |
 | `pi-cp --browser -v raspberrypi:/usr/bin/bash`, channel open to exit | 1.80 s; SHA-256 `ccbd5106945d1095…` as on the device |
 | `ps -eo pid,ppid,etime,comm`, `ss -ltn` afterwards | only the listing session's `perl` broker and its `bash`; listening only 127.0.0.1:11434 and port 22 |
+
+## Native Perl broker plan, 29 October 2026
+
+Owner approval: **«Autorizzo il piano Perl broker»**, 2026-10-29.
+`NATIVE_PERL_BROKER_PLAN.md` executed on `perl-remote` at `c70712d`, binaries
+built from that commit, via the authenticated Chrome Devices companion and
+Connect exclusively. Device software unchanged: Bash 5.2.37, Perl 5.40.1,
+rpi-connect-lite 2.13.0. No installs, persistent files, configuration changes,
+service restarts or SSH transport. Single runs, sequentially.
+
+An initial sandbox attempt could not bind the local companion; an authorized
+local execution then reached Connect's recent-sign-in refusal before any device
+session or root creation. Opened the existing web Remote shell, typed nothing,
+waited for the prompt and returned to Devices. Neither setup failure created
+remote state; no transfer or remote command was replayed.
+
+### Transfers
+
+Exact roots:
+- default: `/tmp/pi-sh-probe-72180a90b3e17ba55f300e1c49f6d284`;
+- `PI_SH_REMOTE_IMPL=bash`: `/tmp/pi-sh-probe-3497d8e819f6c8f8df424c5a53402cd2`.
+
+| Check | Default Perl broker | Forced Bash broker/workers |
+| --- | --- | --- |
+| All 23 probe checks (private root; empty/64 KiB/1 MiB SHA-256 round trips; modes; preservation; resume; advertised fsync; recursive tree; missing source; cleanup) | passed | passed |
+| 64 KiB upload / download | 0.131 / 0.122 s | 0.299 / 3.652 s |
+| 1 MiB upload / download | 0.797 / 0.900 s | 3.594 / 58.743 s |
+| Probe, through broker completion | 4.454 s | 81.513 s |
+| Wall time including companion | 18.243 s | 92.58 s |
+| UTC start / end | 18:43:37 / 18:43:55 | 18:44:06 / 18:45:39 |
+| Broker completion / CLI exit | code 0, failure=none, cleanup-unconfirmed=false / 0 | code 0, failure=none, cleanup-unconfirmed=false / 0 |
+
+Both probes removed their own known leaves/directories and verified root
+absence in the same session. No `--cleanup-only` was needed or run. Phase
+elapsed times are cumulative; upload/download durations above are differences
+between adjacent phase reports.
+
+### Remote forwarding
+
+Exact client from `NATIVE_RMANY_PLAN.md`, each round bounded by `timeout 120`,
+with the approved replacement ports: Pi listener **127.0.0.1:47151**, Mac
+counter **127.0.0.1:51151**. One Perl client per round; no device files.
+The temporary Mac counter read each request to EOF, replied with 65536 bytes
+and closed; bounds 150 connections / 300 s, stopped after its session ended.
+
+| Check | Default | `PI_SH_REMOTE_IMPL=bash` |
+| --- | --- | --- |
+| Verbose detection | connector=perl adapter=perl | connector=perl adapter=bash |
+| 16 connections | ok=16 of 16; 0.9 s | ok=16 of 16; 3.8 s |
+| 64 connections | ok=64 of 64; 3.2 s | ok=64 of 64; 15.1 s |
+| 65 connections | ok=65 of 65; 3.3 s | ok=65 of 65; 15.4 s |
+| Mac counter | 145 requests, every length 65536, no errors | 145 requests, every length 65536, no errors |
+| Whole driver wall time including companion | 26.651 s | 60.538 s |
+| CLI exit | 0 | 0 |
+
+Separate read-only session at 18:47 UTC: `ls -ld` reported both exact roots
+absent. `ps -eo pid,ppid,etime,comm` showed no sftp-server, worker, listener
+or stray Perl process: only the listing session's own Perl broker (PID 21381),
+command Bash and ps. `ss -ltn` showed no 47151 (only the existing loopback
+11434 and SSH 22). Local counters had closed too.
+
+## Native Perl TTY controls, 29 October 2026
+
+Read-only, default implementation from `c70712d`, Connect browser companion.
+A temporary Python driver on the Mac used a real controlling PTY (`pty.fork`),
+TERM=xterm-256color, control bytes and TIOCSWINSZ/SIGWINCH. No remote scripts
+or files. For the login shell, `unset HISTFILE; set +o history` preceded the
+read-only checks, preventing this test's commands from being saved as history.
+
+| Check | Result | Wall time including companion |
+| --- | --- | --- |
+| `bin/pi-sh --browser raspberrypi` (no command) | interactive login prompt, LOGIN-OK, stdin is a TTY | combined below |
+| Resize of that login shell | initial `24 80`, after resize `35 111` from `stty size` | combined below |
+| `exit 23` from that login shell | CLI 23 | 11.753 s for login/resize/exit |
+| `-tt`, Ctrl-C to `exec sleep 120` after readiness | command terminated, CLI 255 | 16.819 s |
+| `-tt`, Ctrl-Z without handler, then x/Enter | SEEN:x, CLI 23 | 12.892 s |
+| `-tt`, Ctrl-Z with TSTP handler; x/Enter only after HANDLED-Z | HANDLED-Z then SEEN:x, CLI 23 | 12.621 s |
+| `-tt`, `~.` after readiness while `sleep 120` ran | CLI 255; honest `remote TTY cleanup was not confirmed` diagnostic | 15.796 s |
+
+The first login driver did not recognize ANSI colors in the prompt and sent
+no remote command. Its local pi-sh was terminated with TERM (255); fixed the
+scratch driver to strip ANSI sequences before matching, then ran the above.
+This is a harness setup failure, not a product failure.
+
+A separate read-only cleanup session after all cases found no sleep, sftp-server
+or Perl supervisor left; the sole Perl was that session's own broker (PID 21587).
+Both probe roots still absent; no listener on 47151. This confirms observed
+cleanup for these sessions, including `~.`; it does not add an in-band TTY
+cleanup acknowledgment or prove network-loss/revocation/detached-job cleanup.

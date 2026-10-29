@@ -124,3 +124,11 @@ The assertion is unchanged: a missed preservation would also show a recent atime
 `TestRecursiveCopyAgainstLocalSCP` now keeps an untouched control file in each
 case and reports its atime on failure; a control no longer at 1600000001 marks
 external interference. The 48 cases then passed 10 consecutive runs (480 cases).
+
+**Observation window (2026-10-29).** The recursive differential now snapshots
+each destination immediately after its own copy. Our destination no longer
+waits through the reference scp before observation. Every mode/time/content
+comparison and the control remain strict; there is no retry, skip or atime
+tolerance. Ten race repetitions (480 paired cases) passed. A reader between
+completion and snapshot can still interfere; this is a smaller window, not
+a claim of isolation or a reason to suppress a mismatch.

@@ -202,9 +202,33 @@ OpenSSH gives identical results with both supervisors.
 
 **On the device** (read-only, REAL_DEVICE_TESTS.md "Perl TTY supervisor"): a
 `-tt` command ran under the `perl` supervisor. It was in the carrier group,
-in the foreground, on a TTY, with `TERM` set, and exited 23. Ctrl-Z, the
-interactive login shell, resize and hangup have not been tried on the device
-with this supervisor.
+in the foreground, on a TTY, with `TERM` set, and exited 23. Later the same day a real Mac PTY exercised the interactive login shell,
+24x80 to 35x111 resize, exit 23, Ctrl-C (255), Ctrl-Z without and with a
+handler (23), and `~.` (255). A separate process listing confirmed no
+supervisor or command left after the tests (REAL_DEVICE_TESTS.md "Native Perl
+TTY controls"). The `~.` diagnostic still reports cleanup as unconfirmed
+in-band; the independent listing is evidence only for these runs. Network
+loss, revocation and arbitrary detached jobs remain unverified.
 
 **Decision.** The Perl supervisor is kept. Every local differential is
 identical with both supervisors, and tty.bash stays as the fallback.
+
+**Further load investigation (2026-10-29).** With the Bash supervisor,
+40 full CLI TTY repetitions passed 680/680 cases on Bash 5.2.37; Bash 5.3
+passed 679/680, with one `ctrl-z-handler` session not finishing after both
+`caught-suspend` and `seen:x`. This is not the historical readiness episode.
+Then 200 isolated cases and 40 full repetitions (680 cases) passed under the
+same load with a 10 s timer for goroutines, carrier bytes and process state;
+no timer fired. Neither cause nor fix is claimed. The completion failure
+remains open (TESTING.md "Further serial load investigation").
+
+**Context-fixture reporting (2026-10-29).** A later verification found one
+extra CR in one context report, with identical values/modes. A standalone
+Mac PTY reproduced it with OPOST/ONLCR under backpressure (3/200, versus
+0/200 with OPOST off), without any adapter. The fixture saves the original
+modes, disables output processing for reporting and compares the exact
+reports including those original modes. No normalization or product change;
+100 race repetitions with each Bash passed. Context failure diagnostics
+report sizes instead of dumping inherited environment values. This is
+separate from the still-unclassified Ctrl-Z completion failure above;
+TESTING.md records the failed first gate and the reproduction.
