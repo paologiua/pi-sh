@@ -1,14 +1,19 @@
-# pi-sh forwarding adapter, Perl data path. forward.bash hands the carrier to
-# this program (exec, nothing written) when Go asks for it with "P" and Perl
-# compiles it; it then speaks the same records as forward.bash (mux.go), so a
-# device without Perl keeps the Bash loop. Only perl-base modules are used.
+# pi-sh forwarding adapter in Perl. forward.bash execs this program (nothing is
+# written) as soon as perl compiles it: it then detects the connectors and
+# carries the data path, speaking the same records as forward.bash (mux.go),
+# so a device without Perl keeps the Bash adapter. Where forward.bash already
+# runs (perl could not compile this at first), Go may still hand it over with
+# "P" (the relay argument is then set). Only perl-base modules are used; Socket
+# is required so that a perl without it keeps the Bash adapter.
 # This text is embedded in a single-quoted Bash word: it holds no apostrophe.
 use strict;
 use warnings;
 use POSIX ();
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
+use Socket qw(getaddrinfo pack_sockaddr_un);
 
 my ($P, $W, $relay) = @ARGV;
+$relay //= "";
 $W =~ /\A[1-9][0-9]{0,3}\z/ or exit 125;
 $SIG{PIPE} = "IGNORE";
 my %s;
@@ -126,8 +131,59 @@ sub hexrecords {
   }
 }
 
+# As _fw_detect in forward.bash: for each of nc, ncat, socat and perl found on
+# PATH, up to three nonempty lines of its help or version output (stdout and
+# stderr, stdin from /dev/null), each cut to 200 bytes, then the bare name.
+# perl is this program, so its line is the fingerprint that the Bash adapter
+# gets from a perl that loads the same Socket functions.
+sub onpath {
+  my $t = shift;
+  for my $d (split(/:/, $ENV{PATH} // "", -1)) {
+    my $f = (length $d ? $d : ".") . "/$t";
+    return 1 if -f $f && -x _;
+  }
+  return 0;
+}
+sub output {
+  my @argv = @_;
+  pipe(my $r, my $w) or return "";
+  my $pid = fork();
+  if (!defined $pid) { close($r); close($w); return "" }
+  if (!$pid) {
+    $SIG{PIPE} = "DEFAULT";
+    open(STDIN, "<", "/dev/null");
+    POSIX::dup2(fileno $w, 1); POSIX::dup2(fileno $w, 2);
+    { no warnings "exec"; exec { $argv[0] } @argv }
+    POSIX::_exit(127);
+  }
+  close($w);
+  my $o = "";
+  1 while (sysread($r, $o, 65536, length $o) // ($!{EINTR} ? 1 : 0));
+  close($r);
+  waitpid($pid, 0);
+  return $o;
+}
+sub detect {
+  for my $t (qw(nc ncat socat perl)) {
+    next if !onpath($t);
+    # Command substitution in Bash drops NUL bytes and trailing newlines.
+    my $o = $t eq "perl" ? "pi-sh perl sockets\n" : output($t, $t eq "nc" ? "-h" : $t eq "ncat" ? "--version" : "-V");
+    $o =~ tr/\0//d;
+    $o =~ s/\n+\z//;
+    my $n = 0;
+    for my $line (split(/\n/, $o)) {
+      last if $n == 3;
+      next if $line eq "";
+      emit("T $t " . unpack("H*", substr($line, 0, 200)));
+      $n++;
+    }
+    emit("T $t");
+  }
+}
+
 sub record {
   my $r = shift;
+  if ($r eq "P") { !length($relay) && !%s or fail(); emit("P"); return }
   if ($r eq "Q") { cleanup(); emit("D"); flush(); exit 0 }
   if ($r =~ /\AI /) {
     my ($id, $seq, $n, $h) = $r =~ /\AI ([0-9]{1,10}) ([0-9]{1,10}) ([0-9]{1,4}) ([0-9a-f]*)\z/ or fail();
@@ -164,8 +220,10 @@ sub record {
   }
 }
 
-nonblock(\*STDIN);
-emit("P");
+# Handed over by the Bash adapter: its relay pipe is this standard input. Run
+# from the start: the carrier itself, a terminal whose open file it shares
+# with standard output, so it stays blocking (select says when it is ready).
+if (length $relay) { nonblock(\*STDIN); emit("P") } else { detect(); emit("R") }
 flush();
 while (1) {
   my ($r, $w, $wait) = ("", "", undef);

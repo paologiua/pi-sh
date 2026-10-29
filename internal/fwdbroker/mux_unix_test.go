@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,8 +58,10 @@ func eachConnector(t *testing.T, test func(*testing.T, string)) {
 // forces the Bash loop; "perl" also provides perl beside the netcat double.
 var testAdapter string
 
-// testCarrier is the PTY of the last startMux, for tests that drop it.
+// testCarrier is the PTY of the last startMux, for tests that drop it, and
+// testCarrierPID the process that the carrier shell started as.
 var testCarrier *os.File
+var testCarrierPID int
 
 type readResult struct {
 	data []byte
@@ -148,14 +151,19 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 		t.Setenv("PI_SH_FORWARD_ADAPTER", "bash")
 	case testAdapter == "perl" && connector == "perl":
 		t.Setenv("PI_SH_FORWARD_ADAPTER", "perl")
+		t.Setenv("PI_SH_REMOTE_IMPL", "")
 	case testAdapter == "perl" && connector == "nc":
 		t.Setenv("PI_SH_FORWARD_ADAPTER", "perl")
+		t.Setenv("PI_SH_REMOTE_IMPL", "")
 		path, err := exec.LookPath("perl")
 		if err != nil {
 			t.Skip("perl unavailable")
 		}
 		link("perl", path)
 		t.Setenv("PI_SH_FORWARD_CONNECTOR", "nc")
+	}
+	if testTools != nil {
+		testTools(tools)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	cmd := exec.Command("/bin/sh", "-i")
@@ -165,7 +173,7 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 		cancel()
 		t.Fatal(err)
 	}
-	testCarrier = file
+	testCarrier, testCarrierPID = file, cmd.Process.Pid
 	s := ptyStream{file: file, frames: make(chan readResult, 64)}
 	go func() {
 		for {
@@ -795,4 +803,75 @@ func TestStreamReplacedInOneBatchDoesNotStall(t *testing.T) {
 			}
 		}
 	})
+}
+
+// testTools, when set, adds programs to the PATH directory of startMux.
+var testTools func(dir string)
+
+// The Perl adapter detects the connectors itself (forward.bash's
+// _fw_detect, in Perl); both must report the same lines: empty lines skipped,
+// at most three, each cut to 200 bytes, NUL bytes and trailing newlines
+// dropped as Bash command substitution does, stdout and stderr together.
+func TestAdapterDetectionMatchesBash(t *testing.T) {
+	testTools = func(dir string) {
+		for name, body := range map[string]string{
+			"ncat":  `printf '\n\nNcat: Version 7.94 ( https://nmap.org/ncat )\r\n%0300d\na\000b\nfourth\n\n\n' 0; exit 2`,
+			"socat": `printf 'socat by Gerhard Rieger\n' >&2; printf 'socat version 1.8\n'; exit 1`,
+		} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Cleanup(func() { testTools = nil })
+	detected := map[string]map[string][]string{}
+	for _, adapter := range []string{"bash", "perl"} {
+		t.Run(adapter, func(t *testing.T) {
+			testAdapter = adapter
+			t.Cleanup(func() { testAdapter = "" })
+			m, err := startMux(t, "perl")
+			if err != nil {
+				t.Fatal(err)
+			}
+			detected[adapter] = m.Detected
+		})
+	}
+	if !reflect.DeepEqual(detected["bash"], detected["perl"]) {
+		t.Fatalf("bash adapter %q\nperl adapter %q", detected["bash"], detected["perl"])
+	}
+	if len(detected["perl"]["ncat"]) != 3 || len(detected["perl"]["ncat"][1]) != 200 || len(detected["perl"]["socat"]) != 2 || len(detected["perl"]["perl"]) != 1 {
+		t.Fatalf("unexpected detection %q", detected["perl"])
+	}
+}
+
+// With perl on the device the Perl adapter runs from the start: it has
+// detected the connectors before Go asks for it with "P".
+func TestPerlAdapterRunsFromStart(t *testing.T) {
+	testAdapter = "perl"
+	t.Cleanup(func() { testAdapter = "" })
+	m, err := startMux(t, "perl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Adapter != "perl" {
+		t.Fatal("adapter", m.Adapter)
+	}
+	// The adapter is the carrier shell process itself, after exec.
+	out, err := exec.Command("ps", "-o", "args=", "-p", strconv.Itoa(testCarrierPID)).Output()
+	if err != nil || !strings.HasPrefix(filepath.Base(strings.Fields(string(out))[0]), "perl") {
+		t.Fatalf("carrier process %q, %v", out, err)
+	}
+}
+
+// PI_SH_REMOTE_IMPL=bash keeps the Bash adapter where perl would run it,
+// with the Perl connector still selected.
+func TestRemoteImplSwitchKeepsBashAdapter(t *testing.T) {
+	t.Setenv("PI_SH_REMOTE_IMPL", "bash")
+	m, err := startMux(t, "perl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Adapter != "bash" || m.Connector().Name != "perl" {
+		t.Fatal("adapter", m.Adapter, "connector", m.Connector().Name)
+	}
 }

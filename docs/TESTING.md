@@ -959,3 +959,15 @@ came in one PTY read they arrived together. The failure and X then raced in
 `Run`'s `select`, and X could win; reporting status 0 is correct, but the test
 then skipped the abort it is about. The command now sleeps 0.2 s before
 `exit 0`, which keeps X out of the frame that carries R.
+
+**`TestShellBrokerCarrierLossKillsCommandGroup` with the Bash broker.** It
+failed once in the `PI_SH_REMOTE_IMPL=bash` step with Bash 5.2, while three
+packages ran at once: the command group was still there at the 8 s deadline.
+With one `yes` per core it passed 120 of 120 runs with both Bash versions.
+A lost cleanup would keep the group for its 300 s `sleep`, so the deadline is
+now 20 s, and the test logs how long the group took to go. Whether that run
+was slow or a rare missed cleanup in the frozen Bash broker is not proven.
+
+An overlapping load run once rebuilt the shared test binary under another;
+the forwarding tests' `nc` double is that binary, so those failures were
+artifacts. The load script now gives every run its own binary and logs.

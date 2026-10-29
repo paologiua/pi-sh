@@ -654,3 +654,69 @@ after 10.1 s; with SIGTERM 6 s after start, 255 at 6.0 s; nothing left running.
 session at Info level; pi-sh does not print it (a general difference, not
 specific to forwarding). Waiting on -R connections on the device needs an
 approved listener.
+
+## Perl adapter from the start — 2026-10-29
+
+**Why.** Until now forward.bash staged itself, set up its relay and idle
+coprocesses, and detected the connectors in Bash. Only then did it hand the
+carrier to adapter.pl, on Go's `P`. As with the shell broker (SHELL_BROKER.md
+"Perl broker"), only loading and the fallback stay in Bash.
+
+**Now.**
+- forward.bash begins by running `perl -c` on adapter.pl and, on success,
+  `exec`s it with no relay argument.
+- adapter.pl then detects the connectors itself and sends the same `T`
+  records, then `R`. When `P` arrives it answers `P` at once.
+- `use Socket qw(getaddrinfo pack_sockaddr_un)` is part of the program, so a
+  perl without those functions fails `perl -c` and the whole Bash adapter
+  stays. That is the same condition as the Perl fingerprint.
+- The Perl adapter reads the carrier PTY itself, with no relay `cat`. It does
+  not make that descriptor non-blocking, because the open terminal is shared
+  with standard output: it reads only when `select` reports data. Its carrier
+  writes stay blocking, which is safe here because mux.go's receive goroutine
+  never blocks (each stream's event queue holds its whole window).
+- The rest of forward.bash is unchanged and stays as the fallback, including
+  its own `P`/`p` handoff. That path now runs only where perl cannot compile
+  adapter.pl, so it always answers `p`.
+
+The records towards mux.go are unchanged. `PI_SH_FORWARD_ADAPTER=bash` and
+`PI_SH_REMOTE_IMPL=bash` make mux.go prepend `_fw_bash_impl=1`, which keeps
+the Bash adapter.
+
+**Detection in Perl.** For nc, ncat, socat and perl, in that order, a tool
+counts when an executable regular file of that name is on PATH, as with
+`command -v`. Its help or version output (`nc -h`, `ncat --version`,
+`socat -V`) is captured from stdout and stderr together, with stdin from
+/dev/null. As Bash command substitution does, NUL bytes and trailing newlines
+are dropped. Up to three nonempty lines follow, each cut to 200 bytes, and
+then the bare name. For perl, the program itself is the check, so its line is
+the fingerprint without running another perl.
+
+**Tests.**
+- `TestAdapterDetectionMatchesBash` compares the two adapters' `Detected` maps
+  with fake ncat and socat. Their output has leading empty lines, CRLF, a
+  300-byte line, a NUL byte, more than three lines, output on stderr, and
+  nonzero exits.
+- `TestPerlAdapterRunsFromStart`: the carrier process is `perl` and has no
+  relay `cat`.
+- `TestRemoteImplSwitchKeepsBashAdapter`.
+- `eachConnector`, `TestPerlAdapterFallsBackToBash`,
+  `TestCarrierLossTerminatesConnectors` and
+  `TestStreamReplacedInOneBatchDoesNotStall` pass unchanged.
+- With `PI_SH_REMOTE_IMPL=bash` in the environment, `eachConnector`'s Perl
+  cases still clear it, as `eachImpl` does.
+
+**Measurements.** The local forwarding benchmarks are unchanged within noise,
+because the data path is the same program. Perl connector at 40 ms, one
+connection: 1404/1370 → 1347/1312 KiB/s. -L with 64 streams: 25081 → 26767
+KiB/s in total. -R with 64 connections: 944 → 947 KiB/s each way.
+
+On the device (read-only, single runs; REAL_DEVICE_TESTS.md "Perl adapter
+from the start"):
+- from channel open to `forwarding carrier ready`: 0.59 s, against 1.58 s for
+  `7500852`. Part of this comes from the loader's faster decoding (Perl
+  broker commit);
+- -L to speed.cloudflare.com: 1, 16 and 64 × 256 KiB, 1 × 4 MiB and
+  64 × 1 MiB all complete, at 2.1–2.3 MiB/s in total, as on 2026-10-28;
+- with `PI_SH_REMOTE_IMPL=bash` the log reads `adapter=bash`, and 16 × 256 KiB
+  ran at 661 KiB/s (654 on 2026-10-28).

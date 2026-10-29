@@ -589,8 +589,10 @@ func TestShellBrokerCarrierLossKillsCommandGroup(t *testing.T) {
 			t.Fatalf("no command group: %q", out.String())
 		}
 		// The harness waits for the carrier process, so this also bounds how
-		// long the broker took to clean up and exit.
-		deadline := start.Add(8 * time.Second)
+		// long the broker took to clean up and exit. A leak keeps the group
+		// for 300 s; 20 s leaves room for a loaded machine (8 s was exceeded
+		// once with the Bash broker while three packages ran, 2026-10-29).
+		deadline := start.Add(20 * time.Second)
 		for syscall.Kill(-pid, 0) == nil {
 			if time.Now().After(deadline) {
 				_ = syscall.Kill(-pid, syscall.SIGKILL)
@@ -598,6 +600,7 @@ func TestShellBrokerCarrierLossKillsCommandGroup(t *testing.T) {
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
+		t.Logf("command group gone %v after start", time.Since(start).Round(time.Millisecond))
 	})
 }
 

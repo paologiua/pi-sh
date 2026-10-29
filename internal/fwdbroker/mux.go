@@ -111,7 +111,11 @@ func Start(setup, ctx context.Context, carrier shellbroker.Stream) (*Mux, error)
 }
 
 func start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
-	adapter, err := shellbroker.NewAdapter(source, []string{"cat"}, "forwarding adapter requires existing Bash >=4.3 and cat")
+	script := source
+	if bashAdapter() {
+		script = "_fw_bash_impl=1\n" + source
+	}
+	adapter, err := shellbroker.NewAdapter(script, []string{"cat"}, "forwarding adapter requires existing Bash >=4.3 and cat")
 	if err != nil {
 		return nil, err
 	}
@@ -146,8 +150,10 @@ func start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
 	m.Adapter = "bash"
 	// Perl, when its sockets work, replaces the Bash loop on the data path:
 	// that loop used a whole device core with many streams (FORWARDING.md
-	// "Perl adapter"). PI_SH_FORWARD_ADAPTER=bash keeps it (docs/TESTING.md).
-	if hasLine(m.Detected["perl"], perlFingerprint) && os.Getenv("PI_SH_FORWARD_ADAPTER") != "bash" {
+	// "Perl adapter"). Where the device's perl compiles adapter.pl it already
+	// runs and answers at once; PI_SH_FORWARD_ADAPTER=bash or PI_SH_REMOTE_IMPL=bash
+	// keep the Bash loop (docs/TESTING.md).
+	if hasLine(m.Detected["perl"], perlFingerprint) && !bashAdapter() {
 		if err := records.Send("P"); err != nil {
 			return nil, err
 		}
@@ -174,6 +180,11 @@ func start(ctx context.Context, carrier shellbroker.Stream) (*Mux, error) {
 	}
 	m.connector = connector
 	return m, nil
+}
+
+// bashAdapter reports the diagnostic switches that keep the Bash adapter.
+func bashAdapter() bool {
+	return os.Getenv("PI_SH_FORWARD_ADAPTER") == "bash" || shellbroker.BashOnly()
 }
 
 // Connector reports the selected remote connector.

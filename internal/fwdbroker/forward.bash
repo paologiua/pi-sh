@@ -15,6 +15,15 @@ declare -a S_oseq=() S_oack=() S_oeof=() S_eeof=() S_iseq=() S_ifwd=() S_iack=()
 # in mux.go); each raw reader starts with one token per record.
 _fw_win=32 _fw_tokens=
 for ((_fw_k=0;_fw_k<_fw_win;_fw_k++)); do _fw_tokens+=$'\n'; done
+# The whole adapter, connector detection included, runs in Perl (adapter.pl,
+# in _fw_perl_src) when the device's perl compiles it; this Bash adapter is the
+# fallback, kept as it is (FORWARDING.md "Perl adapter").
+# PI_SH_REMOTE_IMPL=bash or PI_SH_FORWARD_ADAPTER=bash keep it here.
+if [[ -z ${_fw_bash_impl-} ]] && perl -c -e "$_fw_perl_src" </dev/null >/dev/null 2>&1; then
+  shopt -s execfail
+  exec perl -e "$_fw_perl_src" -- "$_ps_prefix" "$_fw_win" "" 2>/dev/null
+  shopt -u execfail
+fi
 _fw_idle_pid= _fw_relay_pid=
 _fw_closeall() {
   local f k

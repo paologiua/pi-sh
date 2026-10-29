@@ -1156,3 +1156,20 @@ once for recent sign-in (Remote shell page opened, nothing typed). Single runs
 | Same with `PI_SH_REMOTE_IMPL=bash` | broker `bash`; 3419 ms; 56.4 s (Bash workers, as before Perl) |
 | `pi-cp --browser -v raspberrypi:/usr/bin/bash`, channel open to exit | 1.59 s (old build 2.76 s); 1,412,096 bytes; SHA-256 `ccbd5106945d1095…` both, as `sha256sum` on the device |
 | `ps -eo pid,ppid,etime,comm` afterwards | only the listing session's own `perl` broker and its `bash`, plus a Connect login shell (`bash -l`, child of `rpi-connectd`, about 6 h old, from a browser Remote shell); no `sftp-server`, worker or `sleep` left |
+
+## Perl adapter from the start, 29 October 2026
+
+Read-only (nothing listened or was written on the device), browser companion,
+branch `perl-remote` after the forwarding change; "old build" is `7500852`.
+`pi-sh --browser -N -v -L 127.0.0.1:P:speed.cloudflare.com:443 raspberrypi`.
+On the Mac, `curl --connect-to` ran K concurrent HTTPS downloads through it,
+each checked for its full size and exit 0.
+
+| Check | Result |
+| --- | --- |
+| `-v` line | `forwarding carrier ready connector=perl adapter=perl` |
+| Channel open to carrier ready | 0.59 s (old build 1.58 s) |
+| K = 1, 16, 64 × 256 KiB | all complete; 517, 2089, 2122 KiB/s in total |
+| K = 1 × 4 MiB; K = 64 × 1 MiB | complete; 2053 and 2257 KiB/s |
+| `PI_SH_REMOTE_IMPL=bash`, K = 16 × 256 KiB | `adapter=bash`; 16 complete, 661 KiB/s |
+| `ps`, `ss -ltn` afterwards | no connector, `nc` or `perl` beyond the listing session's own broker; listening only 127.0.0.1:11434 and port 22 |

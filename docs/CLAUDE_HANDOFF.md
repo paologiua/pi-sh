@@ -161,7 +161,11 @@ proprietario.
   fallisce dopo X, avvio lento per la decodifica byte per byte del loader
   (ora una sostituzione con Bash ≥5.2, chunk 2048). Verificato sul Pi in
   sola lettura (REAL_DEVICE_TESTS.md "Perl broker").
-- Da fare: commit 2–4 e il piano di scrittura `NATIVE_PERL_BROKER_PLAN.md`
+- **Fatto: adattatore di forwarding in Perl dall'avvio** (FORWARDING.md
+  "Perl adapter from the start"): adapter.pl rileva anche i connettori;
+  forward.bash solo carica e resta ripiego. Verificato -L sul Pi in sola
+  lettura.
+- Da fare: commit 3–4 e il piano di scrittura `NATIVE_PERL_BROKER_PLAN.md`
   (transfer-probe, -R), da far approvare.
 
 ## Correzioni recenti da preservare
