@@ -1173,3 +1173,21 @@ each checked for its full size and exit 0.
 | K = 1 × 4 MiB; K = 64 × 1 MiB | complete; 2053 and 2257 KiB/s |
 | `PI_SH_REMOTE_IMPL=bash`, K = 16 × 256 KiB | `adapter=bash`; 16 complete, 661 KiB/s |
 | `ps`, `ss -ltn` afterwards | no connector, `nc` or `perl` beyond the listing session's own broker; listening only 127.0.0.1:11434 and port 22 |
+
+## Perl TTY supervisor, 29 October 2026
+
+Read-only, browser companion, branch `perl-remote` with the Perl supervisor.
+Connect asked once for recent sign-in (Remote shell page opened, nothing
+typed). One run of `pi-sh --browser --experimental-command -tt -v raspberrypi
+'…; exit 23'` with local stdin from /dev/null:
+
+| Check | Result |
+| --- | --- |
+| Supervisor (the command's parent) | `perl` |
+| Process group of supervisor / command; terminal foreground group | 20318 / 20318; 20318 (the carrier group, in the foreground) |
+| `test -t 0`, `TERM` | a TTY; `xterm-256color` |
+| Status | 23, `adapter=broker-tty` |
+
+Not checked on the device: Ctrl-Z, the interactive login shell, resize, and
+hangup with the Perl supervisor. Those need a local terminal and are covered
+only by the local OpenSSH differentials (TTY_JOB_CONTROL.md "Perl supervisor").

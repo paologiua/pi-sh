@@ -16,7 +16,14 @@ import (
 )
 
 //go:embed tty.bash
-var ttySource string
+var ttyBashSource string
+
+//go:embed tty.pl
+var ttyPerlSource string
+
+// ttySource is the staged TTY adapter: tty.bash with the Perl supervisor as a
+// single-quoted Bash word (tty.pl holds no apostrophe).
+var ttySource = "_pt_perl_src='" + ttyPerlSource + "'\n" + ttyBashSource
 
 // TTYPlan stages an adapter for the existing carrier PTY; it requests no new
 // agent channel or subsystem. Local terminal modes and resize belong to callers.
@@ -86,6 +93,10 @@ func NewTTYConfigured(text string, settings TTYSettings) (*TTYPlan, error) {
 			return nil, errors.New("terminal dimensions must be between 0 and 65535")
 		}
 		script += fmt.Sprintf("_ps_columns=%d; _ps_rows=%d\n", s.Columns, s.Rows)
+	}
+	// PI_SH_REMOTE_IMPL=bash keeps the Bash supervisor (docs/TESTING.md).
+	if BashOnly() {
+		script += "_pt_bash_impl=1\n"
 	}
 	return &TTYPlan{plan: p, script: script + ttySource}, nil
 }

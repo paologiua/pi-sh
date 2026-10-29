@@ -127,3 +127,84 @@ References consulted, without copied implementation:
 [Apple XNU signal handling](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_sig.c).
 The earlier temporary C probes, shell probes and nonassertive boundary test were
 removed; current tests invoke the production loader and embedded source.
+
+## Perl supervisor — 2026-10-29
+
+**What changes.** tty.bash still enters through `bash --noprofile --norc -im`
+and still sets the terminal modes with `stty`: the saved state, the requested
+modes and the size. It then runs `perl -c` on `tty.pl` and, on success, `exec`s
+it. The program arrives as the single-quoted Bash word `_pt_perl_src`, so it
+holds no apostrophe (`TestTTYPerlHasNoApostrophe`).
+
+After `exec`, the supervisor keeps the PID and process group that the
+interactive Bash created: the carrier group, in the foreground. The Bash
+supervisor (jobs metadata pipe, idle pipe, CHLD trap, `read -t` polling)
+stays as the fallback. `PI_SH_REMOTE_IMPL=bash` keeps it.
+
+`tty.pl`:
+- prints `TR`, forks, and runs `$SHELL -c command` on /dev/tty in the same
+  group, as the Bash supervisor did;
+- in the child, restores the dispositions with which the program started
+  for HUP, TERM, INT, QUIT, PIPE and CHLD (Bash's `exec` restored those of its
+  entry), and sets TSTP, TTIN and TTOU to default, as the interactive Bash did
+  for its commands even when they were ignored on entry;
+- in itself, handles INT and QUIT with an empty handler (so `exec` resets
+  them for the command) and ignores TSTP, TTIN and TTOU, so that Ctrl-Z stops
+  the command and never the supervisor;
+- waits with a blocking `waitpid`, which does not report stops. A signal
+  gives 255 and an exit gives its code, as the `jobs -l` classification did;
+- on HUP or TERM, sends HUP and CONT to the command, then KILL to the whole
+  group, itself included, as `_pt_abort` does;
+- at the end runs `stty raw -echo`, prints `TX:code`, and exits with it.
+
+**Equivalence.** The condition was that every TTY differential test with
+OpenSSH gives identical results with both supervisors.
+- `TestTTYSupervisorsGiveCommandSameContext` compares, on the legacy macOS
+  `/bin/sh` carrier and on Bash 5.3:
+  - the command's environment;
+  - its ignored signals, as Perl sees them;
+  - its group: the supervisor's, and the terminal's foreground group;
+  - the terminal modes (`stty -g`).
+
+  They are identical.
+- `TestTTYSupervisorImplementation`: the supervisor is `perl` on both
+  carriers; it is `bash` with `PI_SH_REMOTE_IMPL=bash`, or with a perl that
+  cannot compile it.
+- `TestStagedTTYControllerWholeGroupStopResume` counted the Bash
+  supervisor's two helper processes. It now runs with both supervisors and
+  expects the supervisor and the command for Perl, plus the helpers for Bash.
+- The whole TTY suite was repeated with each supervisor and each Bash: the
+  internal/shellbroker tests matching `TTY|Login|OpenSSHEscape` and the
+  cmd/pi-sh tests matching `TTY|Login|Suspend|TerminationSignals`. Those
+  include every OpenSSH differential (stop, nested job control, modes, EOF,
+  escapes, login shell, hangup) and `ctrl-z-handler`. The results are in the
+  table below.
+
+| Run | Perl, Bash 5.2 | Bash, Bash 5.2 | Perl, Bash 5.3 | Bash, Bash 5.3 |
+| --- | --- | --- | --- | --- |
+| 10 repetitions | 2150 passed | 2150 passed | 2150 passed | 2150 passed |
+| 10 more | 2148 passed, 2 failed (one case, see below) | 2150 | 2150 | 2150 |
+| 3 repetitions, one `yes` per core | 645 | 645 | 645 | 639, 6 failed (one episode, see below) |
+
+**Failures found, both outside the supervisor.**
+- *Bash supervisor, Bash 5.3, under load.* In one iteration five consecutive
+  `TestTTYCommandSessionOverWebRTC` cases timed out waiting for readiness
+  after 15 s, with no output. The Perl supervisor shares the loader and had no
+  failure under the same load. Six more loaded repetitions of that test, on
+  this branch and on `7500852`, with both Bash versions, all passed. It is
+  recorded as an isolated, unreproduced episode of the fallback.
+- *`TestLoginShellSessionOverWebRTC/exit-status`, Perl supervisor, Bash 5.2,
+  once.* The expected `35 111` was in the final output: the session ended
+  while its last output was still on the way to the test's observer, and
+  `waitFor` failed on the ended session without looking again. `waitFor` now
+  keeps the result and waits up to one second for the text. After the fix
+  the test passed 100 of 100 runs.
+
+**On the device** (read-only, REAL_DEVICE_TESTS.md "Perl TTY supervisor"): a
+`-tt` command ran under the `perl` supervisor. It was in the carrier group,
+in the foreground, on a TTY, with `TERM` set, and exited 23. Ctrl-Z, the
+interactive login shell, resize and hangup have not been tried on the device
+with this supervisor.
+
+**Decision.** The Perl supervisor is kept. Every local differential is
+identical with both supervisors, and tty.bash stays as the fallback.

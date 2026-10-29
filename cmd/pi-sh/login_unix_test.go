@@ -79,7 +79,17 @@ func TestLoginShellSessionOverWebRTC(t *testing.T) {
 				for !strings.Contains(observed.text(), text) {
 					select {
 					case err := <-done:
-						t.Fatalf("ended before %q: %v %q", text, err, observed.text())
+						// The session can end while its last output is still on the
+						// way to the observer; keep the result for the final check.
+						done <- err
+						deadline := time.Now().Add(time.Second)
+						for !strings.Contains(observed.text(), text) {
+							if time.Now().After(deadline) {
+								t.Fatalf("ended before %q: %v %q", text, err, observed.text())
+							}
+							time.Sleep(5 * time.Millisecond)
+						}
+						return
 					case <-lifetime.Done():
 						t.Fatalf("timeout waiting for %q: %q", text, observed.text())
 					case <-time.After(5 * time.Millisecond):

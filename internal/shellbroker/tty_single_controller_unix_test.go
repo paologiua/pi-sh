@@ -141,6 +141,16 @@ func TestStagedTTYControllerCleanupBeforeCarrierClose(t *testing.T) {
 }
 
 func TestStagedTTYControllerWholeGroupStopResume(t *testing.T) {
+	eachImpl(t, testStagedTTYControllerWholeGroupStopResume)
+}
+
+// The Bash supervisor keeps two helper processes in the group (metadata and
+// idle pipes); the Perl supervisor has none, so supervisor and command remain.
+func testStagedTTYControllerWholeGroupStopResume(t *testing.T) {
+	minimum := 2
+	if BashOnly() {
+		minimum = 3
+	}
 	for _, carrier := range []string{"/bin/sh", modernTTYBash(t)} {
 		t.Run(carrier, func(t *testing.T) {
 			plan := mustTTYPlan(t, `printf fixture-ready; IFS= read -r x; printf 'seen:%s' "$x"; exit 23`)
@@ -148,8 +158,8 @@ func TestStagedTTYControllerWholeGroupStopResume(t *testing.T) {
 				ready: func(ctx context.Context, cmd *exec.Cmd, f *os.File, _ *ttyWatch) error {
 					group := cmd.Process.Pid
 					owned := ttyOwnedProcesses(group, ttyProcessSnapshot(t))
-					if len(owned) < 3 {
-						return errors.New("stop fixture has not started command and metadata helper")
+					if len(owned) < minimum {
+						return errors.New("stop fixture has not started the command (and the Bash helpers)")
 					}
 					for _, process := range owned {
 						if process.group != group {

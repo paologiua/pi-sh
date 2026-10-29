@@ -165,8 +165,17 @@ proprietario.
   "Perl adapter from the start"): adapter.pl rileva anche i connettori;
   forward.bash solo carica e resta ripiego. Verificato -L sul Pi in sola
   lettura.
-- Da fare: commit 3–4 e il piano di scrittura `NATIVE_PERL_BROKER_PLAN.md`
-  (transfer-probe, -R), da far approvare.
+- **Fatto: pulizia con doppio hangup** (SHELL_BROKER.md "Second hangup
+  during cleanup"): i tre script Bash uscivano a metà pulizia al secondo
+  SIGHUP lasciando vivo il gruppo del comando; il broker Perl conferma C
+  solo quando il gruppo è sparito.
+- **Fatto: supervisore TTY in Perl** (TTY_JOB_CONTROL.md "Perl supervisor"):
+  tty.bash fa ancora stty e poi `exec perl`; stesso pid e gruppo. Tutta la
+  suite TTY con OpenSSH identica con i due supervisori, Bash 5.2 e 5.3,
+  anche sotto carico. Non ancora provato sul Pi (serve una sessione -tt).
+- Da fare: commit 4 (`Run` con mittente separato, finestra di input 32) e il
+  piano di scrittura `NATIVE_PERL_BROKER_PLAN.md` (transfer-probe, -R), da
+  far approvare.
 
 ## Correzioni recenti da preservare
 

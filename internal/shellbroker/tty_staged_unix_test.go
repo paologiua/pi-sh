@@ -49,6 +49,9 @@ func runStagedTTYPlan(t *testing.T, carrier string, plan *TTYPlan, input []byte,
 	if err := os.Symlink(modernTTYBash(t), filepath.Join(tools, "bash")); err != nil {
 		t.Fatal(err)
 	}
+	if testTools != nil {
+		testTools(tools)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.Command(carrier, "-i")

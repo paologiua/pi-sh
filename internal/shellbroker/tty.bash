@@ -68,6 +68,18 @@ _pt_run() {
   stty "$_pt_saved" || exit 125
   if ((${#_pt_modes[@]}>0)); then _pt_stty_modes "${_pt_modes[@]}" || exit 125; fi
   if [[ -n $_pt_columns ]]; then stty rows "$_pt_rows" cols "$_pt_columns" || exit 125; fi
+  # Supervision runs in Perl (tty.pl, in _pt_perl_src) when the device's perl
+  # compiles it: same pid and group, so job control is unchanged
+  # (TTY_JOB_CONTROL.md "Perl supervisor"). PI_SH_REMOTE_IMPL=bash keeps it
+  # here.
+  if [[ -z ${_pt_bash_impl-} ]] && perl -c -e "$_pt_perl_src" </dev/null >/dev/null 2>&1; then
+    trap - EXIT HUP TERM
+    shopt -s execfail
+    exec perl -e "$_pt_perl_src" -- "$_pt_prefix" "$_pt_shell" "$_pt_lc_set" "$_pt_old_lc" "$_pt_command"
+    shopt -u execfail
+    trap _pt_abort HUP TERM
+    trap '[[ $_pt_complete == 1 ]] || _pt_abort' EXIT
+  fi
   coproc _PT_JOBS { trap '' INT QUIT; exec cat 2>/dev/null; }
   local metadata_pid=$_PT_JOBS_PID
   exec 3<&${_PT_JOBS[0]} 4>&${_PT_JOBS[1]}

@@ -972,6 +972,13 @@ An overlapping load run once rebuilt the shared test binary under another;
 the forwarding tests' `nc` double is that binary, so those failures were
 artifacts. The load script now gives every run its own binary and logs.
 
+**`TestLoginShellSessionOverWebRTC` `waitFor`.** The session could end while
+its last output was still on the way to the test's observer; `waitFor` then
+failed on the ended session (once in 20 runs with the Perl TTY supervisor).
+It now keeps the session's result and waits up to one second for the text.
+The TTY suites are now run with both supervisors (`PI_SH_REMOTE_IMPL=bash`
+for the Bash one), as TTY_JOB_CONTROL.md "Perl supervisor" records.
+
 **The carrier-loss overrun, explained.** The 8 s overrun of
 `TestShellBrokerCarrierLossKillsCommandGroup` described above was not
 slowness. It was the Bash broker exiting during its own cleanup on a second
