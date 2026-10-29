@@ -250,7 +250,10 @@ func TestTTYCommandSessionOverWebRTC(t *testing.T) {
 			case "ctrl-z-default", "ctrl-z-handler":
 				request.text = "printf 'fixture-ready\\n'; IFS= read -r x; printf 'seen:%s\\n' \"$x\"; exit 23"
 				if name == "ctrl-z-handler" {
-					request.text = "trap 'printf caught-suspend' TSTP; " + request.text
+					// As the caught-suspend fixtures (TESTING.md 2026-10-26): the
+					// test Bash, not /bin/sh (Bash 3.2 can lose the line when the
+					// trap interrupts read), retrying the interrupted read.
+					request.text = `exec bash -c 'trap "printf caught-suspend" TSTP; printf "fixture-ready\n"; until IFS= read -r x; do :; done; printf "seen:%s\n" "$x"; exit 23'`
 				}
 				wantCode = 23
 			case "escape-help":
@@ -322,8 +325,24 @@ func TestTTYCommandSessionOverWebRTC(t *testing.T) {
 					if _, err := master.Write(data); err != nil {
 						t.Fatal(err)
 					}
-				case "ctrl-z-default", "ctrl-z-handler":
+				case "ctrl-z-default":
 					if _, err := master.Write([]byte{26, 'x', '\r'}); err != nil {
+						t.Fatal(err)
+					}
+				case "ctrl-z-handler":
+					// The line follows the handler's output: a trapped TSTP
+					// interrupts read, so one write with ^Z was racy.
+					if _, err := master.Write([]byte{26}); err != nil {
+						t.Fatal(err)
+					}
+					for !strings.Contains(observed.text(), "caught-suspend") {
+						select {
+						case <-lifetime.Done():
+							t.Fatal("TSTP handler did not run", observed.text())
+						case <-time.After(10 * time.Millisecond):
+						}
+					}
+					if _, err := master.Write([]byte("x\r")); err != nil {
 						t.Fatal(err)
 					}
 				case "escape-help":

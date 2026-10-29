@@ -1,12 +1,21 @@
 # Independently authored pi-sh in-memory broker. No here-documents, here-strings,
 # process substitution, named pipes, files or Python. Bash >=4.3 is required.
+# Unacknowledged input records (inputWindow in broker.go, which must match)
+# and output records per stream (this side only; broker.go "inputWindow").
+_ps_in_win=8 _ps_out_win=32
+# The whole broker runs in Perl (broker.pl, in _ps_perl_src) when the device's
+# perl compiles it; this Bash broker is the fallback, kept as it is
+# (SHELL_BROKER.md "Perl broker"). PI_SH_REMOTE_IMPL=bash keeps it here. It runs
+# before SIGPIPE is ignored, so perl starts with the dispositions of entry.
+if [[ -z ${_ps_bash_impl-} ]] && perl -c -e "$_ps_perl_src" </dev/null >/dev/null 2>&1; then
+  shopt -s execfail
+  exec perl -e "$_ps_perl_src" -- "$_ps_prefix" "$_ps_in_win" "$_ps_out_win" "${SHELL:-/bin/sh}" "$_ps_lc_set" "$_ps_old_lc" "$_ps_command" 2>/dev/null
+  shopt -u execfail
+fi
 set +m
 set +e
 trap '' PIPE
 _ps_emit() { printf '%s%s\n' "$_ps_prefix" "$*"; }
-# Unacknowledged input records (inputWindow in broker.go, which must match)
-# and output records per stream (this side only; broker.go "inputWindow").
-_ps_in_win=8 _ps_out_win=32
 _ps_fail() { _ps_emit 'Z protocol'; exit 125; }
 _ps_cleanup() {
   trap - EXIT HUP TERM CHLD

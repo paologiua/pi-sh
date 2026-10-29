@@ -145,6 +145,25 @@ sintetici remoti a 1.314.816 byte, oltre all'overhead del filesystem.
   tilde in pi-sftp/pi-cp (`internal/pathglob`, GLOB_TILDE.md). Decisioni del
   proprietario in CONNECTION_POLICY.md.
 
+## Logica remota in Perl (branch `perl-remote`, 2026-10-29)
+
+Obiettivo del proprietario: tutta la logica remota in Perl, Bash solo per
+caricare, `perl -c` ed `exec`, più il ripiego congelato. Piano in quattro
+commit: broker, riduzione di forward.bash, supervisore TTY (solo se i
+differenziali TTY restano identici), invio separato da ricezione in `Run`
+con finestra di input a 32. Nessun push; il merge su main lo decide il
+proprietario.
+
+- **Fatto: broker in Perl** (`broker.pl`, SHELL_BROKER.md "Perl broker").
+  Stessi record, ripiego broker.bash; `PI_SH_REMOTE_IMPL=bash` forza Bash
+  ovunque. Trovati e corretti: SIGPIPE ignorato passato al comando, stallo
+  output/input senza il relay `cat`, stato perso se l'invio dell'input
+  fallisce dopo X, avvio lento per la decodifica byte per byte del loader
+  (ora una sostituzione con Bash ≥5.2, chunk 2048). Verificato sul Pi in
+  sola lettura (REAL_DEVICE_TESTS.md "Perl broker").
+- Da fare: commit 2–4 e il piano di scrittura `NATIVE_PERL_BROKER_PLAN.md`
+  (transfer-probe, -R), da far approvare.
+
 ## Correzioni recenti da preservare
 
 ### Rami integrati (2026-10-26/27)
@@ -348,8 +367,10 @@ go vet -C third_party/sftp -stdmethods=false ./...
 go mod verify
 # Adattatore di forwarding Bash anche dove c'è Perl (dal 2026-10-28):
 PI_SH_FORWARD_ADAPTER=bash go test -count=1 ./internal/fwdbroker ./cmd/pi-sh
-# Lettore Bash del broker anche dove c'è Perl:
+# Broker Bash con lavoratori Bash anche dove c'è Perl:
 PI_SH_BROKER_WORKERS=bash go test -count=1 ./internal/shellbroker ./cmd/...
+# Tutta la logica remota in Bash (dal 2026-10-29; elenco completo in TESTING.md):
+PI_SH_REMOTE_IMPL=bash go test -count=1 ./internal/shellbroker ./internal/fwdbroker ./cmd/...
 ```
 
 Dal 2026-10-26 la toolchain è Go 1.27.3 ufficiale (SHA-256 verificato da go.dev)

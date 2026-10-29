@@ -18,11 +18,15 @@ import (
 )
 
 func TestSFTPOverActualBrokerAndOpenSSHServer(t *testing.T) {
-	testSFTPOverActualBroker(t, false)
+	eachImpl(t, func(t *testing.T) {
+		testSFTPOverActualBroker(t, false)
+	})
 }
 
 func TestSFTPMegabyteOverActualBrokerWebRTCAndOpenSSHServer(t *testing.T) {
-	testSFTPOverActualBroker(t, true)
+	eachImpl(t, func(t *testing.T) {
+		testSFTPOverActualBroker(t, true)
+	})
 }
 
 func testSFTPOverActualBroker(t *testing.T, overWebRTC bool) {

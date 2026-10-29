@@ -21,6 +21,8 @@ type abortStream struct {
 	// completedBeforeAbort models a broker that emitted X and exited before
 	// C arrived: C is never answered, but X is still in flight.
 	completedBeforeAbort bool
+	// inputFailure, when set, fails every I send after queueing these records.
+	inputFailure []string
 }
 
 func (s *abortStream) Send(ctx context.Context, data []byte) error {
@@ -68,7 +70,15 @@ func (s *abortStream) Send(ctx context.Context, data []byte) error {
 			if s.cancelOnCommit != nil {
 				s.cancelOnCommit()
 			}
-		case "F":
+		case "I":
+			if s.inputFailure == nil {
+				return ErrProtocol
+			}
+			for _, r := range s.inputFailure {
+				s.replies <- []byte(s.plan.prefix + r + "\n")
+			}
+			result = errors.New("synthetic carrier closed")
+		case "F", "A":
 		default:
 			return ErrProtocol
 		}
@@ -236,5 +246,36 @@ func TestBrokerAbortAcceptsCompletionAlreadyInFlight(t *testing.T) {
 	}
 	if time.Since(start) > time.Second {
 		t.Fatal("abort waited for an acknowledgement that cannot arrive")
+	}
+}
+
+// A broker that completed exits and closes the carrier while input is still
+// in flight. Its X, behind only K, A and EOF records, wins over the failed
+// send, as OpenSSH reports the exit status; without it the send error stands.
+func TestBrokerCompletionWinsOverFailedInputSend(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		replies []string
+		code    int
+		failed  bool
+	}{
+		{"exit", []string{"K", "F E", "X 4"}, 4, false},
+		{"signal", []string{"F E", "Y 15"}, 255, false},
+		{"no-status", []string{"K"}, 0, true},
+		{"output-pending", []string{"O 2 42", "F E", "X 4"}, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := New("exit 4")
+			if err != nil {
+				t.Fatal(err)
+			}
+			// G replies R and O 1, acknowledged before the input is read;
+			// F O then ends that stream.
+			s := &abortStream{plan: p, replies: make(chan []byte, 32), ack: true, inputFailure: append([]string{"F O"}, tc.replies...)}
+			code, err := p.Run(context.Background(), s, IO{Stdin: strings.NewReader("x")})
+			if code != tc.code || (err != nil) != tc.failed || s.aborted != tc.failed {
+				t.Fatalf("code %d, err %v, aborted %v", code, err, s.aborted)
+			}
+		})
 	}
 }

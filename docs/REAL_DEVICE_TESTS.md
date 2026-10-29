@@ -1138,3 +1138,21 @@ Read-only. Connect asked for recent sign-in once (Remote shell page opened,
 nothing typed). 1 MiB stdin to `wc -c` took 1769 ms (1470 ms with input
 window 32). 1 MiB from `head -c 1048576 /dev/zero` took 0.79 s, 1048576 bytes.
 Exit 0 (SHELL_BROKER.md "Input window").
+
+## Perl broker, 29 October 2026
+
+Read-only, browser companion. Device: Bash 5.2.37, perl 5.40.1 (POSIX, Fcntl,
+Errno and Socket all in perl-base), rpi-connect-lite 2.13.0. "Old build" is
+`7500852` (Bash broker with Perl workers), run in the same hour. Connect asked
+once for recent sign-in (Remote shell page opened, nothing typed). Single runs
+(SHELL_BROKER.md "Perl broker").
+
+| Check | Result |
+| --- | --- |
+| Which process brokers the command | `perl`, child of `rpi-connectd` |
+| Idle broker CPU over 10 s (`/proc/<pid>/stat` utime+stime) | 0 ticks (27 with the Bash loop, 2026-10-28) |
+| `true`, channel open to exit, and loader+broker CPU ticks | old build 1.02 s / 62; Perl with 896-byte chunks 1.55 s / 99; with 2048-byte chunks 1.73 s / 134; with one-substitution decoding 0.62 s / 17 (896) and 0.51 s / 16 (2048, kept) |
+| 1 MiB stdin to `wc -c` (timed on the device), then `head -c 1048576 /dev/zero` | Perl: 1048576, 1010 ms; 1048576 bytes in 0.43 s. Old build: 1636 ms; 0.81 s |
+| Same with `PI_SH_REMOTE_IMPL=bash` | broker `bash`; 3419 ms; 56.4 s (Bash workers, as before Perl) |
+| `pi-cp --browser -v raspberrypi:/usr/bin/bash`, channel open to exit | 1.59 s (old build 2.76 s); 1,412,096 bytes; SHA-256 `ccbd5106945d1095…` both, as `sha256sum` on the device |
+| `ps -eo pid,ppid,etime,comm` afterwards | only the listing session's own `perl` broker and its `bash`, plus a Connect login shell (`bash -l`, child of `rpi-connectd`, about 6 h old, from a browser Remote shell); no `sftp-server`, worker or `sleep` left |

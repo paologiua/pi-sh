@@ -161,18 +161,23 @@ func TestShellBrokerThroughputBenchmark(t *testing.T) {
 
 // Real-Bash form of the native 2026-10-22 defect: stdin fails locally while
 // `exit 0` completes remotely. The broker sends X and exits before C arrives,
-// so D can never come; the in-flight X must still confirm cleanup.
+// so D can never come; the in-flight X must still confirm cleanup. The
+// short sleep keeps X out of the frame that carries R: arriving together,
+// both raced the local stdin failure, and X could win, skipping the abort
+// this test is about (once under load, 2026-10-29).
 func TestShellBrokerAbortAfterRemoteCompletion(t *testing.T) {
-	for i := 0; i < 3; i++ {
-		code, err := runLocalWithStream(t, "exit 0", func(context.CancelFunc) IO {
-			return IO{Stdin: failingInput{}}
-		}, nil, 20*time.Second, func(ctx context.Context, file *os.File) Stream {
-			s := newDelayedStream(ctx, file, 0)
-			s.delayAfterCommit = 500 * time.Millisecond
-			return s
-		})
-		if code != 0 || err == nil || !strings.Contains(err.Error(), "local stdin read failed") || errors.Is(err, ErrCleanupUnconfirmed) {
-			t.Fatalf("run %d: %d %v", i, code, err)
+	eachImpl(t, func(t *testing.T) {
+		for i := 0; i < 3; i++ {
+			code, err := runLocalWithStream(t, "sleep 0.2; exit 0", func(context.CancelFunc) IO {
+				return IO{Stdin: failingInput{}}
+			}, nil, 20*time.Second, func(ctx context.Context, file *os.File) Stream {
+				s := newDelayedStream(ctx, file, 0)
+				s.delayAfterCommit = 500 * time.Millisecond
+				return s
+			})
+			if code != 0 || err == nil || !strings.Contains(err.Error(), "local stdin read failed") || errors.Is(err, ErrCleanupUnconfirmed) {
+				t.Fatalf("run %d: %d %v", i, code, err)
+			}
 		}
-	}
+	})
 }

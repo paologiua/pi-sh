@@ -457,3 +457,143 @@ failed with "Ctrl-Z lost command completion". It then passed 20 of 20 alone
 and 15 of 15 under full load, both on this tree and on `59e152d` (this
 morning). It is recorded as an intermittent timing test, with no link to
 today's changes shown.
+
+## Perl broker — 2026-10-29
+
+**Why.** The hardest defects of the remote side came from Bash and from its
+differences between versions:
+- Bash 5.3 cleared a new coprocess's array when an older one of the same name
+  was reaped (FORWARDING.md "Perl adapter");
+- a Bash 5.2 `read -t` can consume a newline and still report a timeout
+  ("Intermittent binary-input stall" above);
+- Bash copies close-on-exec when it duplicates a descriptor ("Perl output
+  reader");
+- Bash reads one byte per call and had to poll ("Idle CPU").
+
+Raspberry Pi OS will move to Bash 5.3. Perl 5 changes far less between
+versions, and perl-base is Essential.
+
+**What runs.** `internal/shellbroker/broker.pl` is the whole broker: one
+process, with no coprocesses, relay or workers, and one blocking `select`.
+broker.bash now begins by running `perl -c` on it, and on success `exec`s it.
+The program travels as the single-quoted Bash word `_ps_perl_src`, so it holds
+no apostrophe (`TestBrokerPerlHasNoApostrophe`). The rest of broker.bash is
+unchanged and stays as the fallback, frozen except for fixes, when the device
+has no perl or perl cannot compile the program. The handoff comes before
+broker.bash ignores SIGPIPE: `exec` restores trapped signals but keeps ignored
+ones, and the first version handed the command an ignored SIGPIPE
+(`TestShellBrokerImplsGiveCommandSameContext` found it).
+
+The records are those of the Bash broker, and broker.go reads them unchanged:
+- R; the I, F, A and C records; O, E and F per stream; A and K;
+- X or Y; D after C;
+- the same `Z protocol`;
+- the same windows, passed as arguments.
+
+What changes inside:
+- **Command.** `fork`, then `POSIX::setsid` and `exec $SHELL -c command` in
+  the child. As with the Bash coprocess (`trap -`), the command gets the
+  signal dispositions that the broker had on entry. Bash's `exec` lowered
+  SHLVL by one, so the Perl broker raises it back.
+- **Status.** `waitpid` gives the exit status or the signal directly, without
+  the `jobs -l` table read in a CHLD trap. The OpenSSH differential cases
+  (exits 0–255, TERM, INT, KILL) give the same results with both brokers.
+- **Cleanup.** C, HUP, TERM or the loss of the carrier lead to `kill -KILL` of
+  the group, of the command and of the group again, then `waitpid`, as
+  `_ps_cleanup` does. On a normal end the group is left alone, as before.
+- **Idle.** `select` blocks with no timeout. The only timeout, 0.1 s, applies
+  while both outputs have ended and the exit is still awaited. There SIGCHLD
+  interrupts `select`, and the timeout covers a wakeup lost to Perl's deferred
+  signals.
+
+**Defects found while writing it.**
+- *Output blocking input.* The first version wrote to the carrier blocking and
+  read the PTY directly. With slow local output it stopped taking input while
+  `Run` blocked sending input: the cycle of "Input window". The Bash broker
+  had escaped it only because its relay `cat` pipe absorbed up to 64 KiB of
+  in-flight input. Seen as a five-minute hang of
+  `TestShellBrokerCancellationReapsBeforeCarrierClose/perl` under `-race`;
+  the stack showed `Run` writing an I record and the receive pump full.
+
+  The Perl broker now writes the carrier without blocking and reads it in
+  every round, also while it flushes its last records. Pending output is
+  bounded by the output windows. `TestShellBrokerSlowOutputWithFastInput`
+  (1 MiB through `cat` with a slow local stdout) hangs with a blocking writer
+  and passes in about 1 s.
+- *Exit before input.* The faster broker exposed a race in `Run`. The command
+  closes its input, the broker sends K and X and exits, while `Run` is still
+  sending pipelined input. The send then fails (EIO on the test PTY), and
+  `Run` reported the error instead of the status
+  (`TestShellBrokerEarlyCloseWithPipelinedInput/perl`). The same race existed
+  with the Bash broker, only less often.
+
+  When a send of input (I or F) fails, `Run` now waits up to one second for a
+  status already in flight. Only K, input A and output F may come before it;
+  then it returns that status, as OpenSSH reports the exit status. A cancelled
+  context, any other record, or no status keep the error and the abort.
+  Covered by `TestBrokerCompletionWinsOverFailedInputSend`.
+
+**Staging.** The staged source grew from 16.3 to 23.0 KB: broker.bash plus
+6.8 KB of Perl. On the device the loader's per-byte decoding, not the round
+trips, was the cost: from channel open to the end of `true`, the old build
+took 1.02 s, the Perl build 1.55 s with 896-byte chunks and 1.73 s with
+2048-byte chunks. Those are 62, 99 and 134 ticks of loader and broker CPU.
+
+On Bash 5.2 and later, the loader now decodes each chunk with one
+`${h//??/\\x&}`, as the Bash input writer already did. Bash 4.3 to 5.1 keep
+the per-byte loop (`TestLoaderPerByteDecodePath`). L and C chunks are now
+2048 bytes (`uploadChunk`, `TestLoaderAcceptsUploadChunk`). On the device
+`true` then took 0.51 s with 16 ticks (0.62 s with 896-byte chunks).
+Locally a `true` takes about 60–90 ms, against about 200 ms before.
+
+**Switch.** `PI_SH_REMOTE_IMPL=bash` keeps every remote program in Bash: here
+the Bash broker with Bash workers. `PI_SH_BROKER_WORKERS=bash` now does the
+same for the broker.
+
+**Tests.**
+- `eachImpl` runs the broker suite with both brokers, as `eachConnector` does
+  for the forwarding adapter. It covers streams and status, every byte,
+  duplex, blocked input, 1 MiB stdin with late newlines, slow consumer, early
+  close, partial output, cancellation, abort after completion, the OpenSSH
+  differential, SFTP and the login shell.
+- `TestShellBrokerUsesPerlBrokerWhenPresent`: the command's parent is `perl`
+  with no workers; with either switch it is `bash` with no Perl workers.
+- `TestShellBrokerFallsBackToBash`: a perl that compiles nothing gives Bash
+  with Bash workers. A perl that refuses only broker.pl gives Bash with Perl
+  workers.
+- `TestShellBrokerImplsGiveCommandSameContext`: environment, ignored signals,
+  group, session and limits are equal.
+- `TestShellBrokerCarrierLossKillsCommandGroup`: closing the PTY kills a
+  command group that would outlive it. It fails, by timeout, when the kills
+  are removed.
+
+**Local measurements** (Bash 5.3, single runs, KiB/s), from `7500852`
+(Bash broker with Perl workers) to the Perl broker.
+
+`TestShellBrokerThroughputBenchmark`:
+
+| RTT | Upload | Download | Roundtrip |
+| --- | --- | --- | --- |
+| 0 ms | 2272 → 4689 | 4805 → 17310 | 4167 → 9806 |
+| 10 ms | 1394 → 1891 | 3562 → 5699 | 2954 → 3726 |
+| 40 ms | 485 → 541 | 1501 → 1740 | 983 → 1073 |
+
+`TestSFTPThroughputBenchmark`, 32 KiB requests:
+
+| RTT | Upload | Download |
+| --- | --- | --- |
+| 0 ms | 4144 → 8540 | 8876 → 53706 |
+| 40 ms | 450 → 480 | 1502 → 1595 |
+
+At 40 ms the input window of 8 records still bounds upload.
+
+**On the device** (Bash 5.2.37, perl 5.40.1, rpi-connect-lite 2.13.0,
+read-only, single runs; REAL_DEVICE_TESTS.md):
+- the broker process is `perl`, child of `rpi-connectd`;
+- idle, it used 0 ticks in 10 s (27 with the Bash loop);
+- 1 MiB to `wc -c` took 1.01 s (old build, same hour: 1.64 s);
+- 1 MiB from `head -c` took 0.43 s (0.81 s);
+- `pi-cp` of `/usr/bin/bash` took 1.59 s from channel open (2.76 s), with the
+  device's SHA-256;
+- with `PI_SH_REMOTE_IMPL=bash` the device ran the Bash broker: 3.4 s and
+  56.4 s, the historical all-Bash figures.

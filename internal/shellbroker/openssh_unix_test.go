@@ -191,32 +191,34 @@ func TestOpenSSHLocalSignalsTerminateClient(t *testing.T) {
 }
 
 func TestOpenSSHDifferentialCommandBehavior(t *testing.T) {
-	reference := localSSHReference(t)
-	all := make([]byte, 256)
-	octals := ""
-	for i := range all {
-		all[i] = byte(i)
-		octals += fmt.Sprintf("\\%03o", i)
-	}
-	for _, tc := range []struct {
-		name, text string
-		input      []byte
-	}{
-		{"every-byte-stdin", "cat", bytes.Repeat(all, 8)},
-		{"separate-binary-streams", "printf '" + octals + "'; printf '" + octals + "' >&2", nil},
-		{"input-eof-then-output", "cat; printf after >&2", []byte("binary\x00\xff\r\n")},
-		{"no-controlling-tty", "test ! -t 0 && test ! -t 1 && test ! -t 2 && ! ( : </dev/tty ) 2>/dev/null", nil},
-		{"exit-0", "exit 0", nil}, {"exit-1", "exit 1", nil}, {"exit-23", "exit 23", nil},
-		{"exit-126", "exit 126", nil}, {"exit-127", "exit 127", nil}, {"exit-143", "exit 143", nil}, {"exit-255", "exit 255", nil},
-		{"signal-term", "kill -TERM $$", nil}, {"signal-int", "kill -INT $$", nil}, {"signal-kill", "kill -KILL $$", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			wantCode, wantOut, wantErr := reference(tc.text, tc.input)
-			var out, stderr bytes.Buffer
-			code, err := runLocal(t, tc.text, bytes.NewReader(tc.input), &out, &stderr)
-			if err != nil || code != wantCode || !bytes.Equal(out.Bytes(), wantOut) || !bytes.Equal(stderr.Bytes(), wantErr) {
-				t.Fatalf("broker code=%d err=%v out=%q stderr=%q; ssh code=%d out=%q stderr=%q", code, err, out.Bytes()[:min(out.Len(), 80)], stderr.Bytes()[:min(stderr.Len(), 80)], wantCode, wantOut[:min(len(wantOut), 80)], wantErr[:min(len(wantErr), 80)])
-			}
-		})
-	}
+	eachImpl(t, func(t *testing.T) {
+		reference := localSSHReference(t)
+		all := make([]byte, 256)
+		octals := ""
+		for i := range all {
+			all[i] = byte(i)
+			octals += fmt.Sprintf("\\%03o", i)
+		}
+		for _, tc := range []struct {
+			name, text string
+			input      []byte
+		}{
+			{"every-byte-stdin", "cat", bytes.Repeat(all, 8)},
+			{"separate-binary-streams", "printf '" + octals + "'; printf '" + octals + "' >&2", nil},
+			{"input-eof-then-output", "cat; printf after >&2", []byte("binary\x00\xff\r\n")},
+			{"no-controlling-tty", "test ! -t 0 && test ! -t 1 && test ! -t 2 && ! ( : </dev/tty ) 2>/dev/null", nil},
+			{"exit-0", "exit 0", nil}, {"exit-1", "exit 1", nil}, {"exit-23", "exit 23", nil},
+			{"exit-126", "exit 126", nil}, {"exit-127", "exit 127", nil}, {"exit-143", "exit 143", nil}, {"exit-255", "exit 255", nil},
+			{"signal-term", "kill -TERM $$", nil}, {"signal-int", "kill -INT $$", nil}, {"signal-kill", "kill -KILL $$", nil},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				wantCode, wantOut, wantErr := reference(tc.text, tc.input)
+				var out, stderr bytes.Buffer
+				code, err := runLocal(t, tc.text, bytes.NewReader(tc.input), &out, &stderr)
+				if err != nil || code != wantCode || !bytes.Equal(out.Bytes(), wantOut) || !bytes.Equal(stderr.Bytes(), wantErr) {
+					t.Fatalf("broker code=%d err=%v out=%q stderr=%q; ssh code=%d out=%q stderr=%q", code, err, out.Bytes()[:min(out.Len(), 80)], stderr.Bytes()[:min(stderr.Len(), 80)], wantCode, wantOut[:min(len(wantOut), 80)], wantErr[:min(len(wantErr), 80)])
+				}
+			})
+		}
+	})
 }

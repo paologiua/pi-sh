@@ -20,13 +20,24 @@ import (
 )
 
 //go:embed broker.bash
-var source string
+var bashSource string
 
-// brokerScript is the staged broker. PI_SH_BROKER_WORKERS=bash keeps the Bash
-// output reader where the device has Perl (diagnostics, docs/TESTING.md).
+//go:embed broker.pl
+var perlSource string
+
+// source is the staged broker: broker.bash with the Perl broker as a
+// single-quoted Bash word (broker.pl holds no apostrophe).
+var source = "_ps_perl_src='" + perlSource + "'\n" + bashSource
+
+// BashOnly reports the diagnostic switch PI_SH_REMOTE_IMPL=bash, which keeps
+// every remote program in Bash where the device has Perl (docs/TESTING.md).
+func BashOnly() bool { return os.Getenv("PI_SH_REMOTE_IMPL") == "bash" }
+
+// brokerScript is the staged broker. PI_SH_REMOTE_IMPL=bash, or the older
+// PI_SH_BROKER_WORKERS=bash, keeps the Bash broker and its Bash workers.
 func brokerScript() string {
-	if os.Getenv("PI_SH_BROKER_WORKERS") == "bash" {
-		return "_ps_bash_workers=1\n" + source
+	if BashOnly() || os.Getenv("PI_SH_BROKER_WORKERS") == "bash" {
+		return "_ps_bash_impl=1 _ps_bash_workers=1\n" + source
 	}
 	return source
 }
@@ -46,6 +57,12 @@ const maxRecord = 4224
 const inputChunk = 2048
 const outputChunk = 2048
 const inputWindow = 8
+
+// uploadChunk is the source and command bytes per L or C record, one round
+// trip each (4096 hex digits, like an I record; the loader checks it). It was
+// 896 until the Perl broker joined the staged source (SHELL_BROKER.md "Perl
+// broker").
+const uploadChunk = 2048
 
 var ErrProtocol = errors.New("invalid or incomplete shell broker exchange")
 
@@ -89,10 +106,15 @@ func newPlan(text string, tty bool) (*Plan, error) {
 		tools = "cat stty"
 		p.requirements = "TTY adapter requires existing Bash >=4.3, cat and stty"
 	}
-	loader := `_ps_old_lc=${LC_ALL-};_ps_lc_set=${LC_ALL+x};export LC_ALL=C;printf -v _ps_prefix '\036PISH3:@N@:';_ps_emit(){ printf '%s%s\n' "$_ps_prefix" "$*"; };if ((BASH_VERSINFO[0]<4||(BASH_VERSINFO[0]==4&&BASH_VERSINFO[1]<3)));then _ps_emit 'Z bash';exit 125;fi;for x in cat setsid;do command -v "$x" >/dev/null||{ _ps_emit 'Z tools';exit 125; };done;_ps_emit B;code=;_ps_command=;l=0;c=0;while IFS= read -r line;do [[ $line == "$_ps_prefix"* ]]||exit 125;line=${line#"$_ps_prefix"};`
+	loader := `_ps_old_lc=${LC_ALL-};_ps_lc_set=${LC_ALL+x};export LC_ALL=C;printf -v _ps_prefix '\036PISH3:@N@:';_ps_emit(){ printf '%s%s\n' "$_ps_prefix" "$*"; };if ((BASH_VERSINFO[0]<4||(BASH_VERSINFO[0]==4&&BASH_VERSINFO[1]<3)));then _ps_emit 'Z bash';exit 125;fi;for x in cat setsid;do command -v "$x" >/dev/null||{ _ps_emit 'Z tools';exit 125; };done;_ps_emit B;f=0;((BASH_VERSINFO[0]>5||(BASH_VERSINFO[0]==5&&BASH_VERSINFO[1]>=2)))&&shopt -s patsub_replacement&&f=1;code=;_ps_command=;l=0;c=0;while IFS= read -r line;do [[ $line == "$_ps_prefix"* ]]||exit 125;line=${line#"$_ps_prefix"};`
 	// No here-string is used: parse bounded ASCII fields with parameter expansion.
-	loader += `k=${line%% *};line=${line#* };s=${line%% *};h=${line#* };if [[ $k == G ]];then [[ ${#code} == "$s" && ${#_ps_command} == "$h" ]]||exit 125;eval "$code";exit;fi;[[ ${#h} -le 1792 && $h != *[!0123456789abcdef]* && $((${#h}%2)) == 0 ]]||exit 125;e=;for ((i=0;i<${#h};i+=2));do e+="\x${h:i:2}";done;printf -v d '%b' "$e";case $k in L)((l++));[[ $s == "$l" ]]||exit 125;code+=$d;;C)((c++));[[ $s == "$c" ]]||exit 125;_ps_command+=$d;;*)exit 125;;esac;((${#code}<=32768&&${#_ps_command}<=131072))||exit 125;_ps_emit "A $k $s";done`
+	// Bash >=5.2 decodes a chunk with one substitution (f); per-byte loops cost
+	// the device more CPU than the round trips (SHELL_BROKER.md "Perl broker").
+	loader += `k=${line%% *};line=${line#* };s=${line%% *};h=${line#* };if [[ $k == G ]];then [[ ${#code} == "$s" && ${#_ps_command} == "$h" ]]||exit 125;eval "$code";exit;fi;[[ ${#h} -le 4096 && $h != *[!0123456789abcdef]* && $((${#h}%2)) == 0 ]]||exit 125;if ((f));then e=${h//??/\\x&};else e=;for ((i=0;i<${#h};i+=2));do e+="\x${h:i:2}";done;fi;printf -v d '%b' "$e";case $k in L)((l++));[[ $s == "$l" ]]||exit 125;code+=$d;;C)((c++));[[ $s == "$c" ]]||exit 125;_ps_command+=$d;;*)exit 125;;esac;((${#code}<=32768&&${#_ps_command}<=131072))||exit 125;_ps_emit "A $k $s";done`
 	loader = strings.ReplaceAll(loader, "@N@", n)
+	if testLoader != nil {
+		loader = testLoader(loader)
+	}
 	loader = strings.Replace(loader, "for x in cat setsid;", "for x in "+tools+";", 1)
 	p.loader = loader
 	stage0 := "printf '\\036PISH3:" + n + ":P\\n'; IFS= read -r b; eval \"$b\""
@@ -168,9 +190,9 @@ func (w *wire) next() (string, error) {
 
 func (p *Plan) upload(w *wire, kind, text string) error {
 	seq := 0
-	for offset := 0; offset < len(text); offset += 896 {
+	for offset := 0; offset < len(text); offset += uploadChunk {
 		seq++
-		part := text[offset:min(offset+896, len(text))]
+		part := text[offset:min(offset+uploadChunk, len(text))]
 		if err := w.send(fmt.Sprintf("%s %d %s", kind, seq, hex.EncodeToString([]byte(part)))); err != nil {
 			return err
 		}
@@ -199,6 +221,9 @@ var ErrStageTimeout = errors.New("remote adapter setup timed out before the comm
 
 // stageTimeout bounds staging (a test may shorten it).
 var stageTimeout = time.Minute
+
+// testLoader, when set by a test, rewrites the loader of new plans.
+var testLoader func(string) string
 
 // stage uploads adapter source and command bytes without committing execution.
 // It is bounded by stageTimeout: before the command starts, a stalled device
@@ -382,7 +407,10 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 				return errors.New("local stdin read failed")
 			}
 			inputDone = true
-			return w.send("F")
+			if err := w.send("F"); err != nil {
+				return inputSendError{err}
+			}
+			return nil
 		}
 		if inSeq-inAck < inputWindow {
 			reading = true
@@ -390,8 +418,47 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 		}
 		return nil
 	}
+	// Input sends can fail because the broker already completed: it exits
+	// right after X or Y, closing the carrier while records are still in
+	// flight. Only that complete status, behind nothing but input and EOF
+	// records, wins over the failed send (SHELL_BROKER.md "Perl broker").
+	afterSend := func(err error) (int, error) {
+		var failed inputSendError
+		if !errors.As(err, &failed) {
+			return 0, err
+		}
+		if ctx.Err() != nil {
+			return 0, failed.err
+		}
+		timer := time.NewTimer(sendFailureGrace)
+		defer timer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return 0, failed.err
+			case <-timer.C:
+				return 0, failed.err
+			case r := <-records:
+				f := strings.Fields(r.text)
+				switch {
+				case r.err != nil || len(f) == 0:
+					return 0, failed.err
+				case f[0] == "A" || f[0] == "K":
+				case f[0] == "F" && len(f) == 2 && (f[1] == "O" || f[1] == "E"):
+					outEOF, errEOF = outEOF || f[1] == "O", errEOF || f[1] == "E"
+				case (f[0] == "X" || f[0] == "Y") && outEOF && errEOF:
+					if code, e := completion(f); e == nil {
+						return code, nil
+					}
+					return 0, failed.err
+				default:
+					return 0, failed.err
+				}
+			}
+		}
+	}
 	if err = pumpInput(); err != nil {
-		return 0, err
+		return afterSend(err)
 	}
 	for {
 		select {
@@ -406,14 +473,14 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 				inSeq++
 				encoded := hex.EncodeToString(r.data)
 				if err = w.send(fmt.Sprintf("I %d %d %s", inSeq, len(encoded), encoded)); err != nil {
-					return 0, err
+					return afterSend(inputSendError{err})
 				}
 			}
 			if r.err != nil {
 				readErr = r.err
 			}
 			if err = pumpInput(); err != nil {
-				return 0, err
+				return afterSend(err)
 			}
 		case r := <-records:
 			if r.err != nil {
@@ -476,35 +543,53 @@ func (p *Plan) Run(ctx context.Context, stream Stream, stdio IO) (code int, resu
 				}
 				inAck++
 				if err = pumpInput(); err != nil {
-					return 0, err
+					return afterSend(err)
 				}
 			case "K":
 				inputDone = true
-			case "X":
-				if len(f) != 2 || !outEOF || !errEOF {
+			case "X", "Y":
+				if !outEOF || !errEOF {
 					return 0, ErrProtocol
 				}
-				code, e := strconv.Atoi(f[1])
-				if e != nil || code < 0 || code > 255 || strconv.Itoa(code) != f[1] {
-					return 0, ErrProtocol
-				}
-				return code, nil
-			case "Y":
-				if len(f) != 2 || !outEOF || !errEOF {
-					return 0, ErrProtocol
-				}
-				sig, e := strconv.Atoi(f[1])
-				if e != nil || sig < 1 || sig > 127 || strconv.Itoa(sig) != f[1] {
-					return 0, ErrProtocol
-				}
-				// OpenSSH leaves the client exit status at 255 for a direct
-				// remote exit-signal, distinct from an ordinary exit 128+N.
-				return 255, nil
+				return completion(f)
 			default:
 				return 0, ErrProtocol
 			}
 		}
 	}
+}
+
+// inputSendError marks a failed send of input (I or F) in Run.
+type inputSendError struct{ err error }
+
+func (e inputSendError) Error() string { return e.err.Error() }
+func (e inputSendError) Unwrap() error { return e.err }
+
+// sendFailureGrace bounds the wait for a completion already in flight after
+// an input send failed.
+const sendFailureGrace = time.Second
+
+// completion decodes a final X or Y record.
+func completion(f []string) (int, error) {
+	if len(f) != 2 {
+		return 0, ErrProtocol
+	}
+	n, e := strconv.Atoi(f[1])
+	if e != nil || strconv.Itoa(n) != f[1] {
+		return 0, ErrProtocol
+	}
+	if f[0] == "X" {
+		if n < 0 || n > 255 {
+			return 0, ErrProtocol
+		}
+		return n, nil
+	}
+	if n < 1 || n > 127 {
+		return 0, ErrProtocol
+	}
+	// OpenSSH leaves the client exit status at 255 for a direct remote
+	// exit-signal, distinct from an ordinary exit 128+N.
+	return 255, nil
 }
 
 // abort never reports remote command success. Late output is drained without

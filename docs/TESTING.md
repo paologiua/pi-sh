@@ -898,3 +898,64 @@ ssh and the fixtures ignored the hangup cases of
 `TestTTYJobTableCandidateHUPCleanupBeforeCarrierClose`, which then failed. The
 shellbroker TestMain installs a SIGHUP handler in that case, which exec resets
 to the default action.
+
+## Perl broker and the PI_SH_REMOTE_IMPL switch — 2026-10-29
+
+The shell broker runs in Perl when the device's perl compiles broker.pl, and
+otherwise in Bash (SHELL_BROKER.md "Perl broker"). `PI_SH_REMOTE_IMPL=bash`
+keeps every remote program in Bash where the device has Perl, for diagnosis:
+the Bash broker with Bash workers. The older `PI_SH_BROKER_WORKERS=bash` now
+does the same for the broker. `PI_SH_FORWARD_ADAPTER=bash` still selects the
+Bash forwarding adapter.
+
+`eachImpl` runs the broker tests once per implementation, as `eachConnector`
+does for the forwarding adapter. Further tests check which implementation is
+running and the fallback with a perl that cannot compile the program
+(`TestShellBrokerUsesPerlBrokerWhenPresent`, `TestShellBrokerFallsBackToBash`).
+
+The full verification, which must report `fail=0` before every commit:
+- `gofmt -l cmd internal` prints nothing;
+- `go vet ./...`, and `go vet -C third_party/sftp -stdmethods=false ./...`;
+- `go mod verify`;
+- `go test -race ./... -timeout=300s`, and
+  `go test -C third_party/sftp -race ./... -timeout=120s`;
+- with Bash 5.2.37 as `PI_SH_TEST_BASH`:
+  `go test -count=1 ./internal/fwdbroker ./internal/shellbroker ./cmd/pi-sh`;
+- `PI_SH_FORWARD_ADAPTER=bash go test -count=1 ./internal/fwdbroker ./cmd/pi-sh`;
+- `PI_SH_BROKER_WORKERS=bash go test -count=1 ./internal/shellbroker ./cmd/...`;
+- `PI_SH_REMOTE_IMPL=bash go test -count=1 ./internal/shellbroker ./internal/fwdbroker ./cmd/...`,
+  with Bash 5.3 and with Bash 5.2.37;
+- `node --test internal/browserauth/companion_test.mjs`;
+- for linux/386, linux/amd64, linux/arm64, darwin/amd64, darwin/arm64,
+  windows/amd64 and windows/arm64, with `CGO_ENABLED=0` and
+  `GO386=softfloat`: `go build ./...`, `go test -c` of the module and of
+  third_party/sftp;
+- building bin/pi-sh, bin/pi-cp, bin/pi-sftp and bin/transfer-probe.
+
+Tests that depend on timing are also repeated under load, with one
+`yes >/dev/null` per core and `-count`.
+
+**`ctrl-z-handler` in `TestTTYCommandSessionOverWebRTC`.** This is the
+intermittent failure recorded in SHELL_BROKER.md "Input window" ("Ctrl-Z lost
+command completion"). It failed once more in the Bash 5.2 step of the
+verification. Over 200 repetitions it failed 6 times on this branch and 4 times
+on `7500852`, so it predates the Perl broker, which the TTY path does not use.
+
+It is the `caught-suspend` defect of 2026-10-26: this fixture had not been
+corrected then. It still ran its command under `/bin/sh` (Bash 3.2) and sent
+`^Z`, `x` and Enter in one write. It now follows the corrected fixtures:
+- the command runs under the test Bash;
+- it retries an interrupted `read`;
+- the line goes out only after the handler's output.
+
+Afterwards it failed 0 of 200 times with Bash 5.2.37 and 0 of 200 with Bash
+5.3.
+
+**`TestShellBrokerAbortAfterRemoteCompletion` under load.** One verification
+run failed it with the Bash broker and Bash 5.2: `Run` returned status 0 and no
+error. The test delays received frames by 500 ms after `G`, so the local stdin
+failure meets the broker's X only after the broker has exited. When R and X
+came in one PTY read they arrived together. The failure and X then raced in
+`Run`'s `select`, and X could win; reporting status 0 is correct, but the test
+then skipped the abort it is about. The command now sleeps 0.2 s before
+`exit 0`, which keeps X out of the frame that carries R.

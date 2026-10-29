@@ -88,3 +88,21 @@ func TestBrokerWindowMatchesClient(t *testing.T) {
 		t.Fatalf("_ps_in_win=%d, inputWindow=%d", n, inputWindow)
 	}
 }
+
+// The Perl broker reaches the device inside a single-quoted Bash word.
+func TestBrokerPerlHasNoApostrophe(t *testing.T) {
+	if strings.Contains(perlSource, "'") {
+		t.Fatal("broker.pl contains an apostrophe")
+	}
+}
+
+// The loader accepts exactly the L and C records that upload sends.
+func TestLoaderAcceptsUploadChunk(t *testing.T) {
+	p, err := New("true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(p.loader, "${#h} -le "+strconv.Itoa(2*uploadChunk)+" ") || len("L 99 ")+2*uploadChunk > maxRecord {
+		t.Fatal("loader chunk bound differs from uploadChunk")
+	}
+}

@@ -49,23 +49,25 @@ func TestStagedTTYLoginShellEOFLogout(t *testing.T) {
 }
 
 func TestBrokerLoginShellWithoutTTY(t *testing.T) {
-	home := loginFixtureHome(t)
-	var out, stderr bytes.Buffer
-	input := "printf 'argv0:%s pwd:%s\\n' \"$0\" \"$PWD\"; test -t 0 || printf 'tty:no\\n'; exit 7\n"
-	code, err := runLocal(t, LoginShell, strings.NewReader(input), &out, &stderr)
-	if err != nil || code != 7 {
-		t.Fatalf("no-TTY login shell: %d %v %q %q", code, err, out.String(), stderr.String())
-	}
-	// Bash reads no profile for a noninteractive argv0 login shell, as with sshd.
-	if out.String() != "argv0:-sh pwd:"+home+"\ntty:no\n" {
-		t.Fatalf("no-TTY login shell output: %q stderr %q", out.String(), stderr.String())
-	}
-	// Exhausted stdin (-n) ends a noninteractive login shell successfully.
-	out.Reset()
-	code, err = runLocal(t, LoginShell, nil, &out, &stderr)
-	if err != nil || code != 0 || out.String() != "" {
-		t.Fatalf("null-stdin login shell: %d %v %q", code, err, out.String())
-	}
+	eachImpl(t, func(t *testing.T) {
+		home := loginFixtureHome(t)
+		var out, stderr bytes.Buffer
+		input := "printf 'argv0:%s pwd:%s\\n' \"$0\" \"$PWD\"; test -t 0 || printf 'tty:no\\n'; exit 7\n"
+		code, err := runLocal(t, LoginShell, strings.NewReader(input), &out, &stderr)
+		if err != nil || code != 7 {
+			t.Fatalf("no-TTY login shell: %d %v %q %q", code, err, out.String(), stderr.String())
+		}
+		// Bash reads no profile for a noninteractive argv0 login shell, as with sshd.
+		if out.String() != "argv0:-sh pwd:"+home+"\ntty:no\n" {
+			t.Fatalf("no-TTY login shell output: %q stderr %q", out.String(), stderr.String())
+		}
+		// Exhausted stdin (-n) ends a noninteractive login shell successfully.
+		out.Reset()
+		code, err = runLocal(t, LoginShell, nil, &out, &stderr)
+		if err != nil || code != 0 || out.String() != "" {
+			t.Fatalf("null-stdin login shell: %d %v %q", code, err, out.String())
+		}
+	})
 }
 
 func TestLoginShellMissingHome(t *testing.T) {
