@@ -554,7 +554,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		var mask uint64
 		mask, err = strconv.ParseUint(a[0], 8, 32)
 		if err != nil || mask > 0777 {
-			return false, shown(os.ErrInvalid, "Invalid umask: %s", display(a[0]))
+			return false, shown(os.ErrInvalid, "You must supply a numeric argument to the lumask command.")
 		}
 		value := os.FileMode(mask)
 		c.LocalUmask = &value

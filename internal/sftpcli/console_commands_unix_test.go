@@ -477,3 +477,5 @@ func TestLmkdirErrorsAgainstOpenSSH(t *testing.T) {
 func TestTransferNoticesAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "NOISY get file dir", "NOISY put file dir", "NOISY get -r dir tree", "NOISY put -r dir tree", "get -r dir tree", "put -r dir tree")
 }
+
+func TestLumaskErrorsAgainstOpenSSH(t *testing.T) { compareConsoleDiagnostic(t, "lumask 888") }
