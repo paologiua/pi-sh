@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -9,6 +10,8 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 
 	"pi-sh/internal/cliargs"
 	"pi-sh/internal/connectsession"
@@ -30,13 +33,36 @@ func (o *optionList) Set(s string) error { *o = append(*o, s); return nil }
 func main() { os.Exit(app()) }
 func app() int {
 	f := flag.NewFlagSet("pi-sftp", flag.ContinueOnError)
+	var flagOutput bytes.Buffer
+	f.SetOutput(&flagOutput)
+	var tuningError error
 	direct := f.Bool("direct-login", false, "use memory-only direct Raspberry Pi ID login")
 	browser := f.Bool("browser", false, "use the authorized Connect browser companion")
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
-	requests := f.Uint("R", 64, "maximum concurrent requests per transfer")
+	requests, buffer := new(uint), new(uint)
+	*requests = 64
+	numericFlag := func(name, value string) error {
+		normalized := strings.TrimPrefix(strings.TrimLeft(value, " \t\r\n\v\f"), "+")
+		number, err := strconv.ParseUint(normalized, 10, strconv.IntSize)
+		if err != nil || number == 0 || (name == "R" && number > 256*1024) {
+			label := "buffer size"
+			if name == "R" {
+				label = "number of requests"
+			}
+			tuningError = fmt.Errorf("Invalid %s %q", label, value)
+			return tuningError
+		}
+		if name == "R" {
+			*requests = uint(number)
+		} else {
+			*buffer = uint(number)
+		}
+		return nil
+	}
+	f.Func("R", "maximum concurrent requests per transfer (default 64)", func(value string) error { return numericFlag("R", value) })
 	var bandwidth uint64
 	f.Func("l", "transfer bandwidth limit in Kbit/s", func(value string) error { var err error; bandwidth, err = sftpclient.ParseBandwidth(value); return err })
-	buffer := f.Uint("B", 0, "transfer buffer size in bytes (default 32768)")
+	f.Func("B", "transfer buffer size in bytes (default 32768)", func(value string) error { return numericFlag("B", value) })
 	f.Func("X", "SFTP buffer= or nrequests= setting", func(value string) error { return sftpclient.ApplyTransferOption(value, buffer, requests) })
 	noisy := f.Bool("N", false, "print transfer notices even in batch or quiet mode")
 	readOnly := f.Bool("read-only", false, "start the existing server in read-only mode; reject remote writes")
@@ -63,23 +89,14 @@ func app() int {
 		"S": "pi-sftp always connects through Raspberry Pi Connect; the transport program cannot be replaced",
 	})
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
+		if tuningError != nil {
+			fmt.Fprintf(os.Stderr, "%v\r\n", tuningError)
+			return 1
+		}
+		_, _ = io.Copy(os.Stderr, &flagOutput)
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
-		return 1
-	}
-	if *requests == 0 || *requests > 256*1024 {
-		fmt.Fprintln(os.Stderr, "pi-sftp: Invalid number of requests")
-		return 1
-	}
-	bufferSet := false
-	f.Visit(func(option *flag.Flag) {
-		if option.Name == "B" {
-			bufferSet = true
-		}
-	})
-	if bufferSet && *buffer == 0 {
-		fmt.Fprintln(os.Stderr, "pi-sftp: Invalid buffer size")
 		return 1
 	}
 	if *direct == *browser || f.NArg() != 1 {

@@ -129,3 +129,22 @@ func TestSessionFailureReporting(t *testing.T) {
 		}
 	}
 }
+
+func TestTuningValidationOrder(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-B0"}, "Invalid buffer size \"0\"\r\n"},
+		{[]string{"-R0"}, "Invalid number of requests \"0\"\r\n"},
+		{[]string{"-B0", "-Xbuffer=1K"}, "Invalid buffer size \"0\"\r\n"},
+		{[]string{"-R0", "-Xnrequests=4"}, "Invalid number of requests \"0\"\r\n"},
+	} {
+		args := append([]string{"--direct-login"}, tc.args...)
+		args = append(args, "pi")
+		code, output := runApp(t, args...)
+		if code != 1 || output != tc.want {
+			t.Fatalf("%q: %d %q want %q", tc.args, code, output, tc.want)
+		}
+	}
+}
