@@ -43,3 +43,14 @@ func TestChdirAlias(t *testing.T) {
 		t.Fatal(c.RemoteDir)
 	}
 }
+
+func TestLchdirAlias(t *testing.T) {
+	c := Console{LocalDir: t.TempDir()}
+	target := t.TempDir()
+	if _, err := c.Execute(context.Background(), []string{"lchdir", target}); err != nil {
+		t.Fatal(err)
+	}
+	if c.LocalDir != target {
+		t.Fatal(c.LocalDir)
+	}
+}
