@@ -35,6 +35,7 @@ func app() int {
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
 	requests := f.Uint("R", 64, "maximum concurrent requests per transfer")
 	buffer := f.Uint("B", 0, "transfer buffer size in bytes (default 32768)")
+	f.Func("X", "SFTP buffer= or nrequests= setting", func(value string) error { return sftpclient.ApplyTransferOption(value, buffer, requests) })
 	noisy := f.Bool("N", false, "print transfer notices even in batch or quiet mode")
 	readOnly := f.Bool("read-only", false, "start the existing server in read-only mode; reject remote writes")
 	flush := f.Bool("f", false, "request a flush after each transfer (upload requires server fsync extension)")
@@ -55,7 +56,6 @@ func app() int {
 		"A": forwardspec.ErrAgentForwarding.Error(),
 	}, map[string]string{
 
-		"X": "SFTP buffer and request tuning is not implemented",
 		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
 		"l": "bandwidth limiting is not implemented",
 		"D": "a local SFTP server program cannot replace the Connect session",
