@@ -361,10 +361,18 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		}
 		_, err = fmt.Fprintln(c.Output, display(c.LocalDir))
 	case "lcd":
-		if !need(1) {
+		if len(a) > 1 {
 			return false, bad
 		}
-		target := c.local(pathglob.Unescape(a[0]))
+		var target string
+		if len(a) == 0 || a[0] == "" {
+			target, err = os.UserHomeDir()
+			if err != nil {
+				break
+			}
+		} else {
+			target = c.local(pathglob.Unescape(a[0]))
+		}
 		var info os.FileInfo
 		info, err = os.Stat(target)
 		if err == nil && !info.IsDir() {

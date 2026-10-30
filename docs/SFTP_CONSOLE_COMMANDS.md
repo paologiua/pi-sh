@@ -12,6 +12,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | lchdir | Alias of lcd; silent success, TestLchdirAlias | Local command; no remote mutation |
 | dir | Alias of ls, identical output; TestDirAlias | Inherits current listing limits |
 | cd | No argument returns to initial remote directory, silently; TestCdReturnsToInitialDirectory | Local fixture only, native pending |
+| lcd | No argument selects local home, silently; TestLcdReturnsHome | Local command; user-home resolution uses the OS |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

@@ -3,6 +3,7 @@ package sftpcli
 import (
 	"bytes"
 	"context"
+	"runtime"
 	"testing"
 )
 
@@ -85,5 +86,21 @@ func TestCdReturnsToInitialDirectory(t *testing.T) {
 	}
 	if c.RemoteDir != "/" {
 		t.Fatal(c.RemoteDir)
+	}
+}
+
+func TestLcdReturnsHome(t *testing.T) {
+	home := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	} else {
+		t.Setenv("HOME", home)
+	}
+	c := Console{LocalDir: t.TempDir()}
+	if _, err := c.Execute(context.Background(), []string{"lcd"}); err != nil {
+		t.Fatal(err)
+	}
+	if c.LocalDir != home {
+		t.Fatal(c.LocalDir)
 	}
 }
