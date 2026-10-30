@@ -121,3 +121,55 @@ func TestLmkdirLiteral(t *testing.T) {
 		t.Fatal("existing directory accepted")
 	}
 }
+
+func TestLumaskCreationAndOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix mode comparison")
+	}
+	var out bytes.Buffer
+	root := t.TempDir()
+	c := Console{LocalDir: root, Output: &out}
+	if _, err := c.Execute(context.Background(), []string{"lumask", "077"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Local umask: 077\n" {
+		t.Fatal(out.String())
+	}
+	if _, err := c.Execute(context.Background(), []string{"lmkdir", "private"}); err != nil {
+		t.Fatal(err)
+	}
+	info, _ := os.Stat(filepath.Join(root, "private"))
+	if info.Mode().Perm() != 0700 {
+		t.Fatal(info.Mode())
+	}
+	file, err := c.openLocalFile(filepath.Join(root, "data"), os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	info, _ = os.Stat(filepath.Join(root, "data"))
+	if info.Mode().Perm() != 0600 {
+		t.Fatal(info.Mode())
+	}
+	if _, err := c.Execute(context.Background(), []string{"lumask", "000"}); err != nil {
+		t.Fatal(err)
+	}
+	file, err = c.openLocalFile(filepath.Join(root, "data"), os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	info, _ = os.Stat(filepath.Join(root, "data"))
+	if info.Mode().Perm() != 0600 {
+		t.Fatal("existing file mode changed")
+	}
+	file, err = c.openLocalFile(filepath.Join(root, "public"), os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	info, _ = os.Stat(filepath.Join(root, "public"))
+	if info.Mode().Perm() != 0666 {
+		t.Fatal("mask failed to replace inherited mask", info.Mode())
+	}
+}

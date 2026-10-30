@@ -30,6 +30,7 @@ type Console struct {
 	Resume         bool
 	Preserve       bool
 	Recursive      bool
+	LocalUmask     *os.FileMode
 	Program        string
 	// Progress is optional; pi-cp supplies scp's per-file terminal meter.
 	Progress            *progress.Display
@@ -367,7 +368,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename copy chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename copy chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir lumask quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -489,11 +490,23 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				_, err = fmt.Fprintln(c.Output, display(value))
 			}
 		}
+	case "lumask":
+		if !need(1) {
+			return false, bad
+		}
+		var mask uint64
+		mask, err = strconv.ParseUint(a[0], 8, 32)
+		if err != nil || mask > 0777 {
+			return false, shown(os.ErrInvalid, "Invalid umask: %s", display(a[0]))
+		}
+		value := os.FileMode(mask)
+		c.LocalUmask = &value
+		_, err = fmt.Fprintf(c.Output, "Local umask: %03o\n", mask)
 	case "lmkdir":
 		if !need(1) {
 			return false, bad
 		}
-		err = os.Mkdir(c.local(pathglob.Unescape(a[0])), 0777)
+		err = c.makeLocalDir(c.local(pathglob.Unescape(a[0])), 0777)
 	case "copy":
 		if !need(2) {
 			return false, bad
@@ -627,7 +640,7 @@ func (c *Console) get(remote, local string, options transferOptions) (result err
 	if !resume {
 		flags |= os.O_TRUNC
 	}
-	target, err := os.OpenFile(local, flags, info.Mode().Perm())
+	target, err := c.openLocalFile(local, flags, info.Mode().Perm())
 	if err != nil {
 		return err
 	}

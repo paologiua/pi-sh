@@ -153,7 +153,7 @@ func (c *Console) treeDirOptions(ctx context.Context, upload bool, source, targe
 		if upload {
 			err = c.Client.Mkdir(target)
 		} else {
-			err = os.Mkdir(target, mode|0300)
+			err = c.makeLocalDir(target, mode|0300)
 		}
 		if err != nil {
 			return err // No fallback when another actor won the creation race.
