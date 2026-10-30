@@ -11,7 +11,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | chdir | Alias of cd; silent success, `TestChdirAlias` | Same remote path policy as cd; no new native check |
 | lchdir | Alias of lcd; silent success, TestLchdirAlias | Local command; no remote mutation |
 | dir | Alias of ls, identical output; TestDirAlias | Inherits current listing limits |
-| cd | No argument returns to initial remote directory, silently; TestCdReturnsToInitialDirectory | Local fixture only, native pending |
+| cd | No argument returns to initial remote directory, silently; TestCdReturnsToInitialDirectory and exact error checks TestCdErrorsAgainstOpenSSH | Local fixture only, native pending |
 | lcd | No argument selects local home, silently; TestLcdReturnsHome | Local command; user-home resolution uses the OS |
 | ln | Hard link by default, -s symbolic link with literal target; silent success; TestLnAgainstLocalOpenSSH, exact missing/existing diagnostics in TestLnErrorsAgainstOpenSSH | hardlink extension required for hard links; native pending |
 | chown | Numeric UID, remote globs, -h uses negotiated lsetstat v1; preserves GID; TestChownLocalServer and TestChownErrorsAgainstOpenSSH | Status/permission failures retained; native pending; omitted attribute flags remain unavailable |

@@ -470,11 +470,17 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			c.initialRemoteDir = source
 		}
 		target, err = c.Client.RealPath(source)
+		if err != nil {
+			err = operationError(err, "realpath %s", display(source))
+		}
 		if err == nil {
 			var info os.FileInfo
 			info, err = c.Client.Stat(target)
+			if err != nil {
+				err = operationError(err, "stat remote")
+			}
 			if err == nil && !info.IsDir() {
-				err = errors.New("not a directory")
+				err = shown(os.ErrInvalid, "Can't change directory: %q is not a directory", display(target))
 			}
 			if err == nil {
 				c.RemoteDir = target

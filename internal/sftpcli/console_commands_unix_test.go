@@ -452,3 +452,5 @@ func TestCopyErrorsAgainstOpenSSH(t *testing.T) {
 }
 
 func TestDfMissingPathAgainstOpenSSH(t *testing.T) { compareConsoleDiagnostic(t, "df missing") }
+
+func TestCdErrorsAgainstOpenSSH(t *testing.T) { compareConsoleDiagnostic(t, "cd missing", "cd file") }
