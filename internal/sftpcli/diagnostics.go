@@ -15,7 +15,7 @@ func statusText(err error) string {
 	var status *sftp.StatusError
 	if errors.As(err, &status) {
 		labels := []string{"No error", "End of file", "No such file or directory", "Permission denied", "Failure", "Bad message", "No connection", "Connection lost", "Operation unsupported"}
-		if int(status.Code) < len(labels) {
+		if status.Code < uint32(len(labels)) {
 			return labels[status.Code]
 		}
 		return "Unknown status"

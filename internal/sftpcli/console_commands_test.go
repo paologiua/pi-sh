@@ -3,6 +3,7 @@ package sftpcli
 import (
 	"bytes"
 	"context"
+	"github.com/pkg/sftp"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -252,5 +253,11 @@ func TestLpwdOutput(t *testing.T) {
 	}
 	if out.String() != "Local working directory: /safe directory\n" {
 		t.Fatal(out.String())
+	}
+}
+
+func TestStatusTextUnknownUint32IsPortable(t *testing.T) {
+	if got := statusText(&sftp.StatusError{Code: ^uint32(0)}); got != "Unknown status" {
+		t.Fatal(got)
 	}
 }
