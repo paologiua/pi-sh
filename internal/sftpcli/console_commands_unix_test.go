@@ -218,3 +218,25 @@ func TestCpAliasLocalServer(t *testing.T) {
 		t.Fatal(string(data), err)
 	}
 }
+
+func TestLocalShellAgainstOpenSSH(t *testing.T) {
+	client, server := preservationServer(t)
+	t.Setenv("SHELL", "/bin/sh")
+	script := "@!printf '%s\\n' 'literal * with space'\n@!exit 7\n@version\n"
+	var out, errs bytes.Buffer
+	c := Console{Client: client, RemoteDir: t.TempDir(), LocalDir: t.TempDir(), Batch: true, Input: strings.NewReader(script), Output: &out, Errors: &errs}
+	if err := c.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sftp", "-D", server, "-b", "-")
+	cmd.Stdin = strings.NewReader(script)
+	var want, wantErr bytes.Buffer
+	cmd.Stdout = &want
+	cmd.Stderr = &wantErr
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != want.String() || errs.String() != wantErr.String() {
+		t.Fatalf("got %q / %q want %q / %q", out.String(), errs.String(), want.String(), wantErr.String())
+	}
+}

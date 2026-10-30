@@ -24,6 +24,7 @@ import (
 type Console struct {
 	Client         *sftp.Client
 	Input          io.Reader
+	LocalInput     io.Reader
 	Output, Errors io.Writer
 	Batch          bool
 	Flush          bool
@@ -168,31 +169,43 @@ func (c *Console) Run(ctx context.Context) error {
 		err  error
 	}
 	lines := make(chan lineResult, 1)
+	requests := make(chan struct{})
 	reading, stop := context.WithCancel(ctx)
 	defer stop()
 	go func() {
-		scanner := bufio.NewScanner(c.Input)
+		scanner := bufio.NewScanner(singleByteCommands{c.Input})
 		scanner.Buffer(make([]byte, 4096), 1<<20)
-		for scanner.Scan() {
+		defer close(lines)
+		for {
+			select {
+			case <-requests:
+			case <-reading.Done():
+				return
+			}
+			if !scanner.Scan() {
+				if scanner.Err() != nil {
+					select {
+					case lines <- lineResult{err: errors.New("command input failed or exceeded line limit")}:
+					case <-reading.Done():
+					}
+				}
+				return
+			}
 			select {
 			case lines <- lineResult{line: scanner.Text()}:
 			case <-reading.Done():
 				return
 			}
 		}
-		var err error
-		if scanner.Err() != nil {
-			err = errors.New("command input failed or exceeded line limit")
-		}
-		select {
-		case lines <- lineResult{err: err}:
-		case <-reading.Done():
-		}
-		close(lines)
 	}()
 	for {
 		if !c.Batch {
 			fmt.Fprint(c.Output, "pi-sftp> ")
+		}
+		select {
+		case requests <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 		select {
 		case <-ctx.Done():
@@ -225,7 +238,9 @@ func (c *Console) Run(ctx context.Context) error {
 			args, err := Split(line)
 			done := false
 			c.abort = c.Batch && !ignore
-			if err == nil {
+			if command, shell := shellLine(line); shell {
+				err = c.localShell(ctx, command)
+			} else if err == nil {
 				done, err = c.Execute(ctx, args)
 			}
 			if ctx.Err() != nil {
@@ -288,6 +303,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		c.initialRemoteDir = c.RemoteDir
 	}
 	name, a := strings.ToLower(args[0]), args[1:]
+	if name == "!" {
+		return false, c.localShell(ctx, strings.Join(a, " "))
+	}
 	if name == "mget" || name == "mput" {
 		name = strings.TrimPrefix(name, "m")
 	}
