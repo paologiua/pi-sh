@@ -483,3 +483,31 @@ func TestLumaskErrorsAgainstOpenSSH(t *testing.T) { compareConsoleDiagnostic(t, 
 func TestMetadataFlagOutputAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "chmod -z 600 file", "chown -z 1 file", "chgrp -z 1 file", "chmod -hh 600 file")
 }
+
+func TestLsControlNamesAgainstOpenSSH(t *testing.T) {
+	client, server := preservationServer(t)
+	root := t.TempDir()
+	for _, name := range []string{"line\nbreak", "tab\tname", "carriage\rreturn", "esc\x1bname", "quote\"name", "back\\name", "世界"} {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, line := range []string{"ls", "ls -1", "ls -l"} {
+		var out bytes.Buffer
+		c := Console{Client: client, RemoteDir: root, Output: &out, Batch: true}
+		args, _ := Split(line)
+		if _, err := c.Execute(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sftp", "-D", server, "-b", "-")
+		cmd.Dir = root
+		cmd.Stdin = strings.NewReader("@" + line + "\n")
+		want, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.String() != string(want) {
+			t.Fatalf("%s got %q want %q", line, out.String(), want)
+		}
+	}
+}

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/term"
@@ -117,7 +119,7 @@ func (c *Console) consoleList(ctx context.Context, args []string, opt listOption
 			if strings.HasPrefix(info.Name(), ".") {
 				return nil
 			}
-			_, err := fmt.Fprintln(c.Output, display(nameFor(info.Name())))
+			_, err := fmt.Fprintln(c.Output, listingDisplay(nameFor(info.Name())))
 			return err
 		})
 	}
@@ -208,8 +210,8 @@ func (c *Console) printListing(ctx context.Context, entries []listingEntry, opt 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		name := display(e.name)
-		pad := max(0, spacing-len(name))
+		name := listingDisplay(e.name)
+		pad := max(0, spacing-len(e.name))
 		if _, err := fmt.Fprint(c.Output, name+strings.Repeat(" ", pad)); err != nil {
 			return err
 		}
@@ -248,7 +250,7 @@ func (c *Console) printLongListing(ctx context.Context, entries []listingEntry, 
 	for _, e := range entries {
 		if !canNames && !opt.numeric && !opt.human {
 			if info, ok := e.info.(interface{ LongName() string }); ok && info.LongName() != "" {
-				if _, err := fmt.Fprintln(c.Output, display(info.LongName())); err != nil {
+				if _, err := fmt.Fprintln(c.Output, listingDisplay(info.LongName())); err != nil {
 					return err
 				}
 				continue
@@ -281,7 +283,7 @@ func (c *Console) printLongListing(ctx context.Context, entries []listingEntry, 
 				size += "B"
 			}
 		}
-		line := fmt.Sprintf("%s    ? %-*s %-*s %8s %s %s\n", unixMode(e.info.Mode()), max(8, len(user)), user, max(8, len(group)), group, size, date, display(e.name))
+		line := fmt.Sprintf("%s    ? %-*s %-*s %8s %s %s\n", unixMode(e.info.Mode()), max(8, len(user)), user, max(8, len(group)), group, size, date, listingDisplay(e.name))
 		if _, err := fmt.Fprint(c.Output, line); err != nil {
 			return err
 		}
@@ -324,4 +326,22 @@ func unixMode(mode os.FileMode) string {
 		}
 	}
 	return string(chars)
+}
+
+// OpenSSH's listing formatter preserves TAB/CR/LF while escaping other control
+// bytes in octal. Padding is calculated on the original name before escaping.
+func listingDisplay(name string) string {
+	var out strings.Builder
+	for len(name) > 0 {
+		r, n := utf8.DecodeRuneInString(name)
+		if (r == utf8.RuneError && n == 1) || (unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t') {
+			for _, b := range []byte(name[:n]) {
+				fmt.Fprintf(&out, "\\%03o", b)
+			}
+		} else {
+			out.WriteString(name[:n])
+		}
+		name = name[n:]
+	}
+	return out.String()
 }
