@@ -50,7 +50,7 @@ func TestSCPOptionDecisions(t *testing.T) {
 		{[]string{"--direct-login", "-l", "100", "-oRequestTTY=force", "source", "pi:x"}, 1, "pipe/no-TTY"},
 		{[]string{"--direct-login", "-S", "ssh", "source", "pi:x"}, 1, "transport program"},
 		{[]string{"--direct-login", "-D", "/usr/libexec/sftp-server", "source", "pi:x"}, 1, "SFTP server program"},
-		{[]string{"--direct-login", "-X", "nrequests=1", "source", "pi:x"}, 1, "tuning"},
+		{[]string{"--direct-login", "-X", "nrequests=1", "-Xbuffer=1K", "-oRequestTTY=force", "source", "pi:x"}, 1, "pipe/no-TTY"},
 		{[]string{"--direct-login", "-oRemoteCommand=echo", "source", "pi:x"}, 1, "remote command"},
 		{[]string{"--direct-login", "-oRefuseConnection=no", "source", "pi:x"}, 1, "RefuseConnection"},
 		{[]string{"--direct-login", "-oIdentityFile=key", "source", "pi:x"}, 1, "authentication"},

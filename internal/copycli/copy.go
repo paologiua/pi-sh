@@ -64,13 +64,14 @@ type Plan struct {
 	Target  Operand
 	Device  string
 	// Account is the remote operands' common account, or "" (see Parse).
-	Account   string
-	Upload    bool
-	Preserve  bool
-	Recursive bool
-	Errors    io.Writer
-	Progress  *progress.Display
-	Bandwidth uint64
+	Account              string
+	Upload               bool
+	Preserve             bool
+	Recursive            bool
+	Errors               io.Writer
+	Progress             *progress.Display
+	Bandwidth            uint64
+	BufferSize, Requests int
 }
 
 func New(args []string) (*Plan, error) {
@@ -145,7 +146,7 @@ func (p *Plan) Run(ctx context.Context, client *sftp.Client, remoteUmask *os.Fil
 			return errors.New("multiple sources require an existing destination directory")
 		}
 	}
-	console := sftpcli.Console{Client: client, Context: ctx, Bandwidth: p.Bandwidth, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp", Progress: p.Progress}
+	console := sftpcli.Console{Client: client, BufferSize: p.BufferSize, Requests: p.Requests, Context: ctx, Bandwidth: p.Bandwidth, RemoteUmask: remoteUmask, Preserve: p.Preserve, Errors: p.Errors, Program: "pi-cp", Progress: p.Progress}
 	var last error
 	for _, source := range p.Sources {
 		if ctx.Err() != nil {

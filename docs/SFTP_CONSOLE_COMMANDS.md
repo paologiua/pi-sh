@@ -32,6 +32,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | pi-sftp -X | buffer= (bytes/binary scale including fractions), nrequests=; settings applied in argument order; TestTransferXOptions | Effective packet size remains bounded by receiver; same concurrency/resume rules as -R |
 | pi-sftp -l | 1–104857600 Kbit/s (1024 bits per Kbit), payload pacing with cancellable waits; TestBandwidthLimitAndCancellation | Limited transfers use sequential I/O to keep one aggregate budget; metadata/transport overhead excluded; native timing pending |
 | pi-cp -l | Same shared payload pacing as pi-sftp -l, applied through copycli Plan; frontend pre-auth case in TestSCPOptionDecisions | Separate commit, native timing pending |
+| pi-cp -X | Shared buffer=/nrequests= parser and actual transfer controls in Plan/session; pre-auth frontend case in TestSCPOptionDecisions | New tuned transfer paths native pending; same packet/concurrency bounds as pi-sftp |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

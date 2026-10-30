@@ -32,6 +32,8 @@ func app() int {
 	preserve := f.Bool("p", false, "preserve ordinary permission bits and access/modification times")
 	recursive := f.Bool("r", false, "copy directory trees, following source symbolic links")
 	var bandwidth uint64
+	buffer, requests := uint(0), uint(64)
+	f.Func("X", "SFTP buffer= or nrequests= setting", func(value string) error { return sftpclient.ApplyTransferOption(value, &buffer, &requests) })
 	f.Func("l", "transfer bandwidth limit in Kbit/s", func(value string) error { var err error; bandwidth, err = sftpclient.ParseBandwidth(value); return err })
 	server := f.String("sftp-server", "", "existing absolute remote sftp-server path")
 	config := f.String("F", "none", "explicit configuration file, or none")
@@ -54,7 +56,6 @@ func app() int {
 		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
 		"D": "a local SFTP server program cannot replace the Connect session",
 		"S": "pi-cp always connects through Raspberry Pi Connect; the transport program cannot be replaced",
-		"X": "SFTP buffer and request tuning is not implemented",
 	})
 	if err := cliargs.Parse(f, os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -74,6 +75,7 @@ func app() int {
 	plan.Preserve, plan.Errors = *preserve, os.Stderr
 	plan.Recursive = *recursive
 	plan.Bandwidth = bandwidth
+	plan.BufferSize, plan.Requests = sftpclient.TransferBuffer(buffer), int(requests)
 	plan.Progress = progress.NewTerminal(os.Stdout, quietProgress)
 	if _, err = sftpclient.ServerCommand(*server); err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
@@ -109,7 +111,7 @@ func app() int {
 		return 255
 	}
 	defer carrier.Close()
-	session, err := sftpclient.Open(ctx, carrier.Run, sftpclient.Options{Server: *server})
+	session, err := sftpclient.Open(ctx, carrier.Run, sftpclient.Options{Server: *server, BufferSize: plan.BufferSize, Requests: plan.Requests})
 	if err != nil {
 		sessionFailure(log, err)
 		return 255
