@@ -24,6 +24,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | lumask | Octal mask with exact Local umask output; applies to new downloads, recursive directories and lmkdir without changing other Go goroutines; TestLumaskCreationAndOutput | Existing target modes retained; child-shell propagation added with shell command; Windows permission runtime unverified |
 | ! | Raw command or interactive local shell, local cwd/mask, child stdio; exact output/status diagnostic compared in TestLocalShellAgainstOpenSSH | Demand-driven command reader stops read-ahead; context kills direct child, arbitrary descendant cleanup/platform behavior remains open |
 | lls | Local /bin/ls through local shell; raw flags, quotes/globs and cwd; exact output in TestLlsAgainstOpenSSH | Uses existing local ls, not extra remote software; Windows dir adaptation unverified |
+| progress | Exact enabled/disabled lines, default on interactively and off in batch/-q; same terminal meter as SCP; TestProgressToggleAgainstOpenSSH | Redirected output never renders a meter; existing meter layout tests reused; SFTP terminal native check pending |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

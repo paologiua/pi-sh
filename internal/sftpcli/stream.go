@@ -6,7 +6,7 @@ import (
 )
 
 func (c *Console) copyData(dst io.Writer, src io.Reader, name string, size, offset int64) (int64, error) {
-	if c.Progress == nil {
+	if c.Progress == nil || c.ProgressDisabled {
 		return copyFileData(dst, src)
 	}
 	meter := c.Progress.Start(name, size, offset)

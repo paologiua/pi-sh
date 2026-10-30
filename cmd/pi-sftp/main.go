@@ -15,6 +15,7 @@ import (
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/forwardspec"
+	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
 	"pi-sh/internal/sshconfig"
@@ -41,8 +42,9 @@ func app() int {
 	config := f.String("F", "none", "explicit configuration file, or none")
 	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
 	var verbosity diag.Verbosity
+	var quietProgress bool
 	f.Var(verbosity.VerboseFlag(), "v", "verbose connection diagnostics; repeat for more (maximum DEBUG3)")
-	f.Var(verbosity.QuietFlag(), "q", "quiet: suppress connection notices, warnings and diagnostics")
+	f.Var(progressQuietFlag{verbosity.QuietFlag(), &quietProgress}, "q", "quiet: suppress connection notices, warnings and diagnostics")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	cliargs.Refuse(f, map[string]string{
@@ -127,7 +129,7 @@ func app() int {
 		sessionFailure(log, err)
 		return 255
 	}
-	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != ""}
+	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != ""}
 	err = console.Run(ctx)
 	closeErr := session.Close()
 	if err != nil || closeErr != nil {

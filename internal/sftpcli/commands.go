@@ -35,6 +35,8 @@ type Console struct {
 	Program        string
 	// Progress is optional; pi-cp supplies scp's per-file terminal meter.
 	Progress            *progress.Display
+	ProgressDisabled    bool
+	progressInitialized bool
 	RemoteDir, LocalDir string
 	// RemoteUmask comes from sftpclient's private-creation setup. Nil is for
 	// embedding with an ordinary server and uses conservative chmod intersection.
@@ -301,6 +303,10 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
 	}
+	if !c.progressInitialized {
+		c.ProgressDisabled = c.ProgressDisabled || c.Batch
+		c.progressInitialized = true
+	}
 	if c.initialRemoteDir == "" && c.RemoteDir != "" {
 		c.initialRemoteDir = c.RemoteDir
 	}
@@ -391,7 +397,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename copy chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir lumask quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename copy chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir lumask progress quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -513,6 +519,16 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				_, err = fmt.Fprintln(c.Output, display(value))
 			}
 		}
+	case "progress":
+		if !need(0) {
+			return false, bad
+		}
+		c.ProgressDisabled = !c.ProgressDisabled
+		state := "enabled"
+		if c.ProgressDisabled {
+			state = "disabled"
+		}
+		_, err = fmt.Fprintf(c.Output, "Progress meter %s\n", state)
 	case "lumask":
 		if !need(1) {
 			return false, bad

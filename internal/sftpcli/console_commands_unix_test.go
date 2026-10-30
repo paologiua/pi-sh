@@ -267,3 +267,25 @@ func TestLlsAgainstOpenSSH(t *testing.T) {
 		t.Fatalf("got %q / %q want %q", out.String(), errs.String(), want)
 	}
 }
+
+func TestProgressToggleAgainstOpenSSH(t *testing.T) {
+	client, server := preservationServer(t)
+	script := "@progress\n@progress\n"
+	var out bytes.Buffer
+	c := Console{Client: client, RemoteDir: t.TempDir(), LocalDir: t.TempDir(), Batch: true, Input: strings.NewReader(script), Output: &out}
+	if err := c.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sftp", "-D", server, "-b", "-")
+	cmd.Stdin = strings.NewReader(script)
+	want, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != string(want) {
+		t.Fatalf("got %q want %q", out.String(), want)
+	}
+	if !c.ProgressDisabled {
+		t.Fatal("second toggle did not disable progress")
+	}
+}
