@@ -54,3 +54,21 @@ func TestLchdirAlias(t *testing.T) {
 		t.Fatal(c.LocalDir)
 	}
 }
+
+func TestDirAlias(t *testing.T) {
+	var a, b bytes.Buffer
+	c := Console{Client: memoryClient(t), RemoteDir: "/", Output: &a}
+	if err := c.Client.Mkdir("/sub"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Execute(context.Background(), []string{"dir"}); err != nil {
+		t.Fatal(err)
+	}
+	c.Output = &b
+	if _, err := c.Execute(context.Background(), []string{"ls"}); err != nil {
+		t.Fatal(err)
+	}
+	if a.String() != b.String() {
+		t.Fatal(a.String(), b.String())
+	}
+}

@@ -292,6 +292,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if name == "lchdir" {
 		name = "lcd"
 	}
+	if name == "dir" {
+		name = "ls"
+	}
 	unsortedListing := false
 	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
 	if name == "reget" || name == "reput" {
