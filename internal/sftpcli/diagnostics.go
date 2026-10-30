@@ -62,3 +62,11 @@ func (c *Console) transferNotice(upload bool, source, target string, resume bool
 		fmt.Fprintf(c.Output, "Fetching %s to %s\n", display(source), display(target))
 	}
 }
+
+func (c *Console) requireExtension(name, version string) error {
+	actual, ok := c.Client.HasExtension(name)
+	if !ok || actual != version {
+		return shown(sftp.ErrSSHFxOpUnsupported, "Server does not support %s extension", name)
+	}
+	return nil
+}

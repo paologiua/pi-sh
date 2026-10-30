@@ -585,6 +585,10 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if symbolicLink {
 			err = operationError(c.Client.Symlink(source, target), "remote symlink file %q to %q", display(source), display(target))
 		} else {
+			if missing := c.requireExtension("hardlink@openssh.com", "1"); missing != nil {
+				err = missing
+				break
+			}
 			err = operationError(c.Client.Link(c.remote(source), target), "remote link %q to %q", display(c.remote(source)), display(target))
 		}
 	case "symlink":

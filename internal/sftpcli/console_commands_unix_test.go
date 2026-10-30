@@ -397,7 +397,11 @@ func TestHelpAgainstOpenSSH(t *testing.T) {
 // Normalize those fixture roots, preserving all other bytes including CRLF.
 func compareConsoleDiagnostic(t *testing.T, lines ...string) {
 	t.Helper()
-	client, server := preservationServer(t)
+	compareConsoleWithServer(t, nil, lines...)
+}
+func compareConsoleWithServer(t *testing.T, serverFlags []string, lines ...string) {
+	t.Helper()
+	client, server := preservationServer(t, serverFlags...)
 	for _, line := range lines {
 		t.Run(line, func(t *testing.T) {
 			roots := []string{t.TempDir(), t.TempDir()}
@@ -420,7 +424,11 @@ func compareConsoleDiagnostic(t *testing.T, lines ...string) {
 			var out, errs bytes.Buffer
 			c := Console{Client: client, RemoteDir: roots[0], LocalDir: roots[0], Batch: true, Input: strings.NewReader(script), Output: &out, Errors: &errs, Noisy: noisy}
 			ours := c.Run(context.Background())
-			flags := []string{"-D", server, "-b", "-"}
+			serverCommand := server
+			if len(serverFlags) > 0 {
+				serverCommand += " " + strings.Join(serverFlags, " ")
+			}
+			flags := []string{"-D", serverCommand, "-b", "-"}
 			if noisy {
 				flags = append(flags, "-N")
 			}
@@ -510,4 +518,8 @@ func TestLsControlNamesAgainstOpenSSH(t *testing.T) {
 			t.Fatalf("%s got %q want %q", line, out.String(), want)
 		}
 	}
+}
+
+func TestHardlinkCapabilityAgainstOpenSSH(t *testing.T) {
+	compareConsoleWithServer(t, []string{"-P", "hardlink"}, "ln file target")
 }
