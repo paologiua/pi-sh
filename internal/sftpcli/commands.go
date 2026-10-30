@@ -313,7 +313,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-	} else if name == "chown" {
+	} else if name == "chown" || name == "chgrp" {
 		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
 			if a[0] == "--" {
 				a = a[1:]
@@ -361,7 +361,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chown chmod ln symlink readlink version lpwd lcd quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chown chgrp chmod ln symlink readlink version lpwd lcd quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -504,15 +504,19 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			return false, bad
 		}
 		err = c.Client.Symlink(pathglob.Unescape(a[0]), c.remote(pathglob.Unescape(a[1])))
-	case "chown":
+	case "chown", "chgrp":
 		if !need(2) {
 			return false, bad
 		}
 		var id uint64
 		id, err = strconv.ParseUint(a[0], 10, 32)
 		if err != nil {
+			if name == "chgrp" {
+				return false, shown(os.ErrInvalid, "Invalid group ID: %s", display(a[0]))
+			}
 			return false, shown(os.ErrInvalid, "Invalid user ID: %s", display(a[0]))
 		}
+		argsName := name
 		err = c.eachRemote(ctx, a[1], func(name string) error {
 			var info os.FileInfo
 			var statErr error
@@ -528,13 +532,21 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			if !ok {
 				return errors.New("remote ownership unavailable")
 			}
+			uid, gid := attrs.UID, attrs.GID
+			action := "owner"
+			if argsName == "chgrp" {
+				gid = uint32(id)
+				action = "group"
+			} else {
+				uid = uint32(id)
+			}
 			if !c.Batch && c.Output != nil {
-				fmt.Fprintf(c.Output, "Changing owner on %s\n", display(name))
+				fmt.Fprintf(c.Output, "Changing %s on %s\n", action, display(name))
 			}
 			if noFollow {
-				return c.Client.Lchown(name, uint32(id), attrs.GID)
+				return c.Client.Lchown(name, uid, gid)
 			}
-			return c.Client.Chown(name, int(uint32(id)), int(attrs.GID))
+			return c.Client.Chown(name, int(uid), int(gid))
 		})
 	case "chmod":
 		if !need(2) {

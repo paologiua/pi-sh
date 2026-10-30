@@ -93,3 +93,29 @@ func TestChownLocalServer(t *testing.T) {
 		t.Fatal("overflow UID accepted")
 	}
 }
+
+func TestChgrpLocalServer(t *testing.T) {
+	client, _ := preservationServer(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "file")
+	if err := os.WriteFile(source, []byte("contents"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("file", filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	c := Console{Client: client, RemoteDir: root, Batch: true}
+	for _, args := range [][]string{{"chgrp", strconv.Itoa(os.Getgid()), "f*"}, {"chgrp", "-h", strconv.Itoa(os.Getgid()), "link"}} {
+		if _, err := c.Execute(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	if int(stat.Gid) != os.Getgid() || int(stat.Uid) != os.Getuid() {
+		t.Fatal("ownership differs")
+	}
+}
