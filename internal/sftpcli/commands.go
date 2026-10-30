@@ -299,6 +299,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if name == "dir" {
 		name = "ls"
 	}
+	symbolicLink := false
 	unsortedListing := false
 	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
 	if name == "reget" || name == "reput" {
@@ -310,6 +311,18 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		a, options, err = transferFlags(a, options)
 		if err != nil {
 			return false, err
+		}
+	} else if name == "ln" {
+		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
+			if a[0] == "--" {
+				a = a[1:]
+				break
+			}
+			if strings.Trim(a[0][1:], "s") != "" || a[0] == "-" {
+				return false, errors.New("unsupported ln option")
+			}
+			symbolicLink = true
+			a = a[1:]
 		}
 	} else if name == "ls" {
 		var err error
@@ -335,7 +348,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chmod symlink readlink version lpwd lcd quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chmod ln symlink readlink version lpwd lcd quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -462,6 +475,17 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			return false, bad
 		}
 		err = c.Client.Rename(c.remote(pathglob.Unescape(a[0])), c.remote(pathglob.Unescape(a[1])))
+	case "ln":
+		if !need(2) {
+			return false, bad
+		}
+		source := pathglob.Unescape(a[0])
+		target := c.remote(pathglob.Unescape(a[1]))
+		if symbolicLink {
+			err = c.Client.Symlink(source, target)
+		} else {
+			err = c.Client.Link(c.remote(source), target)
+		}
 	case "symlink":
 		if !need(2) {
 			return false, bad
