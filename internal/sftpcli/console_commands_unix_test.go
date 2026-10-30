@@ -442,3 +442,7 @@ func TestChownErrorsAgainstOpenSSH(t *testing.T) {
 func TestChgrpErrorsAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "chgrp nope file", "chgrp "+strconv.Itoa(os.Getgid())+" missing")
 }
+
+func TestChmodErrorsAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "chmod 999 file", "chmod 600 missing")
+}

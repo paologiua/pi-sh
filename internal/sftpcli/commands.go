@@ -631,7 +631,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		var mode uint64
 		mode, err = strconv.ParseUint(a[0], 8, 32)
 		if err != nil || mode > 07777 {
-			return false, errors.New("chmod requires an octal mode between 0000 and 7777")
+			return false, shown(os.ErrInvalid, "You must supply a numeric argument to the chmod command.")
 		}
 		bits := os.FileMode(mode & 0777)
 		if mode&04000 != 0 {
@@ -648,9 +648,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				fmt.Fprintf(c.Output, "Changing mode on %s\n", display(name))
 			}
 			if noFollow {
-				return c.Client.Lchmod(name, bits)
+				return operationError(c.Client.Lchmod(name, bits), "remote lsetstat %q", display(name))
 			}
-			return c.Client.Chmod(name, bits)
+			return operationError(c.Client.Chmod(name, bits), "remote setstat %q", display(name))
 		})
 	default:
 		return false, errors.New("unsupported SFTP command")
