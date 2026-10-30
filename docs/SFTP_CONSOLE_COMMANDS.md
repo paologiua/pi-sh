@@ -11,6 +11,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | chdir | Alias of cd; silent success, `TestChdirAlias` | Same remote path policy as cd; no new native check |
 | lchdir | Alias of lcd; silent success, TestLchdirAlias | Local command; no remote mutation |
 | dir | Alias of ls, identical output; TestDirAlias | Inherits current listing limits |
+| cd | No argument returns to initial remote directory, silently; TestCdReturnsToInitialDirectory | Local fixture only, native pending |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

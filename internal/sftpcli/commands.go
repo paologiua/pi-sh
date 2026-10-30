@@ -39,7 +39,8 @@ type Console struct {
 	RemoteUmask *os.FileMode
 	// abort is OpenSSH's err_abort for the current batch line: multi-path rm
 	// and chmod stop at their first failure.
-	abort bool
+	abort            bool
+	initialRemoteDir string
 }
 
 // Split tokenizes a command line like OpenSSH sftp's makeargv. Quotes may join
@@ -282,6 +283,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
 	}
+	if c.initialRemoteDir == "" && c.RemoteDir != "" {
+		c.initialRemoteDir = c.RemoteDir
+	}
 	name, a := strings.ToLower(args[0]), args[1:]
 	if name == "mget" || name == "mput" {
 		name = strings.TrimPrefix(name, "m")
@@ -370,11 +374,22 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			c.LocalDir = target
 		}
 	case "cd":
-		if !need(1) {
+		if len(a) > 1 {
 			return false, bad
 		}
 		var target string
-		target, err = c.Client.RealPath(c.remote(pathglob.Unescape(a[0])))
+		source := c.initialRemoteDir
+		if len(a) == 1 && a[0] != "" {
+			source = c.remote(pathglob.Unescape(a[0]))
+		}
+		if source == "" {
+			source, err = c.Client.Getwd()
+			if err != nil {
+				break
+			}
+			c.initialRemoteDir = source
+		}
+		target, err = c.Client.RealPath(source)
 		if err == nil {
 			var info os.FileInfo
 			info, err = c.Client.Stat(target)

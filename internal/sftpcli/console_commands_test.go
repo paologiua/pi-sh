@@ -72,3 +72,18 @@ func TestDirAlias(t *testing.T) {
 		t.Fatal(a.String(), b.String())
 	}
 }
+
+func TestCdReturnsToInitialDirectory(t *testing.T) {
+	c := Console{Client: memoryClient(t), RemoteDir: "/"}
+	if err := c.Client.Mkdir("/sub"); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"cd", "sub"}, {"cd"}} {
+		if _, err := c.Execute(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c.RemoteDir != "/" {
+		t.Fatal(c.RemoteDir)
+	}
+}
