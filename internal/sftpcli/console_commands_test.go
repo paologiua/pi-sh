@@ -19,3 +19,14 @@ func TestVersionConsoleOutput(t *testing.T) {
 		t.Fatal("extra operand accepted")
 	}
 }
+
+func TestCommandsIgnoreCase(t *testing.T) {
+	var out bytes.Buffer
+	c := Console{Output: &out}
+	if _, err := c.Execute(context.Background(), []string{"VeRsIoN"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "SFTP protocol version 3\n" {
+		t.Fatal(out.String())
+	}
+}

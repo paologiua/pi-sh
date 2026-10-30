@@ -282,7 +282,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if len(args) == 0 {
 		return false, nil
 	}
-	name, a := args[0], args[1:]
+	name, a := strings.ToLower(args[0]), args[1:]
 	if name == "mget" || name == "mput" {
 		name = strings.TrimPrefix(name, "m")
 	}

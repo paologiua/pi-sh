@@ -10,6 +10,8 @@ the preceding recursion milestone was recorded separately before these changes.
 | --- | --- | --- |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
+Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.
+
 Reference baseline: installed macOS OpenSSH 10.2p1 and local sftp-server,
 plus the pinned upstream sftp.c. Output and operations are reproduced by an
 independently authored implementation; no upstream implementation is copied.
