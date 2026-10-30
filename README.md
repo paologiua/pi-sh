@@ -11,6 +11,11 @@ A real Pi command printed the expected marker and returned 23. Browser-assisted
 interactive access also remains available. This is an early implementation,
 not complete OpenSSH compatibility.
 
+Remote command supervision, the binary broker and forwarding run in Perl when
+the existing device interpreter can compile the in-memory adapters. Bash loads
+them and remains the fallback; no remote software is installed. The approved
+native Perl checks are recorded in [real-device tests](docs/REAL_DEVICE_TESTS.md).
+
 Local macOS/Linux session streams now support cancellation of idle input and
 backpressured output without closing caller files; local Pion/PTY tests check
 worker shutdown and terminal reuse. Windows blocked-I/O and native lifecycle
@@ -98,13 +103,15 @@ stdout stays free of progress lines. Local OpenSSH comparisons pass; physical
 iSH file-transfer/progress verification remains pending.
 
 `pi-sftp` now provides a command console/batch subset and `pi-cp` copies regular
-files and literal directory trees with `-r`, using SFTP over the existing binary Bash broker. They require an existing
+files and literal directory trees with `-r`, using SFTP over the in-memory
+Perl broker with Bash fallback. They require an existing
 compatible sftp-server on the Pi; they never install one or fall back to SSH.
-Local in-memory and actual OpenSSH-server/PTY tests pass. File-content transfers
-remain unverified on the Pi; the owner's direct-login read-only metadata batch
-returned 0; a later read-only pwd/quit rerun also verified private-creation startup
-with status 0. No Pi transfer-write
-test is authorized yet.
+Local in-memory and actual OpenSSH-server/PTY tests have passed. Approved native
+plans have also exercised binary transfers, preservation, resume and a small
+recursive tree, including Perl and forced-Bash runs. These are scoped macOS-to-Pi
+results, not complete platform or failure-path coverage; see
+[real-device tests](docs/REAL_DEVICE_TESTS.md). Completed write-test plans do not
+authorize further remote writes.
 
 ```sh
 go build -o bin/pi-sftp ./cmd/pi-sftp
@@ -121,13 +128,15 @@ pi-sftp supports global `-f` and `get -f`/`put -f` flush requests, with
 [OpenSSH-style capability and error handling](docs/SFTP_FLUSH.md).
 Global/command `-a` and `reget`/`reput` resume regular-file transfers from the
 destination size; existing prefixes must match. See
-[resume rules, local comparisons and limits](docs/SFTP_RESUME.md). Native resume
-is unverified and no Pi upload-test location is approved.
+[resume rules, local comparisons and limits](docs/SFTP_RESUME.md). Selected native
+resume cases have passed in the approved plans; arbitrary interruption and
+cross-platform behavior remain open.
 
 Both clients accept `-p` for regular-file permission bits and access/modification
 times. pi-sftp also supports `get -p`/`put -p`. See
 [metadata behavior and remaining gaps](docs/SFTP_METADATA.md); these operations
-have local reference evidence only.
+have local reference and selected native-plan evidence, with the limits recorded
+in the linked documents.
 
 ## Browser-assisted shell
 

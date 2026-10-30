@@ -696,3 +696,36 @@ reference run captured two stacks at 10/12 s and then passed in 16.59 s.
 The old overruns remain unclassified: these normal stacks cannot establish
 whether a failed run was stalled or slow. TESTING.md "Further serial load
 investigation" records the method and limits; no timeout or product code changed.
+
+
+## Matched main comparison — 2026-10-29/30
+
+With the Bash broker and workers, `cec4417` and a detached local `main` at
+`7500852` each passed ten `SlowOutputWithFastInput/bash` runs per Bash version
+under eight `yes` processes, one test executable at a time. The same 1 MiB/cat/
+slow-writer scenario and exact bytes/status/60 s bound were used; main only
+gained the missing test, not the branch sender, window or loader. Both diagnostic
+switches were set because main only recognizes `PI_SH_BROKER_WORKERS=bash`.
+
+Temporary overlays sampled send/receive records, decoded bytes, acknowledgments,
+actual local writes, live queues and goroutines at 5/15/30/45/55 s. The slowest
+successful branch/5.3 run took 39.13 s, with staging complete at 0.104 s and
+311296/538624/817152 local output bytes at 5/15/30 s, then all 1048576 bytes,
+512 input acknowledgments and completion. That run advanced in the data path;
+it does not classify the old failed runs. No 60 s overrun, stationary failed
+cycle or failed pre-start/external wait was captured. Clean controls without
+product instrumentation also passed once per state/version.
+
+Neither a branch regression nor the same overrun on main is demonstrated.
+Historical >60 s events remain unclassified; no timeout or product correction
+is justified. TESTING.md "Matched local comparison" records ranges, reference
+adaptations, limitations and the separate TTY/staging observations. All evidence
+is local; no Pi session, native plan, merge or push was performed.
+
+The owner closed the investigation on 2026-10-30 without a causal finding.
+The subsequent full uninstrumented checklist ended `RESULT fail=1` on different
+local WebRTC failures; at least one CLI failure precedes shell creation. Sharing
+one Mac can affect scheduling and local networking, but that explanation was not
+established and cannot classify the historical broker overruns. There is no
+product change or commit. TESTING.md "Investigation closure and failed final
+gate" records the exact verification status and unfinished peer reduction.

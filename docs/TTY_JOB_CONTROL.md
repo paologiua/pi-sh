@@ -232,3 +232,33 @@ reports including those original modes. No normalization or product change;
 report sizes instead of dumping inherited environment values. This is
 separate from the still-unclassified Ctrl-Z completion failure above;
 TESTING.md records the failed first gate and the reproduction.
+
+
+## Matched main comparison — 2026-10-29/30
+
+The Bash supervisor's post-handler completion failure was not reproduced on
+`cec4417` or `main` (`7500852`) with identical corrected CLI fixtures, both Bash
+versions and eight serially managed load processes. Each state/version passed
+100 isolated handlers and every handler in 20 complete 17-case sequences;
+50 direct-PTY reductions per combination also passed. Main had one distinct,
+fast `eof-record` staging/protocol failure before supervisor start (339/340 with
+5.2.37); it is not the historical readiness timeout or missing completion.
+
+Temporary hooks distinguish impending command exit from absence/reaping,
+classification, helper joins, TX, parser EOF and local-I/O/terminal shutdown.
+A deliberately held supervisor after completed waits produced the original
+`session did not finish` assertion with no TX and numeric process/goroutine
+snapshots at 3/8/12 s. That is an artificial diagnostic control, not a causal
+reproduction. Uninstrumented full-sequence controls passed on both states/Bashes.
+No product or timeout changed. Neither a branch regression nor this same failure
+on main is established; the historical completion and readiness episodes remain
+open. TESTING.md "Matched local comparison" gives adaptations, results, artifact
+locations and the merge recommendation; no Pi session was opened.
+
+The owner closed this investigation on 2026-10-30 with the original episodes
+still unclassified. A later full checklist failed on separate local WebRTC
+connection/deadline errors; one case precedes any shell PTY. A one-Mac test setup
+can affect timing and local networking, but no causal attribution is established.
+The shell-free peer reduction was interrupted without logs or results. No
+product fix or commit follows; TESTING.md "Investigation closure and failed
+final gate" records the failed gate and the uncommitted documentation state.

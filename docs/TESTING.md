@@ -913,7 +913,8 @@ does for the forwarding adapter. Further tests check which implementation is
 running and the fallback with a perl that cannot compile the program
 (`TestShellBrokerUsesPerlBrokerWhenPresent`, `TestShellBrokerFallsBackToBash`).
 
-The full verification, which must report `fail=0` before every commit:
+The full verification, normally required to report `fail=0` before every commit
+(the owner's 2026-10-30 integration decision below is an explicit exception):
 - `gofmt -l cmd internal` prints nothing;
 - `go vet ./...`, and `go vet -C third_party/sftp -stdmethods=false ./...`;
 - `go mod verify`;
@@ -1091,3 +1092,232 @@ dump inherited environment values. The corrected fixture passed 100 race
 repetitions with each Bash (both carrier types and both supervisors per run).
 The product's terminal handling is unchanged. A new complete verification is
 required after this fixture change; the first failed run is not treated as a pass.
+
+
+## Matched local comparison with main — 2026-10-29/30
+
+**Scope and source.** Started with a clean `perl-remote` at `cec4417`;
+`main` was `7500852`. A separate local `git clone --shared --no-checkout`
+was checked out detached at `7500852` in
+`/private/tmp/pi-sh-compare.AvaQDI/reference`. Neither branch was moved during
+measurement. All sessions were synthetic local Mac PTYs and local Pion peers;
+no Pi session, native plan, push or merge was performed. Eight `yes` processes,
+one per logical core, ran around each serial driver and were reaped in its
+`finally` block. Each comparison driver ran one test executable at a time;
+loaded drivers never overlapped each other or the full verification.
+Bash versions were the same existing 5.3 and 5.2.37 binaries as above.
+
+**Reference adaptations, without branch product changes.**
+
+- Both CLI harnesses used the `cec4417` `tty_command_unix_test.go` fixture.
+  Its only original difference from main is the corrected Ctrl-Z command and
+  separated signal/line writes documented above. All 17 cases and their order,
+  exact output/status/restoration assertions and 15 s lifetimes were retained.
+  The context/OPOST and recursive-atime fixtures were not needed or copied.
+- Main lacks `TestShellBrokerSlowOutputWithFastInput`: only that test function
+  was added, with one `bash` subtest instead of `eachImpl`. It uses exactly the
+  branch's 1 MiB input, `cat`, existing `slowWriter` (1 ms per write), exact byte
+  comparison, status and 60 s lifetime. The existing `runLocalControlledWithin`,
+  `runLocalWithStream`, `testStream` and `slowWriter` harnesses match already.
+- Both drivers set `PI_SH_REMOTE_IMPL=bash` **and**
+  `PI_SH_BROKER_WORKERS=bash`. Main does not implement the former; the latter
+  keeps its broker workers in Bash. Main's TTY supervisor is already Bash.
+- Diagnostic overlays added observation hooks to each revision's own
+  `broker.go`, `tty.go`, `tty.bash`, `command.go` result parser and CLI
+  coordinator; they did not transplant the sender, windows, loader, Perl
+  programs, completion grace or cleanup fixes from the branch. A second,
+  fixture-only overlay measured main with no product instrumentation; the
+  corresponding branch executables used the ordinary checkout without overlays.
+
+The actual product differences remain part of the comparison: input window
+8 versus 32, synchronous versus independent broker sender, older versus faster
+source decoding/upload chunks, additional embedded Perl source even when forced
+to Bash, and the branch's second-hangup cleanup fix. Normal Bash TTY status
+classification is unchanged. The CLI input/coordinator, result parser,
+transport, local I/O and terminal code have no product diff between these states.
+Elapsed test times include startup. Serial blocks are not randomized benchmarks;
+neither equal performance nor a performance regression follows from their maxima.
+
+**TTY observation.** Fixed events on an inherited, test-only descriptor 9 record
+supervisor start, TR emission, CHLD notice, command absence, classification,
+command wait, helper waits, final stty and TX before/after emission. The synthetic
+handler command alone gained an EXIT trace; this is an impending-exit marker,
+not proof of kernel exit. Command absence and successful `wait` distinguish
+actual reaping. No command arguments or jobs-table contents are logged.
+Other hooks observe fixture readiness/handler/read output, signal/line writes,
+carrier TR/TX, parser acceptance of TX and EOF, input return, StopIO, worker join,
+monitor join, stream close and terminal restoration. These are observation
+timestamps; scheduling and the separate diagnostic pipe can reorder notices.
+Timers at 3/8/12 s capture goroutines and only owned-process numeric
+PID/PPID/PGID/foreground-group/state columns. No environment, argv, raw carrier
+tail, credentials, SDP or ICE is printed or saved.
+
+A reduced `TestLocalCtrlZReduced` sends the identical modern-Bash handler/read
+command through the production loader/supervisor on a direct `/bin/sh` carrier
+PTY, removing Pion and the CLI/local-I/O coordinator. It keeps exact marker
+ordering and status 23, the existing staged 10 s lifetime, and the same separated
+Ctrl-Z/line input. Main's staged fixture only gained the same diagnostic fd;
+no product change was needed. Timers there are at 3/8 s.
+
+| State | Bash | Isolated CLI handler | Complete 17-case CLI sequence | Reduced direct PTY |
+| --- | --- | --- | --- | --- |
+| cec4417 | 5.3 | 100/100 | 340/340 (20 repetitions) | 50/50 |
+| main 7500852 | 5.3 | 100/100 | 340/340 (20 repetitions) | 50/50 |
+| cec4417 | 5.2.37 | 100/100 | 340/340 (20 repetitions) | 50/50 |
+| main 7500852 | 5.2.37 | 100/100 | 339/340 (one different failure below) | 50/50 |
+
+Every handler case in the complete sequences passed too. No post-`seen:x`
+completion hang or readiness timeout recurred. A separate **artificial positive
+control**, with no `yes` load, deliberately held the branch supervisor in a loop
+after command/helper waits and before final stty/TX. The unchanged CLI assertion
+failed with `session did not finish` at its original 15 s lifetime. All three
+snapshots showed the remaining supervisor, the trace confirmed completed waits,
+and neither TX emission nor parser acceptance occurred. This validates visibility
+at that boundary; it is not a reproduction of the historical defect or evidence
+of its cause. No reliable failing reduction of the real episode was found.
+
+**Different main failure.** In the loaded 5.2.37 full sequence, one `eof-record`
+case failed in 0.20 s: `ended before readiness: invalid or incomplete shell
+broker exchange`, empty application output. The first staged record had a
+2-byte body and failed exact validation, before any source-upload record;
+there was no supervisor-start event. Its contents were not captured, so a CR
+artifact or any other cause is not established. The driver exited nonzero and
+kept the failure. This is a demonstrated reference failure at staging, **not**
+the historical five readiness timeouts or the post-handler completion failure.
+A later passing clean run does not erase it. It remains separately unclassified.
+
+**Broker observation.** At 5/15/30/45/55 s, goroutines accompany counters for
+attempted/completed sends, parsed records by kind, record-body bytes and decoded
+input/output payload bytes. Ack counters distinguish staging, input and output;
+actual local output writes have their own byte counter. Live queue lengths cover
+PTY frames, received records, input reads/requests and, on the branch, the sender
+outbox. Sequence/ack gauges are the last main-loop observation; counters and queue
+samples need not represent the same instant. Stage entry/return and P/B/G/R
+records separate startup from the data path. Neither framing nor timeouts changed.
+
+| State | Bash | Passed | Per-test time | Driver wall time |
+| --- | --- | --- | --- | --- |
+| cec4417 | 5.3 | 10/10 | 15.58–39.13 s | 230.369 s |
+| main 7500852 | 5.3 | 10/10 | 16.16–21.38 s | 182.704 s |
+| cec4417 | 5.2.37 | 10/10 | 14.67–30.19 s | 194.616 s |
+| main 7500852 | 5.2.37 | 10/10 | 14.69–24.43 s | 170.196 s |
+
+For the successful 39.13 s branch/5.3 run, staging ended at 0.104 s:
+
+| Observation | Completed input records | Input acknowledgments | Bytes actually written locally | Output acknowledgments sent |
+| --- | --- | --- | --- | --- |
+| 5.000 s | 249 | 217 | 311296 | 152 |
+| 15.017 s | 361 | 329 | 538624 | 263 |
+| 30.005 s | 497 | 465 | 817152 | 399 |
+| 39.124 s, final | 512 | 512 | 1048576 | 512 |
+
+These samples establish data-path progress during this slow successful run;
+they do not establish continuous progress between samples. The 33.64 s 5.3 run
+also advanced at 5/15/30 s (133120/391168/843776 local bytes), then completed.
+No 45/55 s timer fired and no 60 s overrun recurred. Thus no stalled/external-wait
+failed run was captured. Normal-run stacks/counters cannot explain old failures.
+
+**Without diagnostic hooks.** One complete CLI sequence per state/Bash passed
+68/68 cases under the same serial load. One broker run per state/Bash passed
+4/4: branch/main 5.3 took 15.72/15.42 s, branch/main 5.2.37 took 16.53/20.97 s.
+These small controls check that the shared fixture also runs without hooks;
+they do not exclude an observer effect on a rare race.
+
+**Classification and merge recommendation.** Neither requested episode was
+reproduced, so neither a branch regression nor occurrence of the *same* problem
+on main is demonstrated. Both remain unclassified and unresolved. The separate
+main staging error must not be substituted for either. No product fix, permanent
+regression test, retry, tolerance, normalization or timeout change is justified.
+For these two episodes, a merge need not be blocked indefinitely on repetition
+alone: retain the uncertainty and reopen diagnosis on new boundary evidence.
+A demonstrated branch regression should be fixed first; the same failure proved
+on main could instead be assessed as a pre-existing limit. The owner decides merge.
+
+**Artifacts and verification.** Unique immutable test executables, final overlay
+sources/mappings, drivers, logs and result JSON live only in
+`/private/tmp/pi-sh-compare.AvaQDI` (temporary, not a durable repository artifact).
+`comparison-summary.json` indexes results; `artifact-sha256.json` records hashes.
+`branch|main/overlay.json` is the CLI diagnostic mapping, `broker-overlay.json`
+the broker mapping, `reduced-overlay.json` the direct-PTY reduction and
+`clean-overlay.json` the fixture-only control. To repeat, compile from the stated
+revision with the relevant `go test -overlay=... -c` into a **new unique path**,
+then run the selectors above with `-test.count=100` (isolated CLI), `20` (full
+CLI), `50` (`^TestLocalCtrlZReduced$`) or `10` (broker). Use both Bash paths and
+both environment switches, eight owned `yes` children with guaranteed teardown,
+and one executable at a time. Saved drivers refuse existing log names; use new
+names for another run, and never overwrite an active helper executable.
+
+All hooks remain outside both checkouts. The artificial control's expected
+failure is not part of, or a substitute for, the full verification gate.
+
+### Investigation closure and failed final gate — 2026-10-30
+
+The owner asked to close this investigation. The two original episodes remain
+unclassified, with neither a demonstrated branch regression nor the same failure
+demonstrated on main. No product fix or claim of resolution follows. Further
+repetition is not scheduled as part of this investigation.
+
+The complete uninstrumented checklist ran with **zero `yes` processes** and
+ended `RESULT fail=1` in
+`/private/tmp/pi-sh-compare.AvaQDI/verify-final.log`. The failed checklist command
+was the three-package Bash 5.2.37 pass, without the forced-Bash switch:
+`go test -count=1 ./internal/fwdbroker ./internal/shellbroker ./cmd/pi-sh`.
+Forwarding's package passed; shellbroker and the CLI package failed. The SFTP
+WebRTC cases closed the transport while initializing the client; several CLI
+cases hit deadlines or transport closure. In
+`TestCommandOverLocalWebRTCAndPTY`, the failure is at `server.Accept`, before
+the fixture creates any shell PTY. That case therefore precedes Bash, broker
+execution and the command. Its appearance in a Bash 5.2.37 checklist step does
+not establish Bash as the cause. The other failures need their own localization;
+they must not all be assigned to that same boundary without evidence.
+
+Every other checklist command passed, including both forced-Bash versions,
+seven CGO-disabled build/test-compilation targets and all four native binaries.
+The root race-suite command reported 20 cached packages and 12 freshly run
+packages; the nested module's result was cached. This was not a fresh repetition
+of the entire race suite. Tracked-file hashes matched before/after the gate.
+Those successful checks do not erase its failure. The subsequent shell-free
+default-versus-loopback peer reduction was prepared but interrupted: neither
+`peer-branch.log` nor `peer-main.log` exists, so it supplies no result.
+
+**One-machine limitation.** Client, simulated counterpart, PTYs and test helpers
+share CPU scheduling, memory and one kernel. The loaded comparison deliberately
+adds contention; the final checklist has no added load, but includes multi-package
+test invocations on that same host. Local WebRTC also exercises host interfaces
+and local network paths rather than a Mac-to-Pi connection. These differences can
+affect timing and expose fixture or local-environment problems. Same-host
+contention or networking is therefore a plausible hypothesis, not a diagnosed
+cause of the observed failures. It does not invalidate the local assertions,
+establish production immunity, explain the old episodes, or waive a failed gate.
+The earlier demonstrated macOS PTY newline artifact is separate evidence about
+that specific fixture, not proof that these failures have the same origin.
+
+**State at investigation closure, before the owner decision below.** Only the
+four investigation documents are modified. There is
+no commit, merge or push; `perl-remote` remains at `cec4417` and main at `7500852`.
+Closure checked zero scratchpad processes and zero `yes` processes. The closure
+edits were made after the failed gate and have only received a documentation
+diff/whitespace check; they are not presented as fully verified changes. A future
+commit still requires the entire checklist ending `RESULT fail=0` on exactly the
+state being committed. Merge remains the owner's decision: the two unreproduced
+episodes alone are not an indefinite veto, while the new WebRTC gate failure
+remains a separately recorded, unclassified verification issue.
+
+### Owner-authorized integration and deferred campaign — 2026-10-30
+
+After reviewing the failed gate and the already completed Perl/native evidence,
+the owner explicitly requested integrating the Perl work into main, continuing
+the missing CLI functionality, and running further test campaigns once a first
+complete version is ready. The documentation commit and local integration are
+therefore authorized with the known `RESULT fail=1`, without another full gate.
+This supersedes the earlier pre-commit gate requirement for this integration;
+it does not reclassify any failure as a pass or establish an environmental cause.
+No push, publication, new Pi session or reuse of completed native plans follows.
+
+The merged product remains the committed Perl implementation from `cec4417`;
+the integration adds investigation/decision documentation and corrects the README,
+without product-code changes or temporary instrumentation. Appropriate focused
+checks accompany subsequent implementation work; full/stress campaigns are
+deferred as requested, and the checklist above remains the final campaign's
+reference. The closed intermittencies and failed local WebRTC gate stay recorded
+for that campaign rather than being repeatedly rerun now.

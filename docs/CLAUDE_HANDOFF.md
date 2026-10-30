@@ -22,8 +22,12 @@ Questo documento indica il punto di ripresa; non riduce il contratto originale.
 `docs/STATUS.md` contiene anche aggiornamenti storici: gli esiti recenti in testa
 e `docs/REAL_DEVICE_TESTS.md` prevalgono sulle vecchie note di attesa.
 
-**Prima priorità: voci ancora aperte del backlog e intermittenze locali
-registrate in TESTING.md; le prove native Perl approvate sono concluse.** Su Pi sono verificati anche
+**Prima priorità: proseguire lo sviluppo delle funzioni mancanti, partendo
+dalla console SFTP e dalla sua ricorsione. Il proprietario ha autorizzato
+l'integrazione locale del ramo Perl con il gate fallito noto e rinviato nuovi
+cicli completi di test alla prima versione funzionalmente completa (decisione
+del 2026-10-30, sotto). L'indagine sulle due intermittenze originarie è chiusa
+come non classificata; le prove native Perl approvate sono concluse.** Su Pi sono verificati anche
 pi-sftp/pi-cp di produzione (glob, tilde, ripresa, `-r -p`) e `pi-sh -v`, con
 pulizia verificata (REAL_DEVICE_TESTS.md, NATIVE_CLI_PLAN.md). Lo stallo dell'input binario è stato diagnosticato, corretto
 e verificato sul Pi il 2026-10-22, insieme al piano di trasferimento completo
@@ -92,14 +96,19 @@ prima `allow pasting`). Bash 5.2.37 di prova era in
 
 ## Prossima sequenza di lavoro
 
-1. Controlla stato Git, matrice e TESTING.md: il lavoro Perl e le prove native
-   approvate sono conclusi; il merge su main resta decisione del proprietario.
-2. Scegli una voce ancora aperta: episodi locali non riprodotti, perdita di
-   rete/revoca, job annidati/staccati, runtime iSH o funzioni CLI/SFTP mancanti.
-   Le prove sul Pi in sola lettura sono consentite. Nuove scritture, listener
-   o fault injection richiedono un piano esatto approvato dal proprietario.
-3. Aggiorna evidenze e matrice; prima di ogni commit esegui l'intera verifica
-   di TESTING.md, fino a `RESULT fail=0`. Mai push o merge senza richiesta.
+1. Controlla stato Git e matrice: il proprietario ha autorizzato l'integrazione
+   del ramo Perl; riparti dalle funzioni incomplete della console SFTP
+   (`mget`/`mput`, ricorsione, comandi/opzioni mancanti; SFTP_BACKEND.md e
+   SSH_COMPATIBILITY.md). Il codice corrente le rifiuta esplicitamente.
+2. Prosegui con CLI/configurazione e lifecycle, poi forwarding e portabilità,
+   seguendo il backlog. Mantieni distinti sviluppo locale, prove native già
+   concluse e verifiche ancora necessarie. Nuove scritture, listener o fault
+   injection sul Pi richiedono un piano esatto approvato dal proprietario.
+3. Aggiorna matrice e documenti per ogni incremento, con verifiche mirate al
+   codice cambiato. I nuovi cicli completi/stress sono rinviati come deciso dal
+   proprietario; la checklist di TESTING.md resta il riferimento per la campagna
+   finale. Nessun nuovo ciclo delle intermittenze chiuse senza nuove evidenze.
+   Nessun push o pubblicazione autorizzato.
 
 I piani nativi già segnati come eseguiti documentano esperimenti conclusi;
 i flag `--execute-approved` non autorizzano a ripeterli o ad ampliare radici,
@@ -137,7 +146,7 @@ contenuti, porte o carico.
   tilde in pi-sftp/pi-cp (`internal/pathglob`, GLOB_TILDE.md). Decisioni del
   proprietario in CONNECTION_POLICY.md.
 
-## Logica remota in Perl (branch `perl-remote`, 2026-10-29)
+## Logica remota in Perl (2026-10-29)
 
 Broker, rilevamento/connettori di forwarding e supervisore TTY sono in Perl
 quando `perl -c` compila il rispettivo programma; Bash resta loader e ripiego.
@@ -155,12 +164,64 @@ handler, `~.` e uscita 23 con PTY locale reale; pulizia verificata separatamente
 Evidenze e tempi in REAL_DEVICE_TESTS.md. Questi piani sono esauriti: non
 riutilizzarli come autorizzazione per nuove scritture o listener.
 
-Aperti: broker lento Bash 200/200 passati sotto carico, ma vecchi >60 s non
-classificati; prontezza TTY non riprodotta; un nuovo `ctrl-z-handler` Bash 5.3
-ha perso la conclusione dopo `seen:x` (679/680, poi 200/200 isolati e 680/680
-con diagnostica). Nessuna causa o correzione dimostrata (TESTING.md). Restano
-le prove di perdita rete/revoca e job staccati, runtime iSH/Linux/Windows e resto della
-matrice. Nessun push; il merge su main lo decide il proprietario.
+Confronto locale del 2026-10-29/30: checkout pulito `cec4417`, riferimento
+separato `main` a `7500852`, otto `yes`, prove seriali e stessi scenari/fixture
+corrette. Broker: 10/10 per stato e Bash (40/40); la corsa più lunga, 39,13 s,
+avanzava nei contatori a 5/15/30 s. TTY: 100 handler isolati e 20 sequenze complete
+per stato/Bash; tutti gli handler passati, più 50 riduzioni PTY dirette per
+combinazione (200/200). Il ramo passa 680/680 casi completi; main 679/680, con
+un errore distinto di staging `eof-record` prima della prontezza, non un timeout.
+Un controllo artificiale verifica che la diagnostica distingua comando raccolto,
+supervisore trattenuto e TX assente. Controlli senza hook: 68/68 casi CLI e 4/4
+broker. Dettagli, adattamenti e log in TESTING.md "Matched local comparison".
+
+Restano non classificati i vecchi >60 s, il mancato completamento dopo `seen:x`
+e la vecchia prontezza TTY. Non è dimostrata una regressione del ramo, né lo
+stesso problema sul riferimento; l'errore di staging su main è una voce separata.
+Nessuna correzione del prodotto o dei timeout. Raccomandazione per questi episodi:
+non bloccare indefinitamente il merge sulla sola mancata riproduzione, mantenere
+il rischio esplicito e riprendere con nuove evidenze; una regressione dimostrata
+va corretta prima. La successiva decisione del proprietario è registrata sotto.
+
+Il proprietario ha chiesto di chiudere l'indagine il 2026-10-30. La checklist
+finale, senza hook e con zero `yes`, ha dato **`RESULT fail=1`**: nel passaggio
+dei tre pacchetti con Bash 5.2.37 falliscono shellbroker e CLI per chiusure o
+scadenze WebRTC locali. Un caso fallisce in `server.Accept`, prima della
+creazione della shell; non dimostra un difetto di Bash. Gli altri controlli
+passano, compresi entrambi i Bash forzati, sette target e quattro binari;
+i comandi race hanno usato anche risultati in cache. Gli hash dei file tracciati
+restano identici durante quel gate. La riduzione senza shell è stata interrotta
+prima di produrre log e non dà evidenza.
+
+Eseguire client, controparte e carico sullo stesso Mac può influire su tempi e
+rete locale, ma questa è un'ipotesi non verificata: non attribuirle i fallimenti
+e non usarla per ignorare il gate. Nessun nuovo ciclo di prove è pianificato
+per questa indagine. Alla chiusura erano modificati quattro documenti, senza
+commit; `perl-remote` era `cec4417`, main `7500852`. La chiusura documentale è
+successiva al gate fallito e non è dichiarata verificata dall'intera checklist.
+
+L'indagine è stata solo sul Mac: nessun accesso al Pi o riuso dei piani nativi.
+Gli overlay e il log `verify-final.log` restano nello scratchpad
+`/private/tmp/pi-sh-compare.AvaQDI`, fuori dai checkout. Alla chiusura non
+risultano processi diagnostici dello scratchpad o `yes` attivi. Restano perdita
+rete/revoca, job staccati, runtime iSH/Linux/Windows e resto della matrice.
+
+### Decisione del proprietario — 2026-10-30
+
+Il proprietario ha chiesto di integrare in `main` il lavoro che sposta broker,
+supervisore TTY e forwarding su Perl, proseguire con le funzioni mancanti e
+rinviare ulteriori cicli di test alla prima versione completa della CLI.
+L'integrazione locale e il commit della documentazione procedono quindi con
+il gate `fail=1` noto, senza rieseguire la checklist: questa decisione supera
+il precedente obbligo di `fail=0` prima di questa integrazione. Non equivale a
+un gate superato, a una causa diagnosticata o a un'autorizzazione al push.
+
+Si integra il comportamento esistente: Perl preferito quando compila, Bash
+per il caricamento iniziale e come ripiego. Eliminare il ripiego non fa parte
+di questa integrazione. Le prove native approvate restano concluse; la nuova
+campagna finale dovrà includere gli episodi locali registrati e le verifiche
+ancora aperte della matrice. La prima versione non è dichiarata completa finché
+funzioni mancanti e differenze aperte non sono implementate o motivate.
 
 ## Correzioni recenti da preservare
 
