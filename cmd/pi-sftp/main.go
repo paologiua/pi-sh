@@ -34,6 +34,8 @@ func app() int {
 	browser := f.Bool("browser", false, "use the authorized Connect browser companion")
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
 	requests := f.Uint("R", 64, "maximum concurrent requests per transfer")
+	var bandwidth uint64
+	f.Func("l", "transfer bandwidth limit in Kbit/s", func(value string) error { var err error; bandwidth, err = sftpclient.ParseBandwidth(value); return err })
 	buffer := f.Uint("B", 0, "transfer buffer size in bytes (default 32768)")
 	f.Func("X", "SFTP buffer= or nrequests= setting", func(value string) error { return sftpclient.ApplyTransferOption(value, buffer, requests) })
 	noisy := f.Bool("N", false, "print transfer notices even in batch or quiet mode")
@@ -57,7 +59,6 @@ func app() int {
 	}, map[string]string{
 
 		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
-		"l": "bandwidth limiting is not implemented",
 		"D": "a local SFTP server program cannot replace the Connect session",
 		"S": "pi-sftp always connects through Raspberry Pi Connect; the transport program cannot be replaced",
 	})
@@ -145,7 +146,7 @@ func app() int {
 		sessionFailure(log, err)
 		return 255
 	}
-	console := sftpcli.Console{Client: session.Client, Requests: int(*requests), BufferSize: sftpclient.TransferBuffer(*buffer), RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
+	console := sftpcli.Console{Client: session.Client, Bandwidth: bandwidth, Requests: int(*requests), BufferSize: sftpclient.TransferBuffer(*buffer), RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
 	err = console.Run(ctx)
 	closeErr := session.Close()
 	if err != nil || closeErr != nil {

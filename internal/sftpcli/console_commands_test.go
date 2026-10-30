@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestVersionConsoleOutput(t *testing.T) {
@@ -208,5 +209,26 @@ func TestTransferBufferSize(t *testing.T) {
 	n, err := c.copyData(w, bytes.NewReader(data), "file", int64(len(data)), 0)
 	if err != nil || n != 4097 || w.count != 4097 || w.max != 1024 {
 		t.Fatal(n, w, err)
+	}
+}
+
+func TestBandwidthLimitAndCancellation(t *testing.T) {
+	c := Console{Bandwidth: 128}
+	start := time.Now()
+	var dst bytes.Buffer
+	data := bytes.Repeat([]byte{1}, 1024)
+	n, err := c.copyData(&dst, bytes.NewReader(data), "file", 1024, 0)
+	if err != nil || n != 1024 || !bytes.Equal(dst.Bytes(), data) {
+		t.Fatal(n, err)
+	}
+	if time.Since(start) < 50*time.Millisecond {
+		t.Fatal("bandwidth limit was not applied")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Context = ctx
+	dst.Reset()
+	if _, err := c.copyData(&dst, bytes.NewReader(data), "file", 1024, 0); err != context.Canceled || dst.Len() != 0 {
+		t.Fatal("cancellation", err, dst.Len())
 	}
 }

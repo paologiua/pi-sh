@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"pi-sh/internal/progress"
+	"time"
 )
 
 func (c *Console) copyData(dst io.Writer, src io.Reader, name string, size, offset int64) (int64, error) {
@@ -11,6 +12,13 @@ func (c *Console) copyData(dst io.Writer, src io.Reader, name string, size, offs
 }
 
 func (c *Console) copyDataMode(dst io.Writer, src io.Reader, name string, size, offset int64, sequential bool) (int64, error) {
+	ctx := c.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if c.Bandwidth > 0 {
+		src = &throttledReader{Reader: src, ctx: ctx, kbps: c.Bandwidth, start: time.Now()}
+	}
 	var meter *progress.Transfer
 	if c.Progress != nil && !c.ProgressDisabled {
 		meter = c.Progress.Start(name, size, offset)

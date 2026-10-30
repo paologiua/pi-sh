@@ -36,6 +36,7 @@ type Console struct {
 	LocalUmask     *os.FileMode
 	BufferSize     int
 	Requests       int
+	Bandwidth      uint64
 	Context        context.Context
 	Program        string
 	// Progress is optional; pi-cp supplies scp's per-file terminal meter.

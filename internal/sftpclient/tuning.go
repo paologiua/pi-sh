@@ -66,3 +66,11 @@ func ApplyTransferOption(value string, buffer, requests *uint) error {
 	}
 	return nil
 }
+
+func ParseBandwidth(value string) (uint64, error) {
+	limit, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || limit == 0 || limit > 100*1024*1024 {
+		return 0, errors.New("Invalid bandwidth limit")
+	}
+	return limit, nil
+}

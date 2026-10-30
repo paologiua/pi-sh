@@ -25,7 +25,7 @@ func TestSFTPOptionDecisions(t *testing.T) {
 		{[]string{"--direct-login", "-B0", "pi"}, "Invalid buffer"},
 		{[]string{"--direct-login", "-c", "aes128-ctr", "pi"}, "algorithms"},
 		{[]string{"--direct-login", "-i", "key", "pi"}, "authentication"},
-		{[]string{"--direct-login", "-l", "100", "pi"}, "bandwidth"},
+		{[]string{"--direct-login", "-l", "100", "-oRequestTTY=force", "pi"}, "pipe/no-TTY"},
 		{[]string{"--direct-login", "-S", "ssh", "pi"}, "transport program"},
 		{[]string{"--direct-login", "-D", "/usr/libexec/sftp-server", "pi"}, "SFTP server program"},
 		{[]string{"--direct-login", "-o", "RemoteCommand=echo hi", "pi"}, "remote command"},
