@@ -9,12 +9,19 @@ func (c *Console) remoteCopy(source, target string) (result error) {
 	if version, ok := c.Client.HasExtension("copy-data"); !ok || version != "1" {
 		return shown(os.ErrInvalid, "Server does not support copy-data extension")
 	}
+	info, err := c.Client.Stat(source)
+	if err != nil {
+		return operationError(err, "stat remote")
+	}
+	if !info.Mode().IsRegular() {
+		return shown(os.ErrInvalid, "Cannot copy non-regular file: %s", display(source))
+	}
 	from, err := c.Client.Open(source)
 	if err != nil {
 		return err
 	}
 	defer func() { result = errors.Join(result, from.Close()) }()
-	info, err := from.Stat()
+	info, err = from.Stat()
 	if err != nil {
 		return err
 	}

@@ -446,3 +446,7 @@ func TestChgrpErrorsAgainstOpenSSH(t *testing.T) {
 func TestChmodErrorsAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "chmod 999 file", "chmod 600 missing")
 }
+
+func TestCopyErrorsAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "copy missing target", "copy dir target")
+}
