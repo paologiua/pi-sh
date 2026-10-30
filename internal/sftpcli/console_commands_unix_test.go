@@ -479,3 +479,7 @@ func TestTransferNoticesAgainstOpenSSH(t *testing.T) {
 }
 
 func TestLumaskErrorsAgainstOpenSSH(t *testing.T) { compareConsoleDiagnostic(t, "lumask 888") }
+
+func TestMetadataFlagOutputAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "chmod -z 600 file", "chown -z 1 file", "chgrp -z 1 file", "chmod -hh 600 file")
+}

@@ -374,8 +374,10 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				a = a[1:]
 				break
 			}
-			if a[0] != "-h" {
-				return false, errors.New("unsupported ownership option")
+			for _, option := range a[0][1:] {
+				if option != 'h' {
+					return false, shown(os.ErrInvalid, "%s: Invalid flag -%c", name, option)
+				}
 			}
 			noFollow = true
 			a = a[1:]
