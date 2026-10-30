@@ -2,9 +2,9 @@
 
 Recursive `pi-cp -r` and console SFTP downloads now consume one SFTP NAME packet at a time, instead
 of retaining the entire listing for each directory. Uploads keep their existing
-64-entry local batches. The new `pi-sftp ls -f [path]` lists names in server order
-with the same incremental reader; compact `-ff` and `--` are accepted. Unknown
-listing flags fail before any listing/stat request. Existing
+64-entry local batches. The `pi-sftp ls -1f [path]` lists names in server order
+with the same incremental reader; compact `-ff` and `--` are accepted. The complete -1afhlnrSt option set is now implemented; unsupported
+flags fail before listing/stat requests. Default
 `ls` remains lexically sorted and still accumulates the entire directory: bounded
 sorted enumeration and the remaining ls options are open work.
 
@@ -132,3 +132,9 @@ comparison and the control remain strict; there is no retry, skip or atime
 tolerance. Ten race repetitions (480 paired cases) passed. A reader between
 completion and snapshot can still interfere; this is a smaller window, not
 a claim of isolation or a reason to suppress a mismatch.
+
+2026-10-30: console columns and -1afhlnrSt now have 16 byte-for-byte local
+OpenSSH comparisons. Streaming is explicitly -1f; columns/long/ordered views
+retain entries. Prefixes now match the reference, replacing the older basename
+presentation. See SFTP_CONSOLE_COMMANDS.md for ownership lookup/fallback and
+remaining locale, control-name and native verification limits.

@@ -8,7 +8,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 
 	"pi-sh/internal/pathglob"
@@ -284,67 +283,6 @@ func stripPath(name, prefix string) string {
 		n++
 	}
 	return name[n:]
-}
-
-func (c *Console) globList(ctx context.Context, arg string, unsorted bool) error {
-	pattern := c.remotePattern(arg)
-	res, err := c.remoteGlob(ctx, pattern, pathglob.Options{Mark: true, NoCheck: true, Brace: true, NoSort: true})
-	if errors.Is(err, pathglob.ErrTooMany) {
-		return shown(err, "Can't ls: Too many matches for \"%s\"", display(pathglob.Unescape(pattern)))
-	}
-	if err != nil {
-		return err
-	}
-	if res.Matches == 0 {
-		return shown(os.ErrNotExist, "Can't ls: \"%s\" not found", display(pathglob.Unescape(pattern)))
-	}
-	if first := res.Paths[0]; res.Matches == 1 && first.Info != nil && (first.Info.IsDir() || first.Marked) {
-		return c.listDirectory(ctx, unmarked(first), unsorted)
-	}
-	strip := ""
-	if !path.IsAbs(arg) {
-		strip = c.RemoteDir
-	}
-	if !unsorted {
-		sort.SliceStable(res.Paths, func(i, j int) bool { return res.Paths[i].Path < res.Paths[j].Path })
-	}
-	var missing error
-	for _, m := range res.Paths {
-		if m.Info == nil {
-			// A brace alternative that matched nothing: OpenSSH 10.2 crashes on
-			// this mixture; report it instead.
-			if missing == nil {
-				missing = shown(os.ErrNotExist, "Can't ls: \"%s\" not found", display(m.Path))
-			}
-			continue
-		}
-		if _, err := fmt.Fprintln(c.Output, display(stripPath(m.Path, strip))); err != nil {
-			return err
-		}
-	}
-	return missing
-}
-
-// listDirectory prints a directory's entry basenames: sorted, or with -f in
-// server order through the bounded incremental reader.
-func (c *Console) listDirectory(ctx context.Context, target string, unsorted bool) error {
-	if unsorted {
-		return c.Client.ReadDirEach(ctx, target, func(info os.FileInfo) error {
-			_, err := fmt.Fprintln(c.Output, display(info.Name()))
-			return err
-		})
-	}
-	files, err := c.Client.ReadDirContext(ctx, target)
-	if err != nil {
-		return err
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Name() < files[j].Name() })
-	for _, f := range files {
-		if _, err := fmt.Fprintln(c.Output, display(f.Name())); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // CopyFile copies one literal regular file for pi-cp. Paths are not globbed;

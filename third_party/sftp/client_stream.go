@@ -150,7 +150,8 @@ func streamNames(ctx context.Context, id uint32, data []byte, visit func(os.File
 		if err != nil {
 			return err
 		}
-		_, data, err = unmarshalStringSafe(data)
+		var longname string
+		longname, data, err = unmarshalStringSafe(data)
 		if err != nil {
 			return err
 		}
@@ -172,7 +173,7 @@ func streamNames(ctx context.Context, id uint32, data []byte, visit func(os.File
 		if filename == "" || strings.ContainsAny(filename, "/\x00") {
 			return errors.New("sftp: invalid directory entry name")
 		}
-		if err := visit(fileInfoFromStat(attr, filename)); err != nil {
+		if err := visit(directoryFileInfo{FileInfo: fileInfoFromStat(attr, filename), longname: longname}); err != nil {
 			return err
 		}
 	}
@@ -181,3 +182,12 @@ func streamNames(ctx context.Context, id uint32, data []byte, visit func(os.File
 	}
 	return nil
 }
+
+// LongName retains the v3 server display field for old-server ls -l fallback.
+// Consumers must escape control characters before displaying this untrusted text.
+type directoryFileInfo struct {
+	os.FileInfo
+	longname string
+}
+
+func (i directoryFileInfo) LongName() string { return i.longname }

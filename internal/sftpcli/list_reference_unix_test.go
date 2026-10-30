@@ -27,7 +27,7 @@ func TestUnsortedListingAgainstLocalOpenSSH(t *testing.T) {
 	}
 	var ours bytes.Buffer
 	console := Console{Client: client, Output: &ours}
-	if _, err := console.Execute(context.Background(), []string{"ls", "-f", root}); err != nil {
+	if _, err := console.Execute(context.Background(), []string{"ls", "-1f", root}); err != nil {
 		t.Fatal(err)
 	}
 	reference := exec.Command(executable, "-D", server, "-b", "-")
@@ -36,17 +36,8 @@ func TestUnsortedListingAgainstLocalOpenSSH(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reference: %v %s", err, output)
 	}
-	// OpenSSH prints the requested directory prefix for each name. Our current
-	// console deliberately keeps its documented basename-only presentation.
-	var expected strings.Builder
-	for _, line := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		line = strings.TrimPrefix(line, root+"/")
-		fmt.Fprintln(&expected, line)
+	if ours.String() != string(output) {
+		t.Fatalf("listing differs: got %q want %q", ours.String(), output)
 	}
-	if ours.String() != expected.String() {
-		t.Fatalf("unsorted names/order differ: got %q want %q", ours.String(), expected.String())
-	}
+
 }

@@ -151,6 +151,9 @@ func TestGlobCommandsAgainstLocalOpenSSH(t *testing.T) {
 			globFixture(t, ourRoot)
 			globFixture(t, refRoot)
 			var out, errs bytes.Buffer
+			if tc.listing {
+				tc.ours = strings.Replace(tc.ours, "ls ", "ls -1 ", 1)
+			}
 			console := Console{Client: client, RemoteDir: ourRoot, LocalDir: ourRoot, Batch: true, Input: strings.NewReader("@" + tc.ours + "\n"), Output: &out, Errors: &errs}
 			ourErr := console.Run(ctx)
 			cmd := exec.CommandContext(ctx, executable, "-D", server, "-b", "-")
@@ -202,7 +205,7 @@ func TestManyGlobMatchesAgainstLocalOpenSSH(t *testing.T) {
 	}{{"f*", false}, {"f00*", false}, {"g*", true}} {
 		var out bytes.Buffer
 		console := Console{Client: client, RemoteDir: root, Output: &out}
-		_, ourErr := console.Execute(context.Background(), []string{"ls", tc.pattern})
+		_, ourErr := console.Execute(context.Background(), []string{"ls", "-1", tc.pattern})
 		cmd := exec.Command(executable, "-D", server, "-b", "-")
 		cmd.Dir = root
 		cmd.Stdin = strings.NewReader("@ls -1 " + tc.pattern + "\n")

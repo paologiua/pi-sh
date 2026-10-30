@@ -25,6 +25,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | ! | Raw command or interactive local shell, local cwd/mask, child stdio; exact output/status diagnostic compared in TestLocalShellAgainstOpenSSH | Demand-driven command reader stops read-ahead; context kills direct child, arbitrary descendant cleanup/platform behavior remains open |
 | lls | Local /bin/ls through local shell; raw flags, quotes/globs and cwd; exact output in TestLlsAgainstOpenSSH | Uses existing local ls, not extra remote software; Windows dir adaptation unverified |
 | progress | Exact enabled/disabled lines, default on interactively and off in batch/-q; same terminal meter as SCP; TestProgressToggleAgainstOpenSSH | Redirected output never renders a meter; existing meter layout tests reused; SFTP terminal native check pending |
+| ls | -1afhlnrSt, columns, prefixes, long mode/date/size/ownership layout; 16 exact local OpenSSH comparisons in TestLsOptionsAgainstOpenSSH; -1f streams | Name lookup uses users-groups-by-id v1, older servers use their v3 longname for plain -l; locale/control-name/tie-order edge parity and native checks open |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

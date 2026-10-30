@@ -337,7 +337,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		return false, safeError(c.diskFree(ctx, a))
 	}
 	symbolicLink := false
-	unsortedListing := false
+	listing := listOptions{order: 'n'}
 	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
 	if name == "reget" || name == "reput" {
 		options.resume = true
@@ -375,7 +375,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		}
 	} else if name == "ls" {
 		var err error
-		a, unsortedListing, err = listingFlags(a)
+		a, listing, err = parseListing(a)
 		if err != nil {
 			return false, err
 		}
@@ -474,11 +474,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if len(a) > 1 {
 			return false, bad
 		}
-		if len(a) == 0 {
-			err = c.listDirectory(ctx, c.RemoteDir, unsortedListing)
-		} else {
-			err = c.globList(ctx, a[0], unsortedListing)
-		}
+		err = c.consoleList(ctx, a, listing)
 	case "get", "put":
 		if len(a) < 1 || len(a) > 2 {
 			return false, bad

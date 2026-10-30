@@ -124,13 +124,13 @@ func TestListingUnsortedStreamsAndRefusesUnknownFlags(t *testing.T) {
 	client := memoryClientWith(t, func(h *sftp.Handlers) { fixture.FileLister = h.FileList; h.FileList = fixture })
 	var output bytes.Buffer
 	c := Console{Client: client, RemoteDir: "/", Output: &output}
-	if _, err := c.Execute(context.Background(), []string{"ls", "-ff", "/"}); err != nil {
+	if _, err := c.Execute(context.Background(), []string{"ls", "-1ff", "/"}); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Count(output.String(), "\n") != 10000 || !strings.HasPrefix(output.String(), "entry-00000000\n") {
 		t.Fatal("listing incomplete")
 	}
-	for _, args := range [][]string{{"ls", "-l"}, {"ls", "-fz"}, {"ls", "-ff", "/", "extra"}} {
+	for _, args := range [][]string{{"ls", "-z"}, {"ls", "-fz"}, {"ls", "-ff", "/", "extra"}} {
 		empty := Console{}
 		if _, err := empty.Execute(context.Background(), args); err == nil {
 			t.Fatal("invalid listing accepted", args)

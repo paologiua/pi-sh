@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestLnAgainstLocalOpenSSH(t *testing.T) {
@@ -287,5 +288,45 @@ func TestProgressToggleAgainstOpenSSH(t *testing.T) {
 	}
 	if !c.ProgressDisabled {
 		t.Fatal("second toggle did not disable progress")
+	}
+}
+
+func TestLsOptionsAgainstOpenSSH(t *testing.T) {
+	client, server := preservationServer(t)
+	root := t.TempDir()
+	for i, name := range []string{"zeta", "alpha", ".hidden", "space name"} {
+		if err := os.WriteFile(filepath.Join(root, name), bytes.Repeat([]byte("x"), (i+1)*2000), 0640); err != nil {
+			t.Fatal(err)
+		}
+		stamp := time.Unix(1600000000+int64(i)*86400, 0)
+		if err := os.Chtimes(filepath.Join(root, name), stamp, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("alpha", filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{"ls", "ls -1", "ls -1a", "ls -l", "ls -n", "ls -lh", "ls -lr", "ls -1r", "ls -1S", "ls -1t", "ls -1f", "ls -1 *", "ls -l a*", "ls -1 sub", "ls -1a sub", "dir -1"} {
+		t.Run(line, func(t *testing.T) {
+			var out bytes.Buffer
+			c := Console{Client: client, RemoteDir: root, LocalDir: root, Output: &out, Batch: true}
+			args, _ := Split(line)
+			if _, err := c.Execute(context.Background(), args); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("sftp", "-D", server, "-b", "-")
+			cmd.Dir = root
+			cmd.Stdin = strings.NewReader("@" + line + "\n")
+			want, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatal(err, string(want))
+			}
+			if out.String() != string(want) {
+				t.Fatalf("got %q want %q", out.String(), want)
+			}
+		})
 	}
 }

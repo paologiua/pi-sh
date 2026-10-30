@@ -61,3 +61,10 @@ client_metadata.go also provides CopyData for two caller-owned live handles,
 using negotiated copy-data v1 and the checked status parser. TestRemoteCopyLocalServer
 exercises the extension against the existing local OpenSSH server. No upstream
 runtime file was changed; broader wire/fault campaigns remain deferred.
+
+The 2026-10-30 listing increment adds UserGroupNames to client_metadata.go,
+negotiating users-groups-by-id v1 and validating exact reply ID/list counts.
+client_stream.go now preserves the v3 LongName display field on an os.FileInfo
+wrapper for old-server plain -l fallback; callers must escape it before display.
+All upstream files remain unchanged. TestLsOptionsAgainstOpenSSH covers local
+extension use; broader malformed-reply/capability campaigns remain deferred.

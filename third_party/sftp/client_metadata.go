@@ -121,3 +121,75 @@ func (c *Client) CopyData(source, target *File, offset, length, targetOffset uin
 	}
 	return streamStatus(id, data, true)
 }
+
+// UserGroupNames resolves numeric IDs on the server. Request/reply lists are
+// bounded, counted exactly, and never used as local account information.
+func (c *Client) UserGroupNames(uids, gids []uint32) ([]string, []string, error) {
+	if version, ok := c.HasExtension("users-groups-by-id@openssh.com"); !ok || version != "1" {
+		return nil, nil, ErrSSHFxOpUnsupported
+	}
+	if len(uids) > 256 || len(gids) > 256 {
+		return nil, nil, os.ErrInvalid
+	}
+	var ub, gb []byte
+	for _, id := range uids {
+		ub = marshalUint32(ub, id)
+	}
+	for _, id := range gids {
+		gb = marshalUint32(gb, id)
+	}
+	id := c.nextID()
+	body := marshalString(marshalString(nil, string(ub)), string(gb))
+	typ, data, err := c.sendPacket(context.Background(), nil, &metadataExtension{ID: id, Name: "users-groups-by-id@openssh.com", Body: body})
+	if err != nil {
+		return nil, nil, err
+	}
+	if typ == sshFxpStatus {
+		return nil, nil, streamStatus(id, data, false)
+	}
+	if typ != sshFxpExtendedReply {
+		return nil, nil, unimplementedPacketErr(typ)
+	}
+	sid, data, err := unmarshalUint32Safe(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	if sid != id {
+		return nil, nil, &unexpectedIDErr{id, sid}
+	}
+	users, data, err := unmarshalStringSafe(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	groups, rest, err := unmarshalStringSafe(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(rest) != 0 {
+		return nil, nil, os.ErrInvalid
+	}
+	parse := func(raw string, count int) ([]string, error) {
+		data := []byte(raw)
+		names := make([]string, count)
+		for i := range names {
+			var err error
+			names[i], data, err = unmarshalStringSafe(data)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if len(data) != 0 {
+			return nil, os.ErrInvalid
+		}
+		return names, nil
+	}
+	unames, err := parse(users, len(uids))
+	if err != nil {
+		return nil, nil, err
+	}
+	gnames, err := parse(groups, len(gids))
+	if err != nil {
+		return nil, nil, err
+	}
+	return unames, gnames, nil
+}
