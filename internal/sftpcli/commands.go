@@ -27,6 +27,8 @@ type Console struct {
 	LocalInput     io.Reader
 	Output, Errors io.Writer
 	Batch          bool
+	Noisy          bool
+	Quiet          bool
 	Flush          bool
 	Resume         bool
 	Preserve       bool
@@ -604,7 +606,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			} else {
 				uid = uint32(id)
 			}
-			if !c.Batch && c.Output != nil {
+			if !c.quietCommands() && c.Output != nil {
 				fmt.Fprintf(c.Output, "Changing %s on %s\n", action, display(name))
 			}
 			if noFollow {
@@ -632,7 +634,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			bits |= os.ModeSticky
 		}
 		err = c.eachRemote(ctx, a[1], func(name string) error {
-			if !c.Batch && c.Output != nil {
+			if !c.quietCommands() && c.Output != nil {
 				fmt.Fprintf(c.Output, "Changing mode on %s\n", display(name))
 			}
 			if noFollow {
@@ -810,3 +812,5 @@ func (c *Console) put(local, remote string, options transferOptions) (result err
 		return err
 	})
 }
+
+func (c *Console) quietCommands() bool { return !c.Noisy && (c.Batch || c.Quiet) }

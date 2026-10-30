@@ -173,3 +173,23 @@ func TestLumaskCreationAndOutput(t *testing.T) {
 		t.Fatal("mask failed to replace inherited mask", info.Mode())
 	}
 }
+
+func TestNoisyOverridesBatchNotices(t *testing.T) {
+	client := memoryClient(t)
+	file, err := client.Create("/dir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	var out bytes.Buffer
+	c := Console{Client: client, RemoteDir: "/", Output: &out, Batch: true, Noisy: true}
+	if _, err := c.Execute(context.Background(), []string{"chmod", "700", "dir"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Changing mode on /dir\n" {
+		t.Fatal(out.String())
+	}
+	if !c.ProgressDisabled {
+		t.Fatal("noisy incorrectly enabled the meter")
+	}
+}

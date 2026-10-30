@@ -33,6 +33,7 @@ func app() int {
 	direct := f.Bool("direct-login", false, "use memory-only direct Raspberry Pi ID login")
 	browser := f.Bool("browser", false, "use the authorized Connect browser companion")
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
+	noisy := f.Bool("N", false, "print transfer notices even in batch or quiet mode")
 	readOnly := f.Bool("read-only", false, "start the existing server in read-only mode; reject remote writes")
 	flush := f.Bool("f", false, "request a flush after each transfer (upload requires server fsync extension)")
 	resume := f.Bool("a", false, "resume transfers from the destination's size; the existing prefix is trusted, not compared")
@@ -50,7 +51,6 @@ func app() int {
 	cliargs.Refuse(f, map[string]string{
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
 		"A": forwardspec.ErrAgentForwarding.Error(),
-		"N": "pi-sftp's connection layer is not quiet by default; use -v/-q or LogLevel",
 	}, map[string]string{
 		"B": "SFTP buffer size tuning is not implemented", "R": "SFTP request count tuning is not implemented",
 		"X": "SFTP buffer and request tuning is not implemented",
@@ -129,7 +129,7 @@ func app() int {
 		sessionFailure(log, err)
 		return 255
 	}
-	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != ""}
+	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
 	err = console.Run(ctx)
 	closeErr := session.Close()
 	if err != nil || closeErr != nil {

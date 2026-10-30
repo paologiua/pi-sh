@@ -18,7 +18,7 @@ func TestSFTPOptionDecisions(t *testing.T) {
 		{[]string{"--direct-login", "-J", "jump", "pi"}, "ProxyJump"},
 		{[]string{"--direct-login", "-6", "pi"}, "address family"},
 		{[]string{"--direct-login", "-C", "pi"}, "compression"},
-		{[]string{"--direct-login", "-N", "pi"}, "not quiet"},
+		{[]string{"--direct-login", "-N", "-oRequestTTY=force", "pi"}, "pipe/no-TTY"},
 		{[]string{"--direct-login", "-B", "32768", "pi"}, "buffer size"},
 		{[]string{"--direct-login", "-R", "64", "pi"}, "request count"},
 		{[]string{"--direct-login", "-c", "aes128-ctr", "pi"}, "algorithms"},
