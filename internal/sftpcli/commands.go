@@ -238,7 +238,9 @@ func (c *Console) Run(ctx context.Context) error {
 			args, err := Split(line)
 			done := false
 			c.abort = c.Batch && !ignore
-			if command, shell := shellLine(line); shell {
+			if command, listing := localListingLine(line); listing {
+				err = c.localShell(ctx, command)
+			} else if command, shell := shellLine(line); shell {
 				err = c.localShell(ctx, command)
 			} else if err == nil {
 				done, err = c.Execute(ctx, args)
@@ -303,6 +305,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		c.initialRemoteDir = c.RemoteDir
 	}
 	name, a := strings.ToLower(args[0]), args[1:]
+	if name == "lls" {
+		return false, c.localShell(ctx, localLSCommand(strings.Join(a, " ")))
+	}
 	if name == "!" {
 		return false, c.localShell(ctx, strings.Join(a, " "))
 	}

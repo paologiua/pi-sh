@@ -23,6 +23,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | cp | Alias of copy; TestCpAliasLocalServer | Same extension and error policy as copy |
 | lumask | Octal mask with exact Local umask output; applies to new downloads, recursive directories and lmkdir without changing other Go goroutines; TestLumaskCreationAndOutput | Existing target modes retained; child-shell propagation added with shell command; Windows permission runtime unverified |
 | ! | Raw command or interactive local shell, local cwd/mask, child stdio; exact output/status diagnostic compared in TestLocalShellAgainstOpenSSH | Demand-driven command reader stops read-ahead; context kills direct child, arbitrary descendant cleanup/platform behavior remains open |
+| lls | Local /bin/ls through local shell; raw flags, quotes/globs and cwd; exact output in TestLlsAgainstOpenSSH | Uses existing local ls, not extra remote software; Windows dir adaptation unverified |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

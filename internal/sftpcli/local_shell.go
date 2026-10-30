@@ -85,3 +85,29 @@ func shellLine(line string) (string, bool) {
 	}
 	return "", false
 }
+
+// OpenSSH lls intentionally passes the remainder to the user's local shell.
+func localLSCommand(args string) string {
+	command := "/bin/ls"
+	if runtime.GOOS == "windows" {
+		command = "dir"
+	}
+	if args != "" {
+		command += " " + args
+	}
+	return command
+}
+func localListingLine(line string) (string, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	end := strings.IndexAny(trimmed, " \t")
+	name := trimmed
+	rest := ""
+	if end >= 0 {
+		name = trimmed[:end]
+		rest = strings.TrimLeft(trimmed[end:], " \t")
+	}
+	if !strings.EqualFold(name, "lls") {
+		return "", false
+	}
+	return localLSCommand(rest), true
+}

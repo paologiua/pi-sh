@@ -240,3 +240,30 @@ func TestLocalShellAgainstOpenSSH(t *testing.T) {
 		t.Fatalf("got %q / %q want %q / %q", out.String(), errs.String(), want.String(), wantErr.String())
 	}
 }
+
+func TestLlsAgainstOpenSSH(t *testing.T) {
+	client, server := preservationServer(t)
+	root := t.TempDir()
+	for _, name := range []string{"a", "file with space", ".hidden"} {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := "@lls -1a\n@lls -1 'file with space'\n"
+	t.Setenv("SHELL", "/bin/sh")
+	var out, errs bytes.Buffer
+	c := Console{Client: client, RemoteDir: root, LocalDir: root, Batch: true, Input: strings.NewReader(script), Output: &out, Errors: &errs}
+	if err := c.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sftp", "-D", server, "-b", "-")
+	cmd.Dir = root
+	cmd.Stdin = strings.NewReader(script)
+	want, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != string(want) || errs.Len() != 0 {
+		t.Fatalf("got %q / %q want %q", out.String(), errs.String(), want)
+	}
+}
