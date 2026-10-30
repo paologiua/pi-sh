@@ -448,7 +448,13 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		var info os.FileInfo
 		info, err = os.Stat(target)
 		if err == nil && !info.IsDir() {
-			err = errors.New("not a directory")
+			err = shown(os.ErrInvalid, "Couldn't change local directory to %q: Not a directory", display(pathglob.Unescape(a[0])))
+		} else if err != nil {
+			arg := target
+			if len(a) == 1 {
+				arg = pathglob.Unescape(a[0])
+			}
+			err = operationError(err, "Couldn't change local directory to %q", display(arg))
 		}
 		if err == nil {
 			c.LocalDir = target
