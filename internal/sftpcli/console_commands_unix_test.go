@@ -374,3 +374,21 @@ func TestConsolePromptAndEchoAgainstOpenSSH(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpAgainstOpenSSH(t *testing.T) {
+	_, server := preservationServer(t)
+	var out bytes.Buffer
+	c := Console{Output: &out}
+	if _, err := c.Execute(context.Background(), []string{"help"}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sftp", "-D", server, "-b", "-")
+	cmd.Stdin = strings.NewReader("@help\n")
+	want, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != string(want) {
+		t.Fatalf("help differs: %q", out.String())
+	}
+}

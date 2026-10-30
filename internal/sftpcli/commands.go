@@ -416,16 +416,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename copy chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir lumask progress quit exit bye help")
-		if err == nil {
-			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
-			if err == nil {
-				_, err = fmt.Fprintln(c.Output, "ls [-f] [path]; -f lists in server order with bounded memory")
-			}
-			if err == nil {
-				_, err = fmt.Fprintln(c.Output, "get, ls, rm and chmod expand remote globs; put expands local globs; quote or backslash-escape * ? [ to match them literally")
-			}
-		}
+		_, err = fmt.Fprint(c.Output, consoleHelp)
 	case "version":
 		if !need(0) {
 			return false, bad
