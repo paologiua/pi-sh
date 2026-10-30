@@ -434,3 +434,7 @@ func compareConsoleDiagnostic(t *testing.T, lines ...string) {
 func TestLnErrorsAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "ln missing target", "ln -s file file", "ln -z file target", "ln - target")
 }
+
+func TestChownErrorsAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "chown nope file", "chown "+strconv.Itoa(os.Getuid())+" missing")
+}
