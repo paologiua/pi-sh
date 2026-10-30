@@ -149,3 +149,18 @@ func TestChmodSpecialBitsAndLink(t *testing.T) {
 		t.Fatal(a.Mode(), b.Mode())
 	}
 }
+
+func TestDfLocalServer(t *testing.T) {
+	client, _ := preservationServer(t)
+	var out bytes.Buffer
+	c := Console{Client: client, RemoteDir: t.TempDir(), Output: &out}
+	for _, args := range [][]string{{"df"}, {"df", "-h"}, {"df", "-i"}, {"df", "-hi"}} {
+		out.Reset()
+		if _, err := c.Execute(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(out.String(), "\n") != 2 || !strings.Contains(out.String(), "%Capacity") {
+			t.Fatalf("bad df output %q", out.String())
+		}
+	}
+}

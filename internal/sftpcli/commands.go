@@ -300,6 +300,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		name = "ls"
 	}
 	noFollow := false
+	if name == "df" {
+		return false, safeError(c.diskFree(ctx, a))
+	}
 	symbolicLink := false
 	unsortedListing := false
 	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
@@ -361,7 +364,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chown chgrp chmod ln symlink readlink version lpwd lcd lmkdir quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
