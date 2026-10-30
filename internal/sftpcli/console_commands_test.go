@@ -3,6 +3,8 @@ package sftpcli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -102,5 +104,20 @@ func TestLcdReturnsHome(t *testing.T) {
 	}
 	if c.LocalDir != home {
 		t.Fatal(c.LocalDir)
+	}
+}
+
+func TestLmkdirLiteral(t *testing.T) {
+	root := t.TempDir()
+	c := Console{LocalDir: root}
+	if _, err := c.Execute(context.Background(), []string{"lmkdir", "name with space"}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(root, "name with space"))
+	if err != nil || !info.IsDir() {
+		t.Fatal(err)
+	}
+	if _, err := c.Execute(context.Background(), []string{"lmkdir", "name with space"}); err == nil {
+		t.Fatal("existing directory accepted")
 	}
 }

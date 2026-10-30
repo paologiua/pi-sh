@@ -17,6 +17,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | chown | Numeric UID, remote globs, -h uses negotiated lsetstat v1; preserves GID; TestChownLocalServer | Status/permission failures retained; native pending; omitted attribute flags remain unavailable |
 | chgrp | Numeric GID, remote globs and -h; preserves UID; TestChgrpLocalServer | Existing server authorization applies; native pending |
 | chmod | Octal 0000–7777 including special bits; -h uses lsetstat v1; TestChmodSpecialBitsAndLink compares server outcomes and modes with OpenSSH | Link chmod may be refused by the server/filesystem, as in OpenSSH; native pending |
+| lmkdir | Creates a literal local directory; silent success, existing directory is an error as OpenSSH 10.2; TestLmkdirLiteral | Local only; later OpenSSH versions add -p, outside this reference baseline |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.
