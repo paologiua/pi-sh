@@ -223,7 +223,16 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 			return err
 		}
 		local := unmarked(m)
-		directory := strings.HasSuffix(m.Path, "/") || m.Info != nil && m.Info.IsDir()
+		sourceDisplay := m.Path
+		if !filepath.IsAbs(src) {
+			sourceDisplay = stripPath(m.Path, c.LocalDir)
+		}
+		sourceInfo, statErr := os.Stat(local)
+		if statErr != nil {
+			f.add(operationError(statErr, "stat %s", display(sourceDisplay)))
+			continue
+		}
+		directory := strings.HasSuffix(m.Path, "/") || sourceInfo.IsDir()
 
 		remote := treeBase(local, true)
 		if dst != nil {
@@ -231,10 +240,7 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 		}
 		opts := options
 		opts.named = dst == nil
-		opts.sourceDisplay = m.Path
-		if !filepath.IsAbs(src) {
-			opts.sourceDisplay = stripPath(m.Path, c.LocalDir)
-		}
+		opts.sourceDisplay = sourceDisplay
 		shownTarget := c.remote(remote)
 		if dst != nil {
 			if info, statErr := c.Client.Stat(shownTarget); statErr == nil && info.IsDir() {
@@ -243,7 +249,11 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 		}
 		c.transferNotice(true, opts.sourceDisplay, shownTarget, opts.resume)
 		if directory && !options.recursive {
-			f.add(shown(os.ErrInvalid, "local %q is not a regular file", display(m.Path)))
+			f.add(shown(os.ErrInvalid, "local %q is not a regular file", display(opts.sourceDisplay)))
+			continue
+		}
+		if !directory && !sourceInfo.Mode().IsRegular() {
+			f.add(shown(os.ErrInvalid, "local %q is not a regular file", display(opts.sourceDisplay)))
 			continue
 		}
 		if directory && options.recursive {
