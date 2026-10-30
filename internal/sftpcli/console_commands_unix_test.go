@@ -392,3 +392,45 @@ func TestHelpAgainstOpenSSH(t *testing.T) {
 		t.Fatalf("help differs: %q", out.String())
 	}
 }
+
+// Output paths differ only because each client owns a distinct temporary root.
+// Normalize those fixture roots, preserving all other bytes including CRLF.
+func compareConsoleDiagnostic(t *testing.T, lines ...string) {
+	t.Helper()
+	client, server := preservationServer(t)
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			roots := []string{t.TempDir(), t.TempDir()}
+			for i, root := range roots {
+				canonical, err := filepath.EvalSymlinks(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				roots[i] = canonical
+				if err := os.Mkdir(filepath.Join(canonical, "dir"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(canonical, "file"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			script := "@" + line + "\n"
+			var out, errs bytes.Buffer
+			c := Console{Client: client, RemoteDir: roots[0], LocalDir: roots[0], Batch: true, Input: strings.NewReader(script), Output: &out, Errors: &errs}
+			ours := c.Run(context.Background())
+			cmd := exec.Command("sftp", "-D", server, "-b", "-")
+			cmd.Dir = roots[1]
+			cmd.Stdin = strings.NewReader(script)
+			var want, wantErr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &want, &wantErr
+			ref := cmd.Run()
+			normalize := func(s, root string) string { return strings.ReplaceAll(s, root, "/ROOT") }
+			if (ours == nil) != (ref == nil) || normalize(out.String(), roots[0]) != normalize(want.String(), roots[1]) || normalize(errs.String(), roots[0]) != normalize(wantErr.String(), roots[1]) {
+				t.Fatalf("ours %v stdout=%q stderr=%q; reference %v stdout=%q stderr=%q", ours, normalize(out.String(), roots[0]), normalize(errs.String(), roots[0]), ref, normalize(want.String(), roots[1]), normalize(wantErr.String(), roots[1]))
+			}
+		})
+	}
+}
+func TestLnErrorsAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "ln missing target", "ln -s file file", "ln -z file target", "ln - target")
+}

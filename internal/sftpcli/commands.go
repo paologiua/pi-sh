@@ -369,7 +369,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			return false, err
 		}
 	} else if name == "chown" || name == "chgrp" || name == "chmod" {
-		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
+		for len(a) > 0 && a[0] != "-" && strings.HasPrefix(a[0], "-") {
 			if a[0] == "--" {
 				a = a[1:]
 				break
@@ -381,13 +381,13 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			a = a[1:]
 		}
 	} else if name == "ln" {
-		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
+		for len(a) > 0 && a[0] != "-" && strings.HasPrefix(a[0], "-") {
 			if a[0] == "--" {
 				a = a[1:]
 				break
 			}
 			if strings.Trim(a[0][1:], "s") != "" || a[0] == "-" {
-				return false, errors.New("unsupported ln option")
+				return false, shown(os.ErrInvalid, "ln: Invalid flag -%c", a[0][1])
 			}
 			symbolicLink = true
 			a = a[1:]
@@ -569,9 +569,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		source := pathglob.Unescape(a[0])
 		target := c.remote(pathglob.Unescape(a[1]))
 		if symbolicLink {
-			err = c.Client.Symlink(source, target)
+			err = operationError(c.Client.Symlink(source, target), "remote symlink file %q to %q", display(source), display(target))
 		} else {
-			err = c.Client.Link(c.remote(source), target)
+			err = operationError(c.Client.Link(c.remote(source), target), "remote link %q to %q", display(c.remote(source)), display(target))
 		}
 	case "symlink":
 		if !need(2) {
