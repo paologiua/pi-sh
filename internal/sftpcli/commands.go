@@ -586,7 +586,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		id, err = strconv.ParseUint(a[0], 10, 32)
 		if err != nil {
 			if name == "chgrp" {
-				return false, shown(os.ErrInvalid, "Invalid group ID: %s", display(a[0]))
+				return false, shown(os.ErrInvalid, "You must supply a numeric argument to the chgrp command.")
 			}
 			return false, shown(os.ErrInvalid, "You must supply a numeric argument to the chown command.")
 		}
@@ -600,10 +600,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				info, statErr = c.Client.Stat(name)
 			}
 			if statErr != nil {
-				if argsName == "chown" {
-					return operationError(statErr, "stat remote")
-				}
-				return statErr
+				return operationError(statErr, "stat remote")
 			}
 			attrs, ok := info.Sys().(*sftp.FileStat)
 			if !ok {
@@ -622,16 +619,10 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			}
 			if noFollow {
 				err := c.Client.Lchown(name, uid, gid)
-				if argsName == "chown" {
-					return operationError(err, "remote lsetstat %q", display(name))
-				}
-				return err
+				return operationError(err, "remote lsetstat %q", display(name))
 			}
 			err := c.Client.Chown(name, int(uid), int(gid))
-			if argsName == "chown" {
-				return operationError(err, "remote setstat %q", display(name))
-			}
-			return err
+			return operationError(err, "remote setstat %q", display(name))
 		})
 	case "chmod":
 		if !need(2) {

@@ -438,3 +438,7 @@ func TestLnErrorsAgainstOpenSSH(t *testing.T) {
 func TestChownErrorsAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "chown nope file", "chown "+strconv.Itoa(os.Getuid())+" missing")
 }
+
+func TestChgrpErrorsAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "chgrp nope file", "chgrp "+strconv.Itoa(os.Getgid())+" missing")
+}
