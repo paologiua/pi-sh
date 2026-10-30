@@ -445,15 +445,15 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		} else {
 			target = c.local(pathglob.Unescape(a[0]))
 		}
+		arg := target
+		if len(a) == 1 {
+			arg = pathglob.Unescape(a[0])
+		}
 		var info os.FileInfo
 		info, err = os.Stat(target)
 		if err == nil && !info.IsDir() {
-			err = shown(os.ErrInvalid, "Couldn't change local directory to %q: Not a directory", display(pathglob.Unescape(a[0])))
+			err = shown(os.ErrInvalid, "Couldn't change local directory to %q: Not a directory", display(arg))
 		} else if err != nil {
-			arg := target
-			if len(a) == 1 {
-				arg = pathglob.Unescape(a[0])
-			}
 			err = operationError(err, "Couldn't change local directory to %q", display(arg))
 		}
 		if err == nil {
