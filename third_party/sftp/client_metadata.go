@@ -40,3 +40,44 @@ func (f *File) SetPermissionsAndTimes(mode os.FileMode, atime, mtime time.Time) 
 	}
 	return streamStatus(id, data, true)
 }
+
+// Lchown sets numeric ownership on the link itself, only with the negotiated
+// OpenSSH lsetstat v1 extension. It never silently follows the link.
+func (c *Client) Lchown(path string, uid, gid uint32) error {
+	return c.linkSetstat(path, sshFileXferAttrUIDGID, marshalUint32(marshalUint32(nil, uid), gid))
+}
+
+func (c *Client) linkSetstat(path string, flags uint32, attrs []byte) error {
+	if version, ok := c.HasExtension("lsetstat@openssh.com"); !ok || version != "1" {
+		return ErrSSHFxOpUnsupported
+	}
+	id := c.nextID()
+	body := marshalString(nil, path)
+	body = marshalUint32(body, flags)
+	body = append(body, attrs...)
+	typ, data, err := c.sendPacket(context.Background(), nil, &metadataExtension{ID: id, Name: "lsetstat@openssh.com", Body: body})
+	if err != nil {
+		return err
+	}
+	if typ != sshFxpStatus {
+		return unimplementedPacketErr(typ)
+	}
+	return streamStatus(id, data, true)
+}
+
+// metadataExtension uses the same framing and request arbitration as other
+// client operations. Replies are decoded by the checked local status parser.
+type metadataExtension struct {
+	ID   uint32
+	Name string
+	Body []byte
+}
+
+func (p *metadataExtension) id() uint32 { return p.ID }
+func (p *metadataExtension) MarshalBinary() ([]byte, error) {
+	b := make([]byte, 4)
+	b = append(b, sshFxpExtended)
+	b = marshalUint32(b, p.ID)
+	b = marshalString(b, p.Name)
+	return append(b, p.Body...), nil
+}

@@ -299,6 +299,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if name == "dir" {
 		name = "ls"
 	}
+	noFollow := false
 	symbolicLink := false
 	unsortedListing := false
 	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
@@ -311,6 +312,18 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		a, options, err = transferFlags(a, options)
 		if err != nil {
 			return false, err
+		}
+	} else if name == "chown" {
+		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
+			if a[0] == "--" {
+				a = a[1:]
+				break
+			}
+			if a[0] != "-h" {
+				return false, errors.New("unsupported ownership option")
+			}
+			noFollow = true
+			a = a[1:]
 		}
 	} else if name == "ln" {
 		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
@@ -348,7 +361,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chmod ln symlink readlink version lpwd lcd quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chown chmod ln symlink readlink version lpwd lcd quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -491,6 +504,38 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			return false, bad
 		}
 		err = c.Client.Symlink(pathglob.Unescape(a[0]), c.remote(pathglob.Unescape(a[1])))
+	case "chown":
+		if !need(2) {
+			return false, bad
+		}
+		var id uint64
+		id, err = strconv.ParseUint(a[0], 10, 32)
+		if err != nil {
+			return false, shown(os.ErrInvalid, "Invalid user ID: %s", display(a[0]))
+		}
+		err = c.eachRemote(ctx, a[1], func(name string) error {
+			var info os.FileInfo
+			var statErr error
+			if noFollow {
+				info, statErr = c.Client.Lstat(name)
+			} else {
+				info, statErr = c.Client.Stat(name)
+			}
+			if statErr != nil {
+				return statErr
+			}
+			attrs, ok := info.Sys().(*sftp.FileStat)
+			if !ok {
+				return errors.New("remote ownership unavailable")
+			}
+			if !c.Batch && c.Output != nil {
+				fmt.Fprintf(c.Output, "Changing owner on %s\n", display(name))
+			}
+			if noFollow {
+				return c.Client.Lchown(name, uint32(id), attrs.GID)
+			}
+			return c.Client.Chown(name, int(uint32(id)), int(attrs.GID))
+		})
 	case "chmod":
 		if !need(2) {
 			return false, bad

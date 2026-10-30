@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -57,5 +59,37 @@ func TestLnAgainstLocalOpenSSH(t *testing.T) {
 				t.Fatal("hardlink identity", err)
 			}
 		}
+	}
+}
+
+func TestChownLocalServer(t *testing.T) {
+	client, _ := preservationServer(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "file")
+	if err := os.WriteFile(source, []byte("contents"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("file", filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	c := Console{Client: client, RemoteDir: root, Batch: true}
+	for _, args := range [][]string{{"chown", strconv.Itoa(os.Getuid()), "f*"}, {"chown", "-h", strconv.Itoa(os.Getuid()), "link"}} {
+		if _, err := c.Execute(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int(info.Sys().(*syscall.Stat_t).Uid) != os.Getuid() {
+		t.Fatal("UID differs")
+	}
+	link, err := os.Readlink(filepath.Join(root, "link"))
+	if err != nil || link != "file" {
+		t.Fatal(link, err)
+	}
+	if _, err := c.Execute(context.Background(), []string{"chown", "4294967296", "file"}); err == nil {
+		t.Fatal("overflow UID accepted")
 	}
 }
