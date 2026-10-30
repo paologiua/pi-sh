@@ -31,6 +31,8 @@ func app() int {
 	browser := f.Bool("browser", false, "authorized Connect browser companion")
 	preserve := f.Bool("p", false, "preserve ordinary permission bits and access/modification times")
 	recursive := f.Bool("r", false, "copy directory trees, following source symbolic links")
+	var bandwidth uint64
+	f.Func("l", "transfer bandwidth limit in Kbit/s", func(value string) error { var err error; bandwidth, err = sftpclient.ParseBandwidth(value); return err })
 	server := f.String("sftp-server", "", "existing absolute remote sftp-server path")
 	config := f.String("F", "none", "explicit configuration file, or none")
 	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
@@ -50,7 +52,6 @@ func app() int {
 		"R": "remote-to-remote copies are not implemented",
 	}, map[string]string{
 		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
-		"l": "bandwidth limiting is not implemented",
 		"D": "a local SFTP server program cannot replace the Connect session",
 		"S": "pi-cp always connects through Raspberry Pi Connect; the transport program cannot be replaced",
 		"X": "SFTP buffer and request tuning is not implemented",
@@ -72,6 +73,7 @@ func app() int {
 	}
 	plan.Preserve, plan.Errors = *preserve, os.Stderr
 	plan.Recursive = *recursive
+	plan.Bandwidth = bandwidth
 	plan.Progress = progress.NewTerminal(os.Stdout, quietProgress)
 	if _, err = sftpclient.ServerCommand(*server); err != nil {
 		fmt.Fprintln(os.Stderr, "pi-cp:", err)
