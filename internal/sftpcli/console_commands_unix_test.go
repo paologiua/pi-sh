@@ -349,3 +349,28 @@ func TestParallelTransferLocalServer(t *testing.T) {
 		t.Fatal("parallel roundtrip", err)
 	}
 }
+
+func TestConsolePromptAndEchoAgainstOpenSSH(t *testing.T) {
+	client, server := preservationServer(t)
+	for _, batch := range []bool{false, true} {
+		script := "version\nquit\n"
+		var out bytes.Buffer
+		c := Console{Client: client, RemoteDir: t.TempDir(), LocalDir: t.TempDir(), Input: strings.NewReader(script), Output: &out, Batch: batch}
+		if err := c.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		flags := []string{"-D", server}
+		if batch {
+			flags = append(flags, "-b", "-")
+		}
+		cmd := exec.Command("sftp", flags...)
+		cmd.Stdin = strings.NewReader(script)
+		want, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.String() != string(want) {
+			t.Fatalf("batch=%t got %q want %q", batch, out.String(), want)
+		}
+	}
+}

@@ -16,10 +16,13 @@ import (
 	"unicode"
 
 	"github.com/pkg/sftp"
+	"golang.org/x/term"
 	"pi-sh/internal/pathglob"
 	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpclient"
 )
+
+var ErrBatchFailed = errors.New("batch command failed")
 
 type Console struct {
 	Client         *sftp.Client
@@ -208,7 +211,7 @@ func (c *Console) Run(ctx context.Context) error {
 	}()
 	for {
 		if !c.Batch {
-			fmt.Fprint(c.Output, "pi-sftp> ")
+			fmt.Fprint(c.Output, "sftp> ")
 		}
 		select {
 		case requests <- struct{}{}:
@@ -241,7 +244,16 @@ func (c *Console) Run(ctx context.Context) error {
 				}
 			}
 			if c.Batch && !quiet {
-				fmt.Fprintln(c.Output, "pi-sftp> "+line)
+				fmt.Fprintln(c.Output, "sftp> "+line)
+			}
+			if !c.Batch {
+				terminal := false
+				if input, ok := c.Input.(interface{ Fd() uintptr }); ok {
+					terminal = term.IsTerminal(int(input.Fd()))
+				}
+				if !terminal {
+					fmt.Fprintln(c.Output, line)
+				}
 			}
 			args, err := Split(line)
 			done := false
@@ -257,9 +269,9 @@ func (c *Console) Run(ctx context.Context) error {
 				return ctx.Err()
 			}
 			if err != nil {
-				fmt.Fprintln(c.Errors, "pi-sftp:", err)
+				c.report(err)
 				if c.Batch && !ignore {
-					return errors.New("batch command failed")
+					return ErrBatchFailed
 				}
 			}
 			if done {

@@ -68,7 +68,8 @@ func (c *Console) report(err error) {
 	}
 	program := c.Program
 	if program == "" {
-		program = "pi-sftp"
+		fmt.Fprintf(c.Errors, "%v\r\n", safeError(err))
+		return
 	}
 	fmt.Fprintf(c.Errors, "%s: %v\n", program, safeError(err))
 }

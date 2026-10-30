@@ -37,6 +37,6 @@ the preceding recursion milestone was recorded separately before these changes.
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.
 
-Reference baseline: installed macOS OpenSSH 10.2p1 and local sftp-server,
+Console prompt/echo now use sftp>; non-terminal input is echoed as in OpenSSH.\nBatch command errors are reported once, without a duplicate generic failure.\nTestConsolePromptAndEchoAgainstOpenSSH compares interactive-pipe and batch stdout.\n\nReference baseline: installed macOS OpenSSH 10.2p1 and local sftp-server,
 plus the pinned upstream sftp.c. Output and operations are reproduced by an
 independently authored implementation; no upstream implementation is copied.
