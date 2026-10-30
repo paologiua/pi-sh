@@ -164,3 +164,41 @@ func TestDfLocalServer(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteCopyLocalServer(t *testing.T) {
+	client, server := preservationServer(t, "-u", "077")
+	mask := os.FileMode(022)
+	for _, existing := range []bool{false, true} {
+		ours, ref := t.TempDir(), t.TempDir()
+		data := bytes.Repeat([]byte{0, 255, 'x'}, 12000)
+		for _, root := range []string{ours, ref} {
+			if err := os.WriteFile(filepath.Join(root, "source"), data, 0640); err != nil {
+				t.Fatal(err)
+			}
+			if existing {
+				if err := os.WriteFile(filepath.Join(root, "target"), []byte("old"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		c := Console{Client: client, RemoteDir: ours, RemoteUmask: &mask, Batch: true}
+		if _, err := c.Execute(context.Background(), []string{"copy", "source", "target"}); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sftp", "-D", server, "-b", "-")
+		cmd.Dir = ref
+		cmd.Stdin = strings.NewReader("@copy source target\n")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		got, err := os.ReadFile(filepath.Join(ours, "target"))
+		if err != nil || !bytes.Equal(got, data) {
+			t.Fatal("copy bytes differ", err)
+		}
+		a, _ := os.Stat(filepath.Join(ours, "target"))
+		b, _ := os.Stat(filepath.Join(ref, "target"))
+		if a.Mode() != b.Mode() {
+			t.Fatal(a.Mode(), b.Mode())
+		}
+	}
+}

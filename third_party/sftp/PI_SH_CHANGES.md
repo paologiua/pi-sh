@@ -56,3 +56,8 @@ with CGO disabled. See ../../docs/SFTP_LISTING.md for current results and limits
 2026-10-30: client_metadata.go additionally provides Lchown and Lchmod, negotiated
 lsetstat v1, using the checked status parser. No upstream file changed.
 Essential local actual-server ownership/link checks: TestChownLocalServer.
+
+client_metadata.go also provides CopyData for two caller-owned live handles,
+using negotiated copy-data v1 and the checked status parser. TestRemoteCopyLocalServer
+exercises the extension against the existing local OpenSSH server. No upstream
+runtime file was changed; broader wire/fault campaigns remain deferred.

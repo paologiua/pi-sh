@@ -86,3 +86,38 @@ func (p *metadataExtension) MarshalBinary() ([]byte, error) {
 func (c *Client) Lchmod(path string, mode os.FileMode) error {
 	return c.linkSetstat(path, sshFileXferAttrPermissions, marshalUint32(nil, toChmodPerm(mode)))
 }
+
+// CopyData copies regular-file bytes entirely on the server using copy-data v1.
+// The caller owns both handles and must keep them open until this call returns.
+// A zero length means through EOF, as specified by the extension.
+func (c *Client) CopyData(source, target *File, offset, length, targetOffset uint64) error {
+	if version, ok := c.HasExtension("copy-data"); !ok || version != "1" {
+		return ErrSSHFxOpUnsupported
+	}
+	if source == nil || target == nil || source.c != c || target.c != c {
+		return os.ErrInvalid
+	}
+	source.mu.RLock()
+	from := source.handle
+	source.mu.RUnlock()
+	target.mu.RLock()
+	to := target.handle
+	target.mu.RUnlock()
+	if from == "" || to == "" {
+		return os.ErrClosed
+	}
+	id := c.nextID()
+	body := marshalString(nil, from)
+	body = marshalUint64(body, offset)
+	body = marshalUint64(body, length)
+	body = marshalString(body, to)
+	body = marshalUint64(body, targetOffset)
+	typ, data, err := c.sendPacket(context.Background(), nil, &metadataExtension{ID: id, Name: "copy-data", Body: body})
+	if err != nil {
+		return err
+	}
+	if typ != sshFxpStatus {
+		return unimplementedPacketErr(typ)
+	}
+	return streamStatus(id, data, true)
+}

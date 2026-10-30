@@ -364,7 +364,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename copy chown chgrp chmod ln symlink readlink df version lpwd lcd lmkdir quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -491,6 +491,11 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 			return false, bad
 		}
 		err = os.Mkdir(c.local(pathglob.Unescape(a[0])), 0777)
+	case "copy":
+		if !need(2) {
+			return false, bad
+		}
+		err = c.remoteCopy(c.remote(pathglob.Unescape(a[0])), c.remote(pathglob.Unescape(a[1])))
 	case "rename":
 		if !need(2) {
 			return false, bad
