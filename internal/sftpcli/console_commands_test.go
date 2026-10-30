@@ -232,3 +232,14 @@ func TestBandwidthLimitAndCancellation(t *testing.T) {
 		t.Fatal("cancellation", err, dst.Len())
 	}
 }
+
+func TestPwdOutput(t *testing.T) {
+	var out bytes.Buffer
+	c := Console{RemoteDir: "/safe directory", Output: &out}
+	if _, err := c.Execute(context.Background(), []string{"pwd"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Remote working directory: /safe directory\n" {
+		t.Fatal(out.String())
+	}
+}

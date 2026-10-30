@@ -426,7 +426,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, display(c.RemoteDir))
+		_, err = fmt.Fprintln(c.Output, "Remote working directory:", display(c.RemoteDir))
 	case "lpwd":
 		if !need(0) {
 			return false, bad
