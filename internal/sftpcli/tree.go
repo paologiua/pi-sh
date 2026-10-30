@@ -3,6 +3,7 @@ package sftpcli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -133,6 +134,13 @@ func (c *Console) treeDirOptions(ctx context.Context, upload bool, source, targe
 		remoteAncestors = append(remoteAncestors, canonical)
 	}
 
+	if console && c.Output != nil {
+		if upload {
+			fmt.Fprintf(c.Output, "Entering %s\n", display(options.sourceDisplay))
+		} else {
+			fmt.Fprintf(c.Output, "Retrieving %s\n", display(source))
+		}
+	}
 	// Capture timestamps before enumeration changes directory atime.
 	var metadata preservedMetadata
 	if upload && options.preserve {
@@ -229,7 +237,11 @@ func (c *Console) treeDirOptions(ctx context.Context, upload bool, source, targe
 			return err
 		}
 		if childInfo.IsDir() {
-			return c.treeDirOptions(ctx, upload, child, destination, childInfo, localAncestors, remoteAncestors, options, console)
+			childOptions := options
+			if upload && console {
+				childOptions.sourceDisplay = treeAppend(options.sourceDisplay, name, false)
+			}
+			return c.treeDirOptions(ctx, upload, child, destination, childInfo, localAncestors, remoteAncestors, childOptions, console)
 		}
 		if !childInfo.Mode().IsRegular() {
 			if console {

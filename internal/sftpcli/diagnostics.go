@@ -46,3 +46,19 @@ func operationError(err error, format string, args ...any) error {
 	}
 	return shown(err, "%s: %s", fmt.Sprintf(format, args...), statusText(err))
 }
+
+func (c *Console) transferNotice(upload bool, source, target string, resume bool) {
+	if c.quietCommands() || c.Output == nil {
+		return
+	}
+	switch {
+	case upload && resume:
+		fmt.Fprintf(c.Output, "Resuming upload of %s to %s\n", display(source), display(target))
+	case upload:
+		fmt.Fprintf(c.Output, "Uploading %s to %s\n", display(source), display(target))
+	case resume:
+		fmt.Fprintf(c.Output, "Resuming %s to %s\n", display(source), display(target))
+	default:
+		fmt.Fprintf(c.Output, "Fetching %s to %s\n", display(source), display(target))
+	}
+}

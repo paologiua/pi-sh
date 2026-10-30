@@ -156,10 +156,7 @@ func (c *Console) globGet(ctx context.Context, src string, dst *string, options 
 		}
 		remote := unmarked(m)
 		directory := strings.HasSuffix(m.Path, "/") || m.Info != nil && m.Info.IsDir()
-		if directory && !options.recursive {
-			f.add(shown(os.ErrInvalid, "download %s: not a regular file", display(m.Path)))
-			continue
-		}
+
 		var local string
 		if dst != nil {
 			local = c.local(*dst)
@@ -176,6 +173,20 @@ func (c *Console) globGet(ctx context.Context, src string, dst *string, options 
 		}
 		opts := options
 		opts.named = dst == nil
+		shownTarget := local
+		if dst == nil || !filepath.IsAbs(*dst) {
+			shownTarget = stripPath(local, c.LocalDir)
+		}
+		if dst != nil {
+			if info, statErr := os.Stat(local); statErr == nil && info.IsDir() {
+				shownTarget = treeAppend(shownTarget, treeBase(remote, false), true)
+			}
+		}
+		c.transferNotice(false, m.Path, shownTarget, opts.resume)
+		if directory && !options.recursive {
+			f.add(shown(os.ErrInvalid, "download %s: not a regular file", display(m.Path)))
+			continue
+		}
 		if directory && options.recursive {
 			if dst != nil {
 				if info, err := os.Stat(local); err == nil && info.IsDir() {
@@ -213,16 +224,28 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 		}
 		local := unmarked(m)
 		directory := strings.HasSuffix(m.Path, "/") || m.Info != nil && m.Info.IsDir()
-		if directory && !options.recursive {
-			f.add(shown(os.ErrInvalid, "local \"%s\" is not a regular file", display(m.Path)))
-			continue
-		}
+
 		remote := treeBase(local, true)
 		if dst != nil {
 			remote = *dst
 		}
 		opts := options
 		opts.named = dst == nil
+		opts.sourceDisplay = m.Path
+		if !filepath.IsAbs(src) {
+			opts.sourceDisplay = stripPath(m.Path, c.LocalDir)
+		}
+		shownTarget := c.remote(remote)
+		if dst != nil {
+			if info, statErr := c.Client.Stat(shownTarget); statErr == nil && info.IsDir() {
+				shownTarget = treeAppend(shownTarget, treeBase(local, true), false)
+			}
+		}
+		c.transferNotice(true, opts.sourceDisplay, shownTarget, opts.resume)
+		if directory && !options.recursive {
+			f.add(shown(os.ErrInvalid, "local %q is not a regular file", display(m.Path)))
+			continue
+		}
 		if directory && options.recursive {
 			remote = c.remote(remote)
 			if dst != nil {

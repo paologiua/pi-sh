@@ -414,16 +414,27 @@ func compareConsoleDiagnostic(t *testing.T, lines ...string) {
 					t.Fatal(err)
 				}
 			}
-			script := "@" + line + "\n"
+			noisy := strings.HasPrefix(line, "NOISY ")
+			actualLine := strings.TrimPrefix(line, "NOISY ")
+			script := "@" + actualLine + "\n"
 			var out, errs bytes.Buffer
-			c := Console{Client: client, RemoteDir: roots[0], LocalDir: roots[0], Batch: true, Input: strings.NewReader(script), Output: &out, Errors: &errs}
+			c := Console{Client: client, RemoteDir: roots[0], LocalDir: roots[0], Batch: true, Input: strings.NewReader(script), Output: &out, Errors: &errs, Noisy: noisy}
 			ours := c.Run(context.Background())
-			cmd := exec.Command("sftp", "-D", server, "-b", "-")
+			flags := []string{"-D", server, "-b", "-"}
+			if noisy {
+				flags = append(flags, "-N")
+			}
+			cmd := exec.Command("sftp", flags...)
 			cmd.Dir = roots[1]
 			cmd.Stdin = strings.NewReader(script)
 			var want, wantErr bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &want, &wantErr
 			ref := cmd.Run()
+			if noisy {
+				text := strings.TrimPrefix(wantErr.String(), "Attached to "+server+".\n")
+				wantErr.Reset()
+				wantErr.WriteString(text)
+			}
 			normalize := func(s, root string) string { return strings.ReplaceAll(s, root, "/ROOT") }
 			if (ours == nil) != (ref == nil) || normalize(out.String(), roots[0]) != normalize(want.String(), roots[1]) || normalize(errs.String(), roots[0]) != normalize(wantErr.String(), roots[1]) {
 				t.Fatalf("ours %v stdout=%q stderr=%q; reference %v stdout=%q stderr=%q", ours, normalize(out.String(), roots[0]), normalize(errs.String(), roots[0]), ref, normalize(want.String(), roots[1]), normalize(wantErr.String(), roots[1]))
@@ -461,4 +472,8 @@ func TestLcdErrorsAgainstOpenSSH(t *testing.T) {
 
 func TestLmkdirErrorsAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "lmkdir dir", "lmkdir missing/sub")
+}
+
+func TestTransferNoticesAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "NOISY get file dir", "NOISY put file dir", "NOISY get -r dir tree", "NOISY put -r dir tree", "get -r dir tree", "put -r dir tree")
 }
