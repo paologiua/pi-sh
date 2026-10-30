@@ -243,3 +243,14 @@ func TestPwdOutput(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestLpwdOutput(t *testing.T) {
+	var out bytes.Buffer
+	c := Console{LocalDir: "/safe directory", Output: &out}
+	if _, err := c.Execute(context.Background(), []string{"lpwd"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Local working directory: /safe directory\n" {
+		t.Fatal(out.String())
+	}
+}
