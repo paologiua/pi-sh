@@ -202,3 +202,19 @@ func TestRemoteCopyLocalServer(t *testing.T) {
 		}
 	}
 }
+
+func TestCpAliasLocalServer(t *testing.T) {
+	client, _ := preservationServer(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "source"), []byte("alias"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := Console{Client: client, RemoteDir: root, Batch: true}
+	if _, err := c.Execute(context.Background(), []string{"cp", "source", "target"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "target"))
+	if err != nil || string(data) != "alias" {
+		t.Fatal(string(data), err)
+	}
+}

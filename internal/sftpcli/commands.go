@@ -299,6 +299,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if name == "dir" {
 		name = "ls"
 	}
+	if name == "cp" {
+		name = "copy"
+	}
 	noFollow := false
 	if name == "df" {
 		return false, safeError(c.diskFree(ctx, a))

@@ -20,6 +20,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | lmkdir | Creates a literal local directory; silent success, existing directory is an error as OpenSSH 10.2; TestLmkdirLiteral | Local only; later OpenSSH versions add -p, outside this reference baseline |
 | df | Default KiB columns, -h binary units, -i inodes; -i wins over -h; exact layout in TestDfOutput, four local-server forms in TestDfLocalServer | Requires advertised statvfs v2; native pending |
 | copy | Literal remote-to-remote regular-file copy via copy-data v1; no client relay; TestRemoteCopyLocalServer compares binary contents/new and existing modes with OpenSSH | Requires negotiated copy-data; partial targets remain; native pending |
+| cp | Alias of copy; TestCpAliasLocalServer | Same extension and error policy as copy |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.
