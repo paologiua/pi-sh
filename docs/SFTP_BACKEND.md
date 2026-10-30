@@ -7,18 +7,16 @@ Connect subsystem channel. The agent stays unchanged; no helper is installed.
 
 ## Status and remote footprint
 
-Local tests pass against an in-memory server and an actual local OpenSSH
-sftp-server. A separate integration test joins the real Bash broker, a local PTY
-and that OpenSSH server. Binary writes/reads, EOF, status and filenames with
-quotes/Unicode are checked. The owner ran the direct-login read-only batch
-(`pwd`, `ls`, `quit`) on the Pi and reported exit **0** on 2026-10-20. This verifies
-the existing-server search and Connect-to-SFTP metadata path for that binary.
-The later private-creation/umask startup also passed an owner-run read-only
-pwd/quit batch with exit 0. No new-file permissions were tested on the Pi.
-Copy contents,
-mutations and interruption of SFTP remain unverified on the Pi.
-No Pi transfer-write path has been approved or used; all transfer tests write
-only temporary local files or an in-memory filesystem.
+Local tests use memory fixtures and the installed local OpenSSH sftp-server.
+The owner-approved native plans already verified selected shared-backend binary
+copies, preservation, resume, recursion, flush and cleanup with the Perl and
+forced-Bash paths; see REAL_DEVICE_TESTS.md for exact dates and limits.
+
+The 2026-10-30 console/option increments are local-only. They add the complete
+requested console command list, listing/output parity, transfer settings and
+bandwidth controls (SFTP_CONSOLE_COMMANDS.md). Prior native results do not verify
+these new commands, concurrent windows or tuned settings. No new Pi session,
+mutation or reuse of a completed plan occurred.
 
 Server selection checks, in order, these existing paths:
 
@@ -65,10 +63,15 @@ next argument. Unsupported options, user@host/URI/port syntax and general SSH
 options remain rejected; this does not enable their behavior.
 
 pi-sftp supports `pwd`, `cd`, `ls`, `get`, `put`, `mkdir`, `rmdir`, `rm`, `rename`,
-`mget`, `mput`, `reget`, `reput`, `chmod` (000–777), `symlink`, `readlink`, `lpwd`, `lcd`, help and quit/exit/bye.
+`mget`, `mput`, `reget`, `reput`, `chmod` (0000–7777, including -h),
+`chown`, `chgrp`, `ln [-s]`, `copy`/`cp`, `df [-hi]`, `version`, `lumask`,
+`progress`, `symlink`, `readlink`, `lpwd`, `lcd`, `lls`, `lmkdir`, `!`, help
+and quit/exit/bye. Aliases chdir/lchdir/dir and case-insensitive command names
+are accepted. SFTP_CONSOLE_COMMANDS.md names each implementation and essential
+output/error comparison.
 Remote transfer/rm/chmod/ls sources and local upload sources expand globs
-as documented in GLOB_TILDE.md; destinations remain literal. No environment
-expansion or local shell escape is implemented.
+as documented in GLOB_TILDE.md; destinations remain literal. Ordinary transfer paths are not shell-expanded;
+explicit ! and lls run the local shell with its normal expansion rules.
 Single/double quotes and backslash quoting preserve spaces/quote characters.
 Commands reject unsupported flags; `--` permits a leading-dash literal operand.
 `get -f`/`put -f` request file flush; top-level `-f` requests it for all transfers.
@@ -76,12 +79,17 @@ See [SFTP_FLUSH.md](SFTP_FLUSH.md) for capability negotiation, advisory errors a
 the exact tested behavior. A successful copy status alone is not flush proof.
 Remote/local symlink traversal components are preserved rather than lexically
 cleaning away `link/..`. Automatic local basenames reject parent/root and native
-path/volume components. Control characters in displayed names are quoted.
+path/volume components. Listing names follow OpenSSH octal escaping (TAB/CR/LF retained); diagnostic
+paths retain safe display formatting.
 
 `get`/`put` accept one source and optional destination; an existing destination
 directory receives the source basename. Regular files are transferred; global `-r` or command `-r`/`-R` enables
 directory transfers (SFTP_CONSOLE_RECURSION.md).
-Both clients use a 32 KiB copy buffer and plain Reader/Writer interfaces, bypassing
+The default copy buffer is 32 KiB. pi-sftp -B or either client's -X buffer=
+changes the copy and SFTP payload size, clamped to 256 KiB minus packet overhead.
+pi-sftp -R or -X nrequests= (also pi-cp -X) sets concurrent windows; CLI default
+is 64 requests. Ordinary stable regular files use bounded offset-based windows;
+resume and bandwidth-limited copies remain sequential. Both paths bypass
 pkg/sftp's optional ReaderFrom/WriterTo fast paths. A rejected final short WRITE
 was observed to disappear in its sequential ReaderFrom when source EOF occurred
 with data; the shared copy now propagates that write failure. Regressions cover
@@ -90,12 +98,13 @@ and source sizes crossing their boundaries. This is local error-path evidence,
 not a native disk-full or Pi partial-write test.
 Creation/truncation is explicit; failed transfers can leave partial files and
 existing targets can already have been truncated. Resume (`-a`, reget/reput) is
-implemented for literal regular files; see [rules and evidence](SFTP_RESUME.md).
-No atomic replacement,
-progress, rate limiting or fsync guarantee
-is claimed. `ls` currently prints one name per line; it is not OpenSSH's column/
-long listing. Sorted listing accumulates the directory; recursive downloads and `ls -f`
-use incremental enumeration (SFTP_LISTING.md).
+implemented for regular-file glob matches and recursive children; see [rules and evidence](SFTP_RESUME.md).
+No atomic replacement or fsync durability guarantee is claimed. Both clients
+provide a terminal meter and -l payload bandwidth limiting; the SFTP progress
+command toggles its display. -q/batch and -N use the documented OpenSSH-style
+notice policy. ls implements -1afhlnrSt, columns and long layout. Sorted/column/
+long listing accumulates entries; recursive downloads and ls -1f enumerate
+incrementally (SFTP_LISTING.md).
 
 `-p` now requests ordinary permission bits and access/modification times for
 regular-file copies in both clients. See SFTP_METADATA.md for reference behavior,
@@ -156,8 +165,9 @@ diagnostics retain only fixed classes or numeric SFTP status. CLI setup failures
 return 255; file/batch failures return 1; cancellation returns 255. Complete exit
 and interruption parity with OpenSSH remains unverified.
 
-The pinned pure-Go pkg/sftp v1.13.11 uses SFTP v3, checked 32 KiB transfer
-requests and four concurrent requests per file here. Its receiver rejects packets
+The pinned pure-Go pkg/sftp v1.13.11 uses SFTP v3, 32 KiB default transfer
+requests and configurable bounded concurrency (64 by default in the CLIs;
+unconfigured embedded sessions retain the previous limit of four). Its receiver rejects packets
 over 256 KiB before allocating their bodies. No crypto verification is disabled:
 HTTPS/DTLS trust remains Connect's existing path. The library's SSH client API is
 not used; only NewClientPipe is used. Linux/386 without CGO remains mandatory;

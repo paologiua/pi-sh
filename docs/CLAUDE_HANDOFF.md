@@ -22,9 +22,11 @@ Questo documento indica il punto di ripresa; non riduce il contratto originale.
 `docs/STATUS.md` contiene anche aggiornamenti storici: gli esiti recenti in testa
 e `docs/REAL_DEVICE_TESTS.md` prevalgono sulle vecchie note di attesa.
 
-**Prima priorità: proseguire lo sviluppo delle funzioni mancanti, partendo
-dai restanti comandi/opzioni della console SFTP. Alias mget/mput e ricorsione
-sono ora implementati con evidenza locale (milestone sotto). Il proprietario ha autorizzato
+**I comandi/opzioni della console richiesti il 2026-10-30 sono implementati
+in commit separati, con verifiche locali essenziali (SFTP_CONSOLE_COMMANDS.md).
+Riparti dal resto del backlog CLI/configurazione, lifecycle e portabilità;
+le nuove funzioni SFTP richiedono ancora la campagna finale e prove native
+specifiche, da pianificare con il proprietario. Il proprietario ha autorizzato
 l'integrazione locale del ramo Perl con il gate fallito noto e rinviato nuovi
 cicli completi di test alla prima versione funzionalmente completa (decisione
 del 2026-10-30, sotto). L'indagine sulle due intermittenze originarie è chiusa
@@ -97,11 +99,13 @@ prima `allow pasting`). Bash 5.2.37 di prova era in
 
 ## Prossima sequenza di lavoro
 
-1. Controlla stato Git e matrice: il proprietario ha autorizzato l'integrazione
-   del ramo Perl; riparti dalle funzioni incomplete della console SFTP
-   (`ls` completo, `lumask`, `ln`, `chown`/`chgrp`, `df`/`version`, comandi
-   locali, progress e tuning; SFTP_BACKEND.md e SSH_COMPATIBILITY.md).
-   Alias e ricorsione sono implementati localmente; restano le nuove prove native.
+1. Controlla stato Git e matrice. Non reimplementare i comandi SFTP completati:
+   ln/-s, chown/chgrp/-h, df/version, copy/cp, lumask, lls/lmkdir/!, progress,
+   chdir/lchdir/dir, ls -1afhlnrSt, chmod con bit speciali, cd/lcd senza argomenti,
+   maiuscole/minuscole, pi-sftp -B/-R/-X/-l/-N e pi-cp -l/-X. Prompt, help,
+   pwd/lpwd, avvisi e diagnostica comune sono confrontati con OpenSSH 10.2p1.
+   Prove e limiti: SFTP_CONSOLE_COMMANDS.md e TESTING.md. Restano native/iSH,
+   campagna completa e casi limite esplicitamente registrati nella matrice.
 2. Prosegui con CLI/configurazione e lifecycle, poi forwarding e portabilità,
    seguendo il backlog. Mantieni distinti sviluppo locale, prove native già
    concluse e verifiche ancora necessarie. Nuove scritture, listener o fault
@@ -224,6 +228,34 @@ di questa integrazione. Le prove native approvate restano concluse; la nuova
 campagna finale dovrà includere gli episodi locali registrati e le verifiche
 ancora aperte della matrice. La prima versione non è dichiarata completa finché
 funzioni mancanti e differenze aperte non sono implementate o motivate.
+
+## Comandi e presentazione SFTP — 2026-10-30
+
+La lista richiesta dal proprietario è implementata: ogni comando ha un commit
+dedicato; correzioni successive dell'output hanno commit espliciti. La milestone
+di ricorsione già presente è stata prima registrata in f206fde. L'inventario
+completo, i test locali e i limiti sono in SFTP_CONSOLE_COMMANDS.md.
+
+Gli output nuovi seguono OpenSSH 10.2p1: prompt/help, version/pwd/lpwd, colonne e
+listing lungo, avvisi di trasferimento/ricorsione e diagnostica comune, incluse
+estensioni assenti. I confronti mantengono spazi e CRLF esatti. I nomi del listing
+con Unicode/TAB/CR/LF/ESC seguono la presentazione originale. Il comando locale !
+ha richiesto lettura su richiesta, senza anticipare l'input della shell.
+
+Il fork SFTP aggiunge soltanto API nei file di estensione già registrati:
+lsetstat, copy-data e users-groups-by-id con versioni negoziate e parser controllato;
+ReadDirEach conserva LongName per il ripiego dei vecchi server. Nessun file upstream
+è stato modificato. I CLI usano 64 richieste per i nuovi trasferimenti concorrenti;
+ripresa e limite di banda restano sequenziali. Questo nuovo percorso ha prova
+binaria/errore locale, non nuova evidenza sul Pi.
+
+Il proprietario ha chiesto soltanto verifiche essenziali: nessuna campagna da
+centinaia di ripetizioni o suite completa. Una verifica mirata race, vet dei
+pacchetti interessati e build pure-Go Linux/386 softfloat e Windows/amd64 passano.
+Nessun accesso al Pi, push o pubblicazione; adattatori Perl/Bash invariati.
+Il gate storico fail=1 rimane fallito e non classificato. Il progetto complessivo
+rimane sperimentale/incompleto; questa lista completata non chiude il contratto
+di compatibilità SSH né autorizza nuovi test nativi.
 
 ## Milestone console SFTP — 2026-10-30
 
@@ -357,8 +389,10 @@ Righe ancora aperte (lavoro rimanente):
 - SCP: nomi con newline/due punti/trattino iniziale e disk-full sul Pi (servono
   scritture, quindi un piano); più sorgenti e download ricorsivo verificati
   2026-10-28; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
-- SFTP: verifica nativa dei nuovi alias/ricorsione; flag di `ls`, `lumask`, `ln`, `chown`/
-  `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
+- SFTP: comandi/opzioni richiesti implementati localmente (SFTP_CONSOLE_COMMANDS.md);
+  restano prove native dei nuovi percorsi, file sparsi e >32 bit, memoria del
+  listing ordinato, attributi omessi, race sui percorsi e parità locale/piattaforma
+  oltre i fixture essenziali. Non riaprire automaticamente campagne complete.
 - Forwarding: bind jolly/IPv6 di -R verificati sul Pi (2026-10-28, NATIVE_RBIND_PLAN.md); -R con molte connessioni verificato (16/64/65, tutte complete; frame uniti
   in record: ~90 KiB/s per direzione invece di ~80; poi finestra
   dell'adattatore da 8 a 32 record: ~270 KiB/s, due corse complete; una corsa
@@ -401,7 +435,7 @@ Righe ancora aperte (lavoro rimanente):
 | Area | Lavoro ancora necessario | Documenti da leggere quando la affronti |
 | --- | --- | --- |
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
-| File | Prove native CLI mancanti (le verifiche base e glob/tilde sono già in REAL_DEVICE_TESTS.md); `~user` (richiede expand-path nel fork); prove ripetute/più grandi; verifica nativa della ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
+| File | Prove native CLI mancanti (le verifiche base e glob/tilde sono già in REAL_DEVICE_TESTS.md); `~user` (richiede expand-path nel fork); prove ripetute/più grandi; verifica nativa della ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; casi limite di fedeltà e verifica dei nuovi comandi | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
 | Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; dopo il cambio dei record rifatti sul Pi half-close, velocità, `~#` e `-R 0`); molti stream, sessioni lunghe, perdita di connessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |

@@ -39,7 +39,7 @@ an unquoted `#` ends the line even inside a word.
 | Command | Expansion |
 | --- | --- |
 | `get`/`reget` source | Remote, GLOB_MARK; no match: `File "..." not found.` |
-| `put`/`reput` source | Local, GLOB_NOCHECK\|GLOB_MARK (missing literal fails on open) |
+| `put`/`reput` source | Local, GLOB_NOCHECK\|GLOB_MARK (missing literal fails on source stat) |
 | `ls` | Remote, MARK\|NOCHECK\|BRACE\|NOSORT, sorted unless `-f`; one matched directory is listed |
 | `rm`, `chmod` path | Remote, GLOB_NOCHECK; batch without `-` stops at first failure |
 | destinations, `cd`, `lcd`, `mkdir`, `rmdir`, `rename`, `symlink`, `readlink` | Not globbed; escaping removed |
@@ -48,10 +48,9 @@ Several matches into a destination that is not a directory fail before any
 transfer, with OpenSSH's wording. Every match is attempted; each failure is
 printed with its path and the command fails. Directory matches of `get`/`put`
 fail as "not a regular file" without recursion. `mget`/`mput` share the same
-expansion; console recursion is documented in SFTP_CONSOLE_RECURSION.md. `ls` of glob results
-prints paths relative to the working directory, one per line, with the `/` mark,
-matching `ls -1`; a directory argument still prints basenames (existing
-difference). Remote `~` is literal, exactly as OpenSSH 10.2 sftp (`cd ~` and
+expansion; console recursion is documented in SFTP_CONSOLE_RECURSION.md. `ls` of glob results prints paths relative to the working directory with the
+`/` mark; directory arguments now preserve their requested prefix. -1 selects
+one name per line; other listing modes follow SFTP_CONSOLE_COMMANDS.md. Remote `~` is literal, exactly as OpenSSH 10.2 sftp (`cd ~` and
 `ls ~` fail in both).
 
 ## pi-cp
@@ -85,8 +84,11 @@ before login rather than modify the fork. This is the main explicit gap.
   race. OpenSSH sends only REMOVE and reports the server's error.
 - `rm`/`chmod` fail before any change if the expansion itself fails (e.g. lost
   connection); OpenSSH ignores remote_glob's status and uses a partial list.
-- No "Fetching/Uploading/Removing/Changing mode" progress lines; errors use
-  pi-sftp's redacted classification, prefixed with the path for multi-match.
+- Fetching/Uploading, recursive headings and Changing mode/owner/group notices
+  now follow the local OpenSSH reference, including batch/-q/-N policy.
+  Removing notices and exhaustive error/locale/platform parity outside the new
+  command fixtures remain broader compatibility work. Server-supplied status
+  text is always replaced by fixed vocabulary.
 - Bracket sets containing `/` are split at the `/` (undefined in OpenBSD).
 - Windows: `put` does not glob locally (`\` is a separator there); the argument
   is used literally after removing sftp escaping.

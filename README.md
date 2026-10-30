@@ -124,6 +124,13 @@ The console also supports `mget`/`mput`, command `get -r`/`put -r` and global
 follows them. This console increment has local OpenSSH comparisons only;
 see [console recursion and limits](docs/SFTP_CONSOLE_RECURSION.md).
 
+The remaining requested console commands are now implemented too: links and
+ownership, server-side copy, df/version, local shell/listing/directories, umask,
+progress and the ls formats. Prompt, help and selected successful/error output
+are compared byte for byte with local OpenSSH 10.2p1. pi-sftp supports -B/-R/-X
+transfer settings and -N notices; both clients support -l bandwidth limiting
+and -X buffer/request settings. See [command evidence and limits](docs/SFTP_CONSOLE_COMMANDS.md).
+
 See [SFTP backend, supported operations and limits](docs/SFTP_BACKEND.md).
 Recursive downloads and `ls -f` enumerate remote names incrementally; sorted `ls`
 still accumulates a directory. See [listing memory and provenance](docs/SFTP_LISTING.md).
@@ -241,15 +248,13 @@ pending. See [command cancellation](docs/COMMAND_CANCELLATION.md).
 
 ## Current limits
 
-- Interactive TTY plus an experimental command broker with pipe and requested-TTY
-  paths. Native agent exec,
-  forwarding is unimplemented; pi-cp/pi-sftp provide only the documented
-  experimental SFTP subset, including literal `pi-cp -r` trees tested locally.
-  Native content-transfer verification remains pending; see
-  [recursive copy limits](docs/SCP_RECURSION.md). Configuration files support only
-  the documented subset (CONFIGURATION.md); SSH keys, host keys, algorithms,
-  compression, binding, address families, environment passing, -f, -N/-s and
-  LocalCommand are refused with specific reasons. Unsupported options are rejected.
+- Interactive TTY, command supervision and forwarding use the existing Connect
+  transport and in-memory adapters. Native agent exec/subsystem support is not
+  asserted. pi-cp/pi-sftp use an existing SFTP server; selected shared-backend
+  native transfer checks have passed, while the new console commands, tuning
+  and concurrent transfer windows have local evidence only. Configuration and
+  SSH-specific options retain the explicit implementation/refusal decisions in
+  [the compatibility matrix](docs/SSH_COMPATIBILITY.md).
 - Interactive stdout/stderr share the Connect PTY. The command broker separates
   them using anonymous pipes and client-defined framing. Native agent status
   remains unverified: ordinary interactive remote close returns **255**;

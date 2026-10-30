@@ -1,5 +1,14 @@
 # Development status — 2026-10-22
 
+Update, 30 October 2026: the owner's requested SFTP console command/option
+list is implemented in separate commits. Prompt/help, command output, selected
+ordinary failures/capability refusals and listing layouts are compared with the
+installed OpenSSH 10.2p1 client. Both transfer clients now support payload
+bandwidth and buffer/request settings. Only essential local checks were run;
+no new native session or full/stress campaign. See SFTP_CONSOLE_COMMANDS.md and
+TESTING.md. The old WebRTC fail=1 remains unresolved, and the overall project
+is still incomplete. Older “unimplemented” notes below are historical.
+
 Update, 23 October 2026: pi-cp now displays per-file scp-style progress, with
 sticky -q, foreground stdout/redirect behavior, rate, ETA, stall and completion
 formatting. Fourteen local OpenSSH PTY comparisons and the affected packages'

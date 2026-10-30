@@ -1352,3 +1352,51 @@ provide a result for the unexecuted shell-free WebRTC reduction. The complete
 checklist remains the final campaign reference. Linux/386 and Windows builds
 are compile evidence; physical iSH and native platform/console recursion
 verification remain pending. The product backlog is still open.
+
+### Requested console commands/options — 2026-10-30 (essential checks only)
+
+Each requested command has an implementation commit and an essential local
+check listed in SFTP_CONSOLE_COMMANDS.md. The earlier recursion milestone was
+committed separately as f206fde; its 96-case fixture was not repeatedly rerun
+for each new command. No 100-count loop, full suite, stress campaign or new
+WebRTC diagnosis was performed for this work.
+
+Evidence includes 16 exact ls output cases, three additional control/Unicode
+listing formats, prompt/echo/help, notices/headings and selected numeric,
+missing-file, existing-file and unavailable-extension diagnostics. stdout and
+stderr bytes (including spacing and CRLF) are compared with OpenSSH 10.2p1.
+Only the two distinct synthetic fixture roots are normalized; the -D transport
+banner is excluded from -N command-output comparisons. No production session
+capture or inherited environment is saved.
+
+Transfer options have one local binary parallel roundtrip, bounded-buffer and
+short timing checks, parser/precedence checks and explicit contiguous-prefix
+WRITE-error/short-READ/cancellation checks. These are not native disk-full,
+network loss, exhaustive wire/fault or performance campaigns.
+
+An aggregated new-command selector passed in internal/sftpcli,
+internal/sftpclient, cmd/pi-sftp and cmd/pi-cp; internal/copycli compiled but
+had no tests matching that selector. Existing tests outside the selector are
+not claimed as rerun. Individual subsequent fixes ran only their specific
+checks. Final focused checks passed:
+
+- go test -race ./internal/sftpcli -run '^(TestParallelCopy.*|TestParallelTransferLocalServer|TestLocalShellAgainstOpenSSH|TestTransferNoticesAgainstOpenSSH|TestLsControlNamesAgainstOpenSSH)$' -count=1 -timeout=45s
+- go vet ./internal/sftpcli ./internal/sftpclient ./internal/copycli ./cmd/pi-sftp ./cmd/pi-cp
+- CGO_ENABLED=0 GOOS=linux GOARCH=386 GO386=softfloat go build ./...
+- CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...
+- TestLocalSFTPSnapshotMatchesUpstreamManifest (upstream files unchanged)
+- TestStatusTextUnknownUint32IsPortable (no signed-int overflow in status formatting)
+- TestTuningValidationOrder (invalid -B/-R cannot be hidden by a later -X)
+- TestSFTPProgressRequiresTerminalDiagnostics (single local PTY/redirect check)
+- git diff --check
+
+The three last focused guards above followed the earlier race selection.
+The targeted vet and both build commands were then repeated after the final
+source changes and passed. The final documentation-only update follows those checks and has a whitespace/
+diff check, not another whole verification campaign. No test result above
+supersedes the failed historical RESULT fail=1, resolves either unclassified
+episode or supplies evidence for the never-executed shell-free reduction.
+No Pi session, remote write/listener, push or publication. New native command/
+tuning paths, arbitrary failure/lifecycle cases and physical iSH remain open;
+CGO-disabled builds are compile evidence only. The complete checklist above
+remains the deferred final campaign reference.

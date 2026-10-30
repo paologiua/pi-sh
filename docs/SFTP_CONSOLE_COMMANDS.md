@@ -24,10 +24,10 @@ the preceding recursion milestone was recorded separately before these changes.
 | lumask | Octal mask with exact Local umask output; applies to new downloads, recursive directories and lmkdir without changing other Go goroutines; TestLumaskCreationAndOutput and TestLumaskErrorsAgainstOpenSSH | Existing target modes retained; child-shell propagation added with shell command; Windows permission runtime unverified |
 | ! | Raw command or interactive local shell, local cwd/mask, child stdio; exact output/status diagnostic compared in TestLocalShellAgainstOpenSSH | Demand-driven command reader stops read-ahead; context kills direct child, arbitrary descendant cleanup/platform behavior remains open |
 | lls | Local /bin/ls through local shell; raw flags, quotes/globs and cwd; exact output in TestLlsAgainstOpenSSH | Uses existing local ls, not extra remote software; Windows dir adaptation unverified |
-| progress | Exact enabled/disabled lines, default on interactively and off in batch/-q; same terminal meter as SCP; TestProgressToggleAgainstOpenSSH | Redirected output never renders a meter; existing meter layout tests reused; SFTP terminal native check pending |
+| progress | Exact enabled/disabled lines, default on interactively and off in batch/-q; same terminal meter as SCP; TestProgressToggleAgainstOpenSSH | Redirected stdout/stderr never renders a meter (TestSFTPProgressRequiresTerminalDiagnostics); existing meter layout tests reused; SFTP terminal native check pending |
 | ls | -1afhlnrSt, columns, prefixes, long mode/date/size/ownership layout; 16 exact local OpenSSH comparisons in TestLsOptionsAgainstOpenSSH; -1f streams | Name lookup uses users-groups-by-id v1, older servers use their v3 longname for plain -l; TestLsControlNamesAgainstOpenSSH also compares columns/one-line/long output for Unicode and control names; broader locale/tie-order and native checks open |
 | pi-sftp -N | Clears command quiet mode even with batch/-q; does not re-enable the progress meter; TestNoisyOverridesBatchNotices and TestTransferNoticesAgainstOpenSSH compare notices/recursive headings and missing/directory refusals; source stat precedes announcements/open, special sources are refused; frontend pre-auth parsing | Connect authentication diagnostics remain product-specific |
-| pi-sftp -B | Sets copy and SFTP packet payload size; default 32768, maximum effective 256KiB minus packet overhead; TestTransferBufferSize and frontend parser case | Large requested sizes clamped to receiver bound; native tuning pending |
+| pi-sftp -B | Sets copy and SFTP packet payload size; default 32768, maximum effective 256KiB minus packet overhead; TestTransferBufferSize, TestTuningValidationOrder and frontend parser case | Large requested sizes clamped to receiver bound; native tuning pending |
 | pi-sftp -R | 1–262144 maximum requests, default 64; bounded offset-based parallel windows for ordinary regular transfers; TestParallelTransferLocalServer | Resume intentionally stays sequential to preserve append ordering; partial failures retain contiguous-prefix accounting, native/fault campaigns pending |
 | pi-sftp -X | buffer= (bytes/binary scale including fractions), nrequests=; settings applied in argument order; TestTransferXOptions | Effective packet size remains bounded by receiver; same concurrency/resume rules as -R |
 | pi-sftp -l | 1–104857600 Kbit/s (1024 bits per Kbit), payload pacing with cancellable waits; TestBandwidthLimitAndCancellation | Limited transfers use sequential I/O to keep one aggregate budget; metadata/transport overhead excluded; native timing pending |
@@ -40,6 +40,37 @@ the preceding recursion milestone was recorded separately before these changes.
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.
 
-Console prompt/echo now use sftp>; non-terminal input is echoed as in OpenSSH.\nBatch command errors are reported once, without a duplicate generic failure.\nTestConsolePromptAndEchoAgainstOpenSSH compares interactive-pipe and batch stdout.\n\nReference baseline: installed macOS OpenSSH 10.2p1 and local sftp-server,
+Console prompt/echo now use sftp>; non-terminal input is echoed as in OpenSSH.
+Batch command errors are reported once, without a duplicate generic failure.
+TestConsolePromptAndEchoAgainstOpenSSH compares interactive-pipe and batch stdout.
+
+Reference baseline: installed macOS OpenSSH 10.2p1 and local sftp-server,
 plus the pinned upstream sftp.c. Output and operations are reproduced by an
 independently authored implementation; no upstream implementation is copied.
+
+## Scope and audit
+
+All commands/options in the owner's requested list now have implementation
+commits: ln/-s, chown, chgrp, df, version, copy/cp, lumask, lls, lmkdir, !,
+progress, chdir/lchdir/dir, the ls flags, chmod special bits/-h, cd/lcd without
+arguments, case-insensitive command names, pi-sftp -B/-R/-X/-l/-N, and pi-cp
+-l/-X. Help, prompt/echo, pwd/lpwd, transfer notices and ordinary error messages
+were compared with the installed OpenSSH 10.2p1 reference. Tests normalize only
+the two distinct temporary fixture roots; no status/spacing/newline tolerances
+are applied. The -D transport's “Attached to” banner is excluded when comparing
+-N command output, because the product uses Connect and its own connection
+banner. Successful command output remains compared byte for byte.
+
+The local checks are deliberately essential, not a full compatibility or stress
+campaign. Existing product-wide limits remain: Connect-specific authentication
+and connection diagnostics, strict extra-operand validation, unsupported SSH
+mechanisms, other locale/platform behavior, stable-tree/path-replacement races,
+missing attribute-presence flags, sparse/large-file handling and native
+verification. These do not become verified by adding a console command.
+No overall “complete OpenSSH implementation” or production-ready release is
+claimed. Windows adaptations and physical iSH runtime remain unverified.
+
+No Raspberry Pi session, remote mutation/listener, push or publication occurred.
+Every new commit retains the owner's required co-author footer. Perl/Bash
+brokers and forwarding adapters were not changed. The historical failed gate
+and both unclassified episodes remain recorded for the deferred final campaign.
