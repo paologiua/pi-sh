@@ -523,3 +523,11 @@ func TestLsControlNamesAgainstOpenSSH(t *testing.T) {
 func TestHardlinkCapabilityAgainstOpenSSH(t *testing.T) {
 	compareConsoleWithServer(t, []string{"-P", "hardlink"}, "ln file target")
 }
+
+func TestNoFollowCapabilitiesAgainstOpenSSH(t *testing.T) {
+	compareConsoleWithServer(t, []string{"-P", "lsetstat"}, "chmod -h 600 file", "chown -h "+strconv.Itoa(os.Getuid())+" file", "chgrp -h "+strconv.Itoa(os.Getgid())+" file")
+}
+func TestOtherCapabilitiesAgainstOpenSSH(t *testing.T) {
+	compareConsoleWithServer(t, []string{"-P", "statvfs"}, "df")
+	compareConsoleWithServer(t, []string{"-P", "copy-data"}, "copy file target")
+}

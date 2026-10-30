@@ -636,6 +636,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				fmt.Fprintf(c.Output, "Changing %s on %s\n", action, display(name))
 			}
 			if noFollow {
+				if err := c.requireExtension("lsetstat@openssh.com", "1"); err != nil {
+					return err
+				}
 				err := c.Client.Lchown(name, uid, gid)
 				return operationError(err, "remote lsetstat %q", display(name))
 			}
@@ -666,6 +669,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				fmt.Fprintf(c.Output, "Changing mode on %s\n", display(name))
 			}
 			if noFollow {
+				if err := c.requireExtension("lsetstat@openssh.com", "1"); err != nil {
+					return err
+				}
 				return operationError(c.Client.Lchmod(name, bits), "remote lsetstat %q", display(name))
 			}
 			return operationError(c.Client.Chmod(name, bits), "remote setstat %q", display(name))
