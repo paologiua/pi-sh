@@ -7,11 +7,11 @@ import (
 
 func (c *Console) copyData(dst io.Writer, src io.Reader, name string, size, offset int64) (int64, error) {
 	if c.Progress == nil || c.ProgressDisabled {
-		return copyFileData(dst, src)
+		return copyFileDataBuffer(dst, src, c.BufferSize)
 	}
 	meter := c.Progress.Start(name, size, offset)
 	defer meter.Stop()
-	return copyFileData(progressWriter{dst, meter}, src)
+	return copyFileDataBuffer(progressWriter{dst, meter}, src, c.BufferSize)
 }
 
 type progressWriter struct {
@@ -32,5 +32,12 @@ func (w progressWriter) Write(data []byte) (int, error) {
 // ReadFrom, the final short source read can hide that chunk's WRITE status error.
 // Plain Write always checks it, even when the source also reached EOF.
 func copyFileData(dst io.Writer, src io.Reader) (int64, error) {
-	return io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, make([]byte, 32<<10))
+	return copyFileDataBuffer(dst, src, 0)
+}
+
+func copyFileDataBuffer(dst io.Writer, src io.Reader, size int) (int64, error) {
+	if size <= 0 {
+		size = 32 << 10
+	}
+	return io.CopyBuffer(struct{ io.Writer }{dst}, struct{ io.Reader }{src}, make([]byte, size))
 }

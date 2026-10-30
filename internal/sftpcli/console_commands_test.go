@@ -193,3 +193,20 @@ func TestNoisyOverridesBatchNotices(t *testing.T) {
 		t.Fatal("noisy incorrectly enabled the meter")
 	}
 }
+
+type chunkWriter struct{ max, count int }
+
+func (w *chunkWriter) Write(p []byte) (int, error) {
+	w.max = max(w.max, len(p))
+	w.count += len(p)
+	return len(p), nil
+}
+func TestTransferBufferSize(t *testing.T) {
+	w := &chunkWriter{}
+	c := Console{BufferSize: 1024}
+	data := bytes.Repeat([]byte{1}, 4097)
+	n, err := c.copyData(w, bytes.NewReader(data), "file", int64(len(data)), 0)
+	if err != nil || n != 4097 || w.count != 4097 || w.max != 1024 {
+		t.Fatal(n, w, err)
+	}
+}

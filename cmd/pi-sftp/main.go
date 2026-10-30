@@ -33,6 +33,7 @@ func app() int {
 	direct := f.Bool("direct-login", false, "use memory-only direct Raspberry Pi ID login")
 	browser := f.Bool("browser", false, "use the authorized Connect browser companion")
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
+	buffer := f.Uint("B", 0, "transfer buffer size in bytes (default 32768)")
 	noisy := f.Bool("N", false, "print transfer notices even in batch or quiet mode")
 	readOnly := f.Bool("read-only", false, "start the existing server in read-only mode; reject remote writes")
 	flush := f.Bool("f", false, "request a flush after each transfer (upload requires server fsync extension)")
@@ -52,7 +53,7 @@ func app() int {
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
 		"A": forwardspec.ErrAgentForwarding.Error(),
 	}, map[string]string{
-		"B": "SFTP buffer size tuning is not implemented", "R": "SFTP request count tuning is not implemented",
+		"R": "SFTP request count tuning is not implemented",
 		"X": "SFTP buffer and request tuning is not implemented",
 		"c": sshconfig.ReasonCrypto, "i": sshconfig.ReasonAuth, "J": forwardspec.ErrProxy.Error(),
 		"l": "bandwidth limiting is not implemented",
@@ -124,12 +125,12 @@ func app() int {
 		return 255
 	}
 	defer carrier.Close()
-	session, err := sftpclient.Open(ctx, carrier.Run, sftpclient.Options{Server: *server, ReadOnly: *readOnly})
+	session, err := sftpclient.Open(ctx, carrier.Run, sftpclient.Options{Server: *server, ReadOnly: *readOnly, BufferSize: sftpclient.TransferBuffer(*buffer)})
 	if err != nil {
 		sessionFailure(log, err)
 		return 255
 	}
-	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
+	console := sftpcli.Console{Client: session.Client, BufferSize: sftpclient.TransferBuffer(*buffer), RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
 	err = console.Run(ctx)
 	closeErr := session.Close()
 	if err != nil || closeErr != nil {

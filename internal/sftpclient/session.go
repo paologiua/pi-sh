@@ -22,8 +22,9 @@ import (
 
 type Runner func(context.Context, string, shellbroker.IO) (int, error)
 type Options struct {
-	Server   string
-	ReadOnly bool
+	Server     string
+	ReadOnly   bool
+	BufferSize int
 }
 type result struct {
 	code int
@@ -69,6 +70,9 @@ func serverCommand(server string, readOnly bool) (string, error) {
 // Open negotiates SFTP v3. The caller must authenticate before invoking Open;
 // negotiation is bounded to 30s and the process lifetime follows ctx thereafter.
 func Open(ctx context.Context, run Runner, options Options) (*Session, error) {
+	if options.BufferSize < 0 || options.BufferSize > MaxTransferBuffer {
+		return nil, errors.New("invalid SFTP buffer size")
+	}
 	command, err := serverCommand(options.Server, options.ReadOnly)
 	if err != nil {
 		return nil, err
@@ -102,7 +106,11 @@ func Open(ctx context.Context, run Runner, options Options) (*Session, error) {
 		// time (sftpcli copyFileData), so each is one request. 1 KiB requests,
 		// a leftover from 1 KiB broker records, sent a 1 MiB upload as 1024
 		// sequential WRITEs (17.8 s on the device, 2026-10-28).
-		client, err = sftp.NewClientPipe(s.outR, s.inW, sftp.MaxPacketChecked(32768), sftp.MaxConcurrentRequestsPerFile(4))
+		buffer := options.BufferSize
+		if buffer == 0 {
+			buffer = 32768
+		}
+		client, err = sftp.NewClientPipe(s.outR, s.inW, sftp.MaxPacketUnchecked(buffer), sftp.MaxConcurrentRequestsPerFile(4))
 	}
 	withinDeadline := timer.Stop()
 	if err != nil || !withinDeadline || owned.Err() != nil {

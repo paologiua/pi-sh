@@ -34,6 +34,7 @@ type Console struct {
 	Preserve       bool
 	Recursive      bool
 	LocalUmask     *os.FileMode
+	BufferSize     int
 	Program        string
 	// Progress is optional; pi-cp supplies scp's per-file terminal meter.
 	Progress            *progress.Display
