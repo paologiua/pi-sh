@@ -458,3 +458,7 @@ func TestCdErrorsAgainstOpenSSH(t *testing.T) { compareConsoleDiagnostic(t, "cd 
 func TestLcdErrorsAgainstOpenSSH(t *testing.T) {
 	compareConsoleDiagnostic(t, "lcd missing", "lcd file")
 }
+
+func TestLmkdirErrorsAgainstOpenSSH(t *testing.T) {
+	compareConsoleDiagnostic(t, "lmkdir dir", "lmkdir missing/sub")
+}

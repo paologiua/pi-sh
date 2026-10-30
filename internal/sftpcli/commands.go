@@ -563,7 +563,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(1) {
 			return false, bad
 		}
-		err = c.makeLocalDir(c.local(pathglob.Unescape(a[0])), 0777)
+		err = operationError(c.makeLocalDir(c.local(pathglob.Unescape(a[0])), 0777), "Couldn't create local directory %q", display(pathglob.Unescape(a[0])))
 	case "copy":
 		if !need(2) {
 			return false, bad
