@@ -44,7 +44,7 @@ func (c *Console) diskFree(ctx context.Context, args []string) error {
 	}
 	info, err := c.Client.StatVFS(target)
 	if err != nil {
-		return err
+		return shown(err, "")
 	}
 	return printDiskFree(c.Output, info, human, inodes)
 }

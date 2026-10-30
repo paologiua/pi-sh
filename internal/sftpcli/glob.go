@@ -66,6 +66,9 @@ func (c *Console) report(err error) {
 	if c.Errors == nil {
 		return
 	}
+	if diagnostic, ok := err.(*shownError); ok && diagnostic.text == "" {
+		return
+	}
 	program := c.Program
 	if program == "" {
 		fmt.Fprintf(c.Errors, "%v\r\n", safeError(err))
