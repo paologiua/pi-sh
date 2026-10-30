@@ -313,7 +313,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-	} else if name == "chown" || name == "chgrp" {
+	} else if name == "chown" || name == "chgrp" || name == "chmod" {
 		for len(a) > 0 && strings.HasPrefix(a[0], "-") {
 			if a[0] == "--" {
 				a = a[1:]
@@ -554,10 +554,28 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		}
 		var mode uint64
 		mode, err = strconv.ParseUint(a[0], 8, 32)
-		if err != nil || mode > 0777 {
-			return false, errors.New("chmod requires an octal mode between 000 and 777")
+		if err != nil || mode > 07777 {
+			return false, errors.New("chmod requires an octal mode between 0000 and 7777")
 		}
-		err = c.eachRemote(ctx, a[1], func(name string) error { return c.Client.Chmod(name, os.FileMode(mode)) })
+		bits := os.FileMode(mode & 0777)
+		if mode&04000 != 0 {
+			bits |= os.ModeSetuid
+		}
+		if mode&02000 != 0 {
+			bits |= os.ModeSetgid
+		}
+		if mode&01000 != 0 {
+			bits |= os.ModeSticky
+		}
+		err = c.eachRemote(ctx, a[1], func(name string) error {
+			if !c.Batch && c.Output != nil {
+				fmt.Fprintf(c.Output, "Changing mode on %s\n", display(name))
+			}
+			if noFollow {
+				return c.Client.Lchmod(name, bits)
+			}
+			return c.Client.Chmod(name, bits)
+		})
 	default:
 		return false, errors.New("unsupported SFTP command")
 	}

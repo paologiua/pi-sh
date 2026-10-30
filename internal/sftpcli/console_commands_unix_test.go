@@ -119,3 +119,33 @@ func TestChgrpLocalServer(t *testing.T) {
 		t.Fatal("ownership differs")
 	}
 }
+
+func TestChmodSpecialBitsAndLink(t *testing.T) {
+	client, server := preservationServer(t)
+	roots := []string{t.TempDir(), t.TempDir()}
+	for _, root := range roots {
+		if err := os.Mkdir(filepath.Join(root, "dir"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("dir", filepath.Join(root, "link")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := Console{Client: client, RemoteDir: roots[0], Batch: true}
+	for _, line := range []string{"chmod 1777 dir", "chmod -h 700 link"} {
+		args, _ := Split(line)
+		_, ourErr := c.Execute(context.Background(), args)
+		cmd := exec.Command("sftp", "-D", server, "-b", "-")
+		cmd.Dir = roots[1]
+		cmd.Stdin = strings.NewReader("@" + line + "\n")
+		out, refErr := cmd.CombinedOutput()
+		if (ourErr == nil) != (refErr == nil) {
+			t.Fatalf("%s: ours %v reference %v %s", line, ourErr, refErr, out)
+		}
+	}
+	a, _ := os.Stat(filepath.Join(roots[0], "dir"))
+	b, _ := os.Stat(filepath.Join(roots[1], "dir"))
+	if a.Mode() != b.Mode() {
+		t.Fatal(a.Mode(), b.Mode())
+	}
+}

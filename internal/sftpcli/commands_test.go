@@ -138,7 +138,7 @@ func TestCommandQuotingAndUnsupportedFlags(t *testing.T) {
 		}
 	}
 	c := Console{Client: memoryClient(t), RemoteDir: "/", LocalDir: t.TempDir(), Output: io.Discard}
-	for _, args := range [][]string{{"put", "-r", "x"}, {"!", "local-command"}, {"chmod", "4777", "x"}, {"quit", "unexpected"}} {
+	for _, args := range [][]string{{"put", "-r", "x"}, {"!", "local-command"}, {"chmod", "10000", "x"}, {"quit", "unexpected"}} {
 		done, err := c.Execute(context.Background(), args)
 		if err == nil || done {
 			t.Fatalf("unsupported command accepted: %q", args)

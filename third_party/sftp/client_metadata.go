@@ -81,3 +81,8 @@ func (p *metadataExtension) MarshalBinary() ([]byte, error) {
 	b = marshalString(b, p.Name)
 	return append(b, p.Body...), nil
 }
+
+// Lchmod changes permissions on the symbolic link itself when supported.
+func (c *Client) Lchmod(path string, mode os.FileMode) error {
+	return c.linkSetstat(path, sshFileXferAttrPermissions, marshalUint32(nil, toChmodPerm(mode)))
+}

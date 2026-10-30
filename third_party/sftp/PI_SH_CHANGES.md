@@ -53,6 +53,6 @@ reply success and failure cases. The CI workflow runs both
 modules and compiles the extension tests for every target, including Linux/386
 with CGO disabled. See ../../docs/SFTP_LISTING.md for current results and limits.
 
-2026-10-30: client_metadata.go additionally provides Lchown, negotiated
+2026-10-30: client_metadata.go additionally provides Lchown and Lchmod, negotiated
 lsetstat v1, using the checked status parser. No upstream file changed.
 Essential local actual-server ownership/link checks: TestChownLocalServer.
