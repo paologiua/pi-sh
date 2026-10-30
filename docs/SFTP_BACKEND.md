@@ -65,8 +65,10 @@ next argument. Unsupported options, user@host/URI/port syntax and general SSH
 options remain rejected; this does not enable their behavior.
 
 pi-sftp supports `pwd`, `cd`, `ls`, `get`, `put`, `mkdir`, `rmdir`, `rm`, `rename`,
-`chmod` (000–777), `symlink`, `readlink`, `lpwd`, `lcd`, help and quit/exit/bye.
-Paths are literal: no glob, tilde/environment expansion or local shell escape.
+`mget`, `mput`, `reget`, `reput`, `chmod` (000–777), `symlink`, `readlink`, `lpwd`, `lcd`, help and quit/exit/bye.
+Remote transfer/rm/chmod/ls sources and local upload sources expand globs
+as documented in GLOB_TILDE.md; destinations remain literal. No environment
+expansion or local shell escape is implemented.
 Single/double quotes and backslash quoting preserve spaces/quote characters.
 Commands reject unsupported flags; `--` permits a leading-dash literal operand.
 `get -f`/`put -f` request file flush; top-level `-f` requests it for all transfers.
@@ -77,7 +79,8 @@ cleaning away `link/..`. Automatic local basenames reject parent/root and native
 path/volume components. Control characters in displayed names are quoted.
 
 `get`/`put` accept one source and optional destination; an existing destination
-directory receives the source basename. Only regular files are transferred.
+directory receives the source basename. Regular files are transferred; global `-r` or command `-r`/`-R` enables
+directory transfers (SFTP_CONSOLE_RECURSION.md).
 Both clients use a 32 KiB copy buffer and plain Reader/Writer interfaces, bypassing
 pkg/sftp's optional ReaderFrom/WriterTo fast paths. A rejected final short WRITE
 was observed to disappear in its sequential ReaderFrom when source EOF occurred
@@ -89,9 +92,10 @@ Creation/truncation is explicit; failed transfers can leave partial files and
 existing targets can already have been truncated. Resume (`-a`, reget/reput) is
 implemented for literal regular files; see [rules and evidence](SFTP_RESUME.md).
 No atomic replacement,
-recursion, progress, rate limiting or fsync guarantee
+progress, rate limiting or fsync guarantee
 is claimed. `ls` currently prints one name per line; it is not OpenSSH's column/
-long listing. Directory enumeration currently accumulates the directory in memory.
+long listing. Sorted listing accumulates the directory; recursive downloads and `ls -f`
+use incremental enumeration (SFTP_LISTING.md).
 
 `-p` now requests ordinary permission bits and access/modification times for
 regular-file copies in both clients. See SFTP_METADATA.md for reference behavior,
@@ -127,9 +131,9 @@ Use `./file:with-colon` to disambiguate a local colon. Windows absolute drive pa
 are recognized as local; runtime filesystem support remains platform-specific.
 Copies can upload local regular files or download remote regular files from one
 device. Multiple sources require an existing destination directory, checked
-before file mutation. Remote-to-remote, mixed devices, local-only copies, URIs,
-`user@`, legacy `-O`, recursion, preservation, glob/tilde and all unlisted options
-fail explicitly. It uses SFTP by default, not the legacy SCP wire protocol.
+before file mutation. Remote-to-remote, mixed devices, local-only copies and legacy `-O` fail
+explicitly. For current SCP operand syntax, recursion, preservation and
+glob/tilde support, see SSH_COMPATIBILITY.md and the feature documents. It uses SFTP by default, not the legacy SCP wire protocol.
 
 ## Architecture, failure and bounds
 
@@ -185,7 +189,9 @@ preservation or remote mutation evidence follows from those metadata checks.
 `pi-cp -r` supersedes the earlier recursion limitation for literal SCP trees only.
 See [SCP_RECURSION.md](SCP_RECURSION.md) for 48 local OpenSSH comparisons, link
 following, directory metadata, memory limitations and native verification gaps.
-SFTP console recursion remains unimplemented.
+SFTP console recursion is now implemented with its own link policy and local
+OpenSSH comparisons; see SFTP_CONSOLE_RECURSION.md. New native verification
+remains pending.
 
 ## Request size — 2026-10-28
 

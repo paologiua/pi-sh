@@ -7,8 +7,8 @@ Source atime is captured before reading contents. A successful copy overrides
 the target's prior permission bits and creation umask. Setuid, setgid, sticky,
 ownership, ACLs, extended attributes and nanosecond preservation are not included.
 This page covers regular files. SCP directory recursion is now implemented with
-its own mode/time rules in SCP_RECURSION.md; SFTP console recursion is still
-unimplemented.
+its own mode/time rules in SCP_RECURSION.md; SFTP console recursion now shares those directory rules, with local evidence
+in SFTP_CONSOLE_RECURSION.md.
 
 SFTP v3 times use unsigned 32-bit seconds. Fractional seconds are discarded and
 upload seconds are converted to uint32 by the pinned library, matching the

@@ -173,7 +173,7 @@ func TestResumeFlagBoundaries(t *testing.T) {
 	if err != nil || options.flush || options.resume || options.preserve || len(args) != 2 {
 		t.Fatal("post-operand flag interpreted")
 	}
-	_, _, err = transferFlags([]string{"-ar", "source"}, transferOptions{})
+	_, _, err = transferFlags([]string{"-az", "source"}, transferOptions{})
 	if err == nil {
 		t.Fatal("unsupported combined option accepted")
 	}

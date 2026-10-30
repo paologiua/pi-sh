@@ -29,6 +29,7 @@ type Console struct {
 	Flush          bool
 	Resume         bool
 	Preserve       bool
+	Recursive      bool
 	Program        string
 	// Progress is optional; pi-cp supplies scp's per-file terminal meter.
 	Progress            *progress.Display
@@ -282,8 +283,11 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		return false, nil
 	}
 	name, a := args[0], args[1:]
+	if name == "mget" || name == "mput" {
+		name = strings.TrimPrefix(name, "m")
+	}
 	unsortedListing := false
-	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve}
+	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
 	if name == "reget" || name == "reput" {
 		options.resume = true
 		name = strings.TrimPrefix(name, "re")
@@ -318,9 +322,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put reget reput mkdir rmdir rm rename chmod symlink readlink lpwd lcd quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chmod symlink readlink lpwd lcd quit exit bye help")
 		if err == nil {
-			_, err = fmt.Fprintln(c.Output, "get [-afp] remote [local]; put [-afp] local [remote]; reget/reput resume; -- before a leading-dash source")
+			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
 				_, err = fmt.Fprintln(c.Output, "ls [-f] [path]; -f lists in server order with bounded memory")
 			}
@@ -482,7 +486,7 @@ func (c *Console) get(remote, local string, options transferOptions) (result err
 			return errors.Join(statErr, target.Close())
 		}
 		if !localInfo.Mode().IsRegular() || localInfo.Size() < 0 || localInfo.Size() > info.Size() {
-			return errors.Join(errors.New("cannot resume download: invalid destination size or type"), target.Close())
+			return errors.Join(shown(os.ErrInvalid, "cannot resume download: invalid destination size or type"), target.Close())
 		}
 		offset = localInfo.Size()
 		if _, err = target.Seek(offset, io.SeekStart); err == nil {
@@ -543,7 +547,7 @@ func (c *Console) put(local, remote string, options transferOptions) (result err
 		// OpenSSH upload resume requires an existing, strictly shorter target.
 		// Its prefix is trusted, not compared with the source.
 		if create || destination.Size() < 0 || destination.Size() >= info.Size() {
-			return errors.New("cannot resume upload: destination must exist and be smaller than source")
+			return shown(os.ErrInvalid, "cannot resume upload: destination must exist and be smaller than source")
 		}
 		offset = destination.Size()
 		if _, err := source.Seek(offset, io.SeekStart); err != nil {

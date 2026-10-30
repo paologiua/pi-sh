@@ -23,7 +23,8 @@ Questo documento indica il punto di ripresa; non riduce il contratto originale.
 e `docs/REAL_DEVICE_TESTS.md` prevalgono sulle vecchie note di attesa.
 
 **Prima priorità: proseguire lo sviluppo delle funzioni mancanti, partendo
-dalla console SFTP e dalla sua ricorsione. Il proprietario ha autorizzato
+dai restanti comandi/opzioni della console SFTP. Alias mget/mput e ricorsione
+sono ora implementati con evidenza locale (milestone sotto). Il proprietario ha autorizzato
 l'integrazione locale del ramo Perl con il gate fallito noto e rinviato nuovi
 cicli completi di test alla prima versione funzionalmente completa (decisione
 del 2026-10-30, sotto). L'indagine sulle due intermittenze originarie è chiusa
@@ -98,8 +99,9 @@ prima `allow pasting`). Bash 5.2.37 di prova era in
 
 1. Controlla stato Git e matrice: il proprietario ha autorizzato l'integrazione
    del ramo Perl; riparti dalle funzioni incomplete della console SFTP
-   (`mget`/`mput`, ricorsione, comandi/opzioni mancanti; SFTP_BACKEND.md e
-   SSH_COMPATIBILITY.md). Il codice corrente le rifiuta esplicitamente.
+   (`ls` completo, `lumask`, `ln`, `chown`/`chgrp`, `df`/`version`, comandi
+   locali, progress e tuning; SFTP_BACKEND.md e SSH_COMPATIBILITY.md).
+   Alias e ricorsione sono implementati localmente; restano le nuove prove native.
 2. Prosegui con CLI/configurazione e lifecycle, poi forwarding e portabilità,
    seguendo il backlog. Mantieni distinti sviluppo locale, prove native già
    concluse e verifiche ancora necessarie. Nuove scritture, listener o fault
@@ -223,6 +225,21 @@ campagna finale dovrà includere gli episodi locali registrati e le verifiche
 ancora aperte della matrice. La prima versione non è dichiarata completa finché
 funzioni mancanti e differenze aperte non sono implementate o motivate.
 
+## Milestone console SFTP — 2026-10-30
+
+Implementati `mget`/`mput` come alias, `-r` globale e `-r`/`-R` sui comandi
+get/put/reget/reput e alias. Dentro gli alberi la console salta link e file
+speciali con avviso; pi-cp continua a seguirli. Ripresa, preservazione e flush
+sono applicati ai file figli. Gli errori ordinari non bloccano i fratelli;
+perdita del protocollo/cancellazione interrompe. Nessun nuovo software remoto,
+nessuna modifica agli adattatori Perl/Bash o al fork SFTP.
+
+Confronti locali e limiti in SFTP_CONSOLE_RECURSION.md; stato delle verifiche
+mirate in TESTING.md. Solo Mac e directory temporanee: non è evidenza nativa
+per i nuovi comandi. Il gate storico `RESULT fail=1` e i casi non classificati
+restano aperti. Nessun nuovo ciclo completo/stress né sessione Pi. Backlog
+della console e resto del contratto ancora aperti; prima versione incompleta.
+
 ## Correzioni recenti da preservare
 
 ### Rami integrati (2026-10-26/27)
@@ -327,7 +344,8 @@ goroutine diverse; un comando finito usciva a volte con 255), corretta con test.
 Ogni riga di `docs/SSH_COMPATIBILITY.md` è stata ricontrollata: tutti i test citati
 esistono (controllo automatico dei nomi), le prove native corrispondono a
 REAL_DEVICE_TESTS.md, le opzioni che risultavano `U` ma sono rifiutate con motivo
-(scp `-O`, `-3`, `-R`, `-D`, `-S`, `-X`; sftp `-R`, `-r`) sono indicate come tali,
+(scp `-O`, `-3`, `-R`, `-D`, `-S`, `-X`; sftp `-R`) sono indicate come tali
+(`-r` SFTP è stato poi implementato nella milestone del 2026-10-30),
 `-Z` (inesistente in OpenSSH 10.2) e fingerprint/visual host key sono esclusi con
 motivo e test, «Not applicable» indica comportamenti decisi solo sul client.
 Righe ancora aperte (lavoro rimanente):
@@ -339,7 +357,7 @@ Righe ancora aperte (lavoro rimanente):
 - SCP: nomi con newline/due punti/trattino iniziale e disk-full sul Pi (servono
   scritture, quindi un piano); più sorgenti e download ricorsivo verificati
   2026-10-28; `-X`, `-3`/`-R`, `-O` aperti (rifiutati).
-- SFTP: `mget`/`mput`, `-r` della console, flag di `ls`, `lumask`, `ln`, `chown`/
+- SFTP: verifica nativa dei nuovi alias/ricorsione; flag di `ls`, `lumask`, `ln`, `chown`/
   `chgrp`, `df`/`version`, `lls`/`lmkdir`/`!`, `progress`, `-R`; file sparsi e >32 bit.
 - Forwarding: bind jolly/IPv6 di -R verificati sul Pi (2026-10-28, NATIVE_RBIND_PLAN.md); -R con molte connessioni verificato (16/64/65, tutte complete; frame uniti
   in record: ~90 KiB/s per direzione invece di ~80; poi finestra
@@ -383,7 +401,7 @@ Righe ancora aperte (lavoro rimanente):
 | Area | Lavoro ancora necessario | Documenti da leggere quando la affronti |
 | --- | --- | --- |
 | Terminale/lifecycle | Shell interattiva diretta senza companion; sessioni lunghe; segnali predefiniti; sospensione/ripresa reale; job annidati; perdita rete/autorizzazione; verifica discendenti e cleanup; escape mancanti | TTY_COMMANDS, TTY_JOB_CONTROL, TTY_COMPLETION, COMMAND_CANCELLATION, ESCAPES |
-| File | Prove native CLI mancanti (le verifiche base e glob/tilde sono già in REAL_DEVICE_TESTS.md); `~user` (richiede expand-path nel fork); prove ripetute/più grandi; ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
+| File | Prove native CLI mancanti (le verifiche base e glob/tilde sono già in REAL_DEVICE_TESTS.md); `~user` (richiede expand-path nel fork); prove ripetute/più grandi; verifica nativa della ricorsione console SFTP; inventario nomi/piattaforme; hard link/sparse/>32 bit; disk-full/permessi/interruzioni; progress/banda; listing ordinato con memoria limitata; comandi SFTP mancanti | SFTP_BACKEND, SFTP_METADATA, SFTP_RESUME, SFTP_FLUSH, SCP_RECURSION, SFTP_LISTING |
 | CLI/config | Verifica sul Pi di Match e policy di connessione (diagnostica `-v` verificata); proposta `-l email` per l'account Connect; CanonicalizeHostname; configurazioni predefinite; resto dei token/direttive; famiglia IP/binding; ambiente/RemoteCommand/LocalCommand/background/no-shell | CLI_OPTIONS, CONFIGURATION, LOCAL_INSPECTION, SSH_COMPATIBILITY |
 | Forwarding | -R implementato e verificato sul Pi (2026-10-28, regole sshd `GatewayPorts clientspecified`; dopo il cambio dei record rifatti sul Pi half-close, velocità, `~#` e `-R 0`); molti stream, sessioni lunghe, perdita di connessione | FORWARDING, PROTOCOL, SERVICE_CONSTRAINTS |
 | Portabilità | Esecuzione reale Linux/Windows e iSH fisico; memoria/syscall/rete/terminale; iSH non è verificato dalla sola compilazione 386 | ISH_COMPATIBILITY, LOCAL_IO, TERMINAL, TESTING |

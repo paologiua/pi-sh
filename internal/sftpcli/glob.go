@@ -32,6 +32,13 @@ func shown(err error, format string, args ...any) error {
 // safeError keeps presentable errors and otherwise applies the backend's
 // redacting classification.
 func safeError(err error) error {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var safe []error
+		for _, child := range joined.Unwrap() {
+			safe = append(safe, safeError(child))
+		}
+		return errors.Join(safe...)
+	}
 	var s *shownError
 	if errors.As(err, &s) {
 		return err
@@ -64,7 +71,7 @@ func (c *Console) report(err error) {
 	if program == "" {
 		program = "pi-sftp"
 	}
-	fmt.Fprintf(c.Errors, "%s: %v\n", program, err)
+	fmt.Fprintf(c.Errors, "%s: %v\n", program, safeError(err))
 }
 
 // matchError labels a per-match failure with its path when several paths were
@@ -78,7 +85,7 @@ func matchError(several bool, name string, err error) error {
 		return err
 	}
 	safe := sftpclient.SafeError(err)
-	return shown(safe, "%s: %v", display(name), safe)
+	return shown(err, "%s: %v", display(name), safe)
 }
 
 // remotePattern makes an sftp argument absolute like OpenSSH's
@@ -101,7 +108,12 @@ func (c *Console) remoteGlob(ctx context.Context, pattern string, opt pathglob.O
 // Windows '\' is a path separator, so the unescaped argument is used literally.
 func (c *Console) localGlob(ctx context.Context, arg string) (pathglob.Result, error) {
 	if runtime.GOOS == "windows" {
-		return pathglob.Result{Paths: []pathglob.Match{{Path: c.local(pathglob.Unescape(arg))}}}, nil
+		name := c.local(pathglob.Unescape(arg))
+		info, err := os.Stat(name)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return pathglob.Result{}, err
+		}
+		return pathglob.Result{Paths: []pathglob.Match{{Path: name, Info: info}}}, nil
 	}
 	pattern := arg
 	if !filepath.IsAbs(arg) && c.LocalDir != "" {
@@ -140,7 +152,8 @@ func (c *Console) globGet(ctx context.Context, src string, dst *string, options 
 			return err
 		}
 		remote := unmarked(m)
-		if m.Marked {
+		directory := strings.HasSuffix(m.Path, "/") || m.Info != nil && m.Info.IsDir()
+		if directory && !options.recursive {
 			f.add(shown(os.ErrInvalid, "download %s: not a regular file", display(m.Path)))
 			continue
 		}
@@ -149,6 +162,9 @@ func (c *Console) globGet(ctx context.Context, src string, dst *string, options 
 			local = c.local(*dst)
 		} else {
 			base, err := localBase(remote)
+			if directory && options.recursive && treeBase(remote, false) == "." {
+				base, err = ".", nil
+			}
 			if err != nil {
 				f.add(matchError(several, remote, err))
 				continue
@@ -157,7 +173,21 @@ func (c *Console) globGet(ctx context.Context, src string, dst *string, options 
 		}
 		opts := options
 		opts.named = dst == nil
-		f.add(matchError(several, remote, c.get(remote, local, opts)))
+		if directory && options.recursive {
+			if dst != nil {
+				if info, err := os.Stat(local); err == nil && info.IsDir() {
+					base := treeBase(remote, false)
+					if base != "." && !treeName(base, true) {
+						f.add(os.ErrInvalid)
+						continue
+					}
+					local = treeAppend(local, base, true)
+				}
+			}
+			f.add(matchError(several, remote, c.consoleTree(ctx, false, remote, local, opts)))
+		} else {
+			f.add(matchError(several, remote, c.get(remote, local, opts)))
+		}
 	}
 	return f.last
 }
@@ -179,17 +209,28 @@ func (c *Console) globPut(ctx context.Context, src string, dst *string, options 
 			return err
 		}
 		local := unmarked(m)
-		if m.Marked {
+		directory := strings.HasSuffix(m.Path, "/") || m.Info != nil && m.Info.IsDir()
+		if directory && !options.recursive {
 			f.add(shown(os.ErrInvalid, "local \"%s\" is not a regular file", display(m.Path)))
 			continue
 		}
-		remote := filepath.Base(local)
+		remote := treeBase(local, true)
 		if dst != nil {
 			remote = *dst
 		}
 		opts := options
 		opts.named = dst == nil
-		f.add(matchError(several, local, c.put(local, c.remote(remote), opts)))
+		if directory && options.recursive {
+			remote = c.remote(remote)
+			if dst != nil {
+				if info, err := c.Client.Stat(remote); err == nil && info.IsDir() {
+					remote = treeAppend(remote, treeBase(local, true), false)
+				}
+			}
+			f.add(matchError(several, local, c.consoleTree(ctx, true, local, remote, opts)))
+		} else {
+			f.add(matchError(several, local, c.put(local, c.remote(remote), opts)))
+		}
 	}
 	return f.last
 }

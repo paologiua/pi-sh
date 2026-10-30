@@ -11,6 +11,7 @@ func TestSFTPOptionDecisions(t *testing.T) {
 		args       []string
 		diagnostic string
 	}{
+		{[]string{"--direct-login", "-rpfb-", "-oRequestTTY=force", "pi"}, "pipe/no-TTY"},
 		{[]string{"--direct-login", "-4", "pi"}, "address family"},
 		// -A is agent forwarding and -J ProxyJump (not X11 or tunnels).
 		{[]string{"--direct-login", "-A", "pi"}, "agent forwarding"},
@@ -18,7 +19,6 @@ func TestSFTPOptionDecisions(t *testing.T) {
 		{[]string{"--direct-login", "-6", "pi"}, "address family"},
 		{[]string{"--direct-login", "-C", "pi"}, "compression"},
 		{[]string{"--direct-login", "-N", "pi"}, "not quiet"},
-		{[]string{"--direct-login", "-r", "pi"}, "recursive"},
 		{[]string{"--direct-login", "-B", "32768", "pi"}, "buffer size"},
 		{[]string{"--direct-login", "-R", "64", "pi"}, "request count"},
 		{[]string{"--direct-login", "-c", "aes128-ctr", "pi"}, "algorithms"},

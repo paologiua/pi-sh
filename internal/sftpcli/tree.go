@@ -90,7 +90,10 @@ func (c *Console) copyTreeRoot(ctx context.Context, upload bool, source, target 
 }
 
 func (c *Console) treeFile(upload bool, source, target string) error {
-	options := transferOptions{preserve: c.Preserve}
+	return c.treeTransferFile(upload, source, target, transferOptions{preserve: c.Preserve})
+}
+
+func (c *Console) treeTransferFile(upload bool, source, target string, options transferOptions) error {
 	if upload {
 		return c.put(source, target, options)
 	}
@@ -100,6 +103,10 @@ func (c *Console) treeFile(upload bool, source, target string) error {
 // The depth bound matches OpenSSH 10.2's SFTP directory-copy bound. Ancestor
 // identities also reject cycles before producing 64 repeated destination trees.
 func (c *Console) treeDir(ctx context.Context, upload bool, source, target string, info os.FileInfo, localAncestors []os.FileInfo, remoteAncestors []string) (result error) {
+	return c.treeDirOptions(ctx, upload, source, target, info, localAncestors, remoteAncestors, transferOptions{preserve: c.Preserve}, false)
+}
+
+func (c *Console) treeDirOptions(ctx context.Context, upload bool, source, target string, info os.FileInfo, localAncestors []os.FileInfo, remoteAncestors []string, options transferOptions, console bool) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -128,7 +135,7 @@ func (c *Console) treeDir(ctx context.Context, upload bool, source, target strin
 
 	// Capture timestamps before enumeration changes directory atime.
 	var metadata preservedMetadata
-	if upload && c.Preserve {
+	if upload && options.preserve {
 		var ok bool
 		metadata.atime, ok = localAccessTime(info)
 		if !ok {
@@ -162,10 +169,10 @@ func (c *Console) treeDir(ctx context.Context, upload bool, source, target strin
 		}
 	}
 	if !dest.IsDir() {
-		return errors.New("directory copy conflicts with a non-directory destination")
+		return shown(os.ErrInvalid, "directory copy conflicts with a non-directory destination")
 	}
 	adjustLocalMode := mode|0300 != mode
-	if upload || adjustLocalMode || c.Preserve {
+	if upload || adjustLocalMode || options.preserve {
 		// OpenSSH uploads restore source directory permissions even without -p.
 		// Downloads chmod only when temporary owner write/execute bits were needed;
 		// otherwise an existing directory retains its mode even with -p.
@@ -180,14 +187,14 @@ func (c *Console) treeDir(ctx context.Context, upload bool, source, target strin
 		defer func() {
 			if upload {
 				result = errors.Join(result, c.remoteMetadataResult("remote directory chmod failed", c.Client.Chmod(target, mode)))
-				if c.Preserve {
+				if options.preserve {
 					result = errors.Join(result, c.remoteMetadataResult("remote directory set times failed", c.Client.Chtimes(target, metadata.atime, metadata.mtime)))
 				}
 			} else {
 				if adjustLocalMode {
 					c.metadataWarning("local directory chmod failed", os.Chmod(target, mode))
 				}
-				if c.Preserve {
+				if options.preserve {
 					if stat, ok := info.Sys().(*sftp.FileStat); ok {
 						c.metadataWarning("local directory set times failed", os.Chtimes(target, stat.AccessTime(), info.ModTime()))
 					} else {
@@ -207,23 +214,55 @@ func (c *Console) treeDir(ctx context.Context, upload bool, source, target strin
 		}
 		child := treeAppend(source, name, upload)
 		destination := treeAppend(target, name, !upload)
-		childInfo, err := c.treeStat(upload, true, child)
+		var childInfo os.FileInfo
+		var err error
+		if console {
+			if upload {
+				childInfo, err = os.Lstat(child)
+			} else {
+				childInfo, err = c.Client.Lstat(child)
+			}
+		} else {
+			childInfo, err = c.treeStat(upload, true, child)
+		}
 		if err != nil {
 			return err
 		}
 		if childInfo.IsDir() {
-			return c.treeDir(ctx, upload, child, destination, childInfo, localAncestors, remoteAncestors)
+			return c.treeDirOptions(ctx, upload, child, destination, childInfo, localAncestors, remoteAncestors, options, console)
 		}
 		if !childInfo.Mode().IsRegular() {
+			if console {
+				c.report(shown(os.ErrInvalid, "%s: not a regular file", display(child)))
+				return nil // OpenSSH skips links and special entries without failing.
+			}
 			return errors.New("directory entry is not a regular file or directory")
 		}
 		if dest, err := c.treeStat(upload, false, destination); err == nil && dest.IsDir() {
-			return errors.New("regular file conflicts with a directory destination")
+			return shown(os.ErrInvalid, "regular file conflicts with a directory destination")
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		return c.treeFile(upload, child, destination)
+		fileOptions := options
+		fileOptions.named = true
+		return c.treeTransferFile(upload, child, destination, fileOptions)
 	}
+	failed := failures{c: c}
+	visitEntry := func(name string) error {
+		err := visit(name)
+		if err == nil || !console {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !treeRecoverable(err) {
+			return err
+		}
+		failed.add(matchError(true, treeAppend(source, name, upload), err))
+		return nil
+	}
+	defer func() { result = errors.Join(result, failed.last) }()
 	if upload {
 		dir, err := os.Open(source)
 		if err != nil {
@@ -233,7 +272,7 @@ func (c *Console) treeDir(ctx context.Context, upload bool, source, target strin
 		for {
 			entries, readErr := dir.ReadDir(64)
 			for _, entry := range entries {
-				if err := visit(entry.Name()); err != nil {
+				if err := visitEntry(entry.Name()); err != nil {
 					return err
 				}
 			}
@@ -246,6 +285,50 @@ func (c *Console) treeDir(ctx context.Context, upload bool, source, target strin
 		}
 	}
 	return c.Client.ReadDirEach(ctx, source, func(entry os.FileInfo) error {
-		return visit(entry.Name())
+		return visitEntry(entry.Name())
 	})
+}
+
+// Continue ordinary file/status errors, but never keep walking a lost protocol.
+func treeRecoverable(err error) bool {
+	var status *sftp.StatusError
+	var local *os.PathError
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if !treeRecoverable(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return treeRecoverable(wrapped.Unwrap())
+	}
+	if errors.As(err, &status) {
+		return status.Code != 6 && status.Code != 7
+	}
+	return errors.As(err, &local) || errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrInvalid)
+}
+
+// consoleTree receives the already selected destination (including any basename).
+// Top-level source links are followed; contained links are skipped, as in sftp.
+func (c *Console) consoleTree(ctx context.Context, upload bool, source, target string, options transferOptions) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !upload {
+		canonical, err := c.Client.RealPath(source)
+		if err != nil {
+			return err
+		}
+		source = canonical
+	}
+	info, err := c.treeStat(upload, true, source)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("recursive source is not a directory")
+	}
+	return c.treeDirOptions(ctx, upload, source, target, info, nil, nil, options, true)
 }

@@ -68,8 +68,8 @@ Open work remains:
   flags, disk-full/late-close interruptions and special directory bits need
   further evidence. Cancellation during an in-flight SFTP operation depends on
   the surrounding session's transport cancellation.
-- SFTP console `get -r`/`put -r` is still unimplemented; it must not silently inherit
-  SCP's link-following policy. Remote download globs and `~`/`~/` are handled
+- SFTP console `get -r`/`put -r` now uses an explicit skip-contained-links
+  policy (local evidence only; SFTP_CONSOLE_RECURSION.md). Remote download globs and `~`/`~/` are handled
   as in scp's SFTP mode (GLOB_TILDE.md); sparse files, progress and rate
   control remain separate work.
 - Native Pi, Windows/Linux runtime and physical iSH recursive checks are pending.

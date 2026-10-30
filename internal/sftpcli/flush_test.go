@@ -61,7 +61,7 @@ func TestTransferFlagBoundaries(t *testing.T) {
 			t.Fatal("transfer argument boundary", got, options, err)
 		}
 	}
-	for _, args := range [][]string{{"-r", "file"}, {"-fr", "file"}, {"-R", "file"}, {"--f", "file"}} {
+	for _, args := range [][]string{{"-z", "file"}, {"-fz", "file"}, {"-Z", "file"}, {"--f", "file"}} {
 		if _, _, err := transferFlags(args, transferOptions{}); err == nil {
 			t.Fatal("unsupported flags accepted", args)
 		}

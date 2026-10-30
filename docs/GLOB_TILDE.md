@@ -47,7 +47,8 @@ an unquoted `#` ends the line even inside a word.
 Several matches into a destination that is not a directory fail before any
 transfer, with OpenSSH's wording. Every match is attempted; each failure is
 printed with its path and the command fails. Directory matches of `get`/`put`
-fail as "not a regular file" (no `-r` in the console yet). `ls` of glob results
+fail as "not a regular file" without recursion. `mget`/`mput` share the same
+expansion; console recursion is documented in SFTP_CONSOLE_RECURSION.md. `ls` of glob results
 prints paths relative to the working directory, one per line, with the `/` mark,
 matching `ls -1`; a directory argument still prints basenames (existing
 difference). Remote `~` is literal, exactly as OpenSSH 10.2 sftp (`cd ~` and

@@ -119,6 +119,11 @@ go build -o bin/pi-cp ./cmd/pi-cp
 ./bin/pi-sftp --direct-login --read-only raspberrypi
 ```
 
+The console also supports `mget`/`mput`, command `get -r`/`put -r` and global
+`-r`. Recursive console transfers skip contained source links; `pi-cp -r`
+follows them. This console increment has local OpenSSH comparisons only;
+see [console recursion and limits](docs/SFTP_CONSOLE_RECURSION.md).
+
 See [SFTP backend, supported operations and limits](docs/SFTP_BACKEND.md).
 Recursive downloads and `ls -f` enumerate remote names incrementally; sorted `ls`
 still accumulates a directory. See [listing memory and provenance](docs/SFTP_LISTING.md).

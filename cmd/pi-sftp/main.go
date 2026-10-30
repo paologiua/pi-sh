@@ -35,7 +35,8 @@ func app() int {
 	readOnly := f.Bool("read-only", false, "start the existing server in read-only mode; reject remote writes")
 	flush := f.Bool("f", false, "request a flush after each transfer (upload requires server fsync extension)")
 	resume := f.Bool("a", false, "resume transfers from the destination's size; the existing prefix is trusted, not compared")
-	preserve := f.Bool("p", false, "preserve regular-file permission bits and access/modification times")
+	recursive := f.Bool("r", false, "recursively transfer directories without following contained source symlinks")
+	preserve := f.Bool("p", false, "preserve file/directory permission bits and access/modification times")
 	batch := f.String("b", "", "batch file, or - for stdin")
 	config := f.String("F", "none", "explicit configuration file, or none")
 	port := f.String("P", "", "SSH port (always refused: Connect has no SSH port)")
@@ -48,7 +49,6 @@ func app() int {
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
 		"A": forwardspec.ErrAgentForwarding.Error(),
 		"N": "pi-sftp's connection layer is not quiet by default; use -v/-q or LogLevel",
-		"r": "recursive console transfers are not implemented; use pi-cp -r",
 	}, map[string]string{
 		"B": "SFTP buffer size tuning is not implemented", "R": "SFTP request count tuning is not implemented",
 		"X": "SFTP buffer and request tuning is not implemented",
@@ -64,7 +64,7 @@ func app() int {
 		return 1
 	}
 	if *direct == *browser || f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
+		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqrv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
 		return 1
 	}
 	if _, err := sftpclient.ServerCommand(*server); err != nil {
@@ -127,7 +127,7 @@ func app() int {
 		sessionFailure(log, err)
 		return 255
 	}
-	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != ""}
+	console := sftpcli.Console{Client: session.Client, RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != ""}
 	err = console.Run(ctx)
 	closeErr := session.Close()
 	if err != nil || closeErr != nil {

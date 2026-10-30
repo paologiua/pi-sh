@@ -1,7 +1,8 @@
 # SFTP transfer resume — local evidence, 2026-10-20
 
 pi-sftp accepts global `-a`, command `get -a`/`put -a`, and `reget`/`reput`.
-These apply to single literal regular-file paths; combinations such as `-af`
+These apply to regular-file glob matches and, with console recursion, each
+regular child (SFTP_CONSOLE_RECURSION.md); combinations such as `-af`
 retain flush handling. An operand or `--` ends command option parsing. pi-cp
 does not gain resume or a new option from this change.
 

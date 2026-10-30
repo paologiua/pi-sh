@@ -1,6 +1,6 @@
 # Incremental remote directory enumeration
 
-Recursive `pi-cp -r` downloads now consume one SFTP NAME packet at a time, instead
+Recursive `pi-cp -r` and console SFTP downloads now consume one SFTP NAME packet at a time, instead
 of retaining the entire listing for each directory. Uploads keep their existing
 64-entry local batches. The new `pi-sftp ls -f [path]` lists names in server order
 with the same incremental reader; compact `-ff` and `--` are accepted. Unknown

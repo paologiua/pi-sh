@@ -11,7 +11,7 @@ import (
 // transferFlags stops at an operand or --; unsupported flags fail before I/O.
 // named marks a destination derived from the source name because no target
 // was given: as in OpenSSH sftp it is never a directory to write into.
-type transferOptions struct{ flush, resume, preserve, named bool }
+type transferOptions struct{ flush, resume, preserve, named, recursive bool }
 
 func transferFlags(args []string, options transferOptions) ([]string, transferOptions, error) {
 	for i, arg := range args {
@@ -23,6 +23,8 @@ func transferFlags(args []string, options transferOptions) ([]string, transferOp
 		}
 		for _, option := range arg[1:] {
 			switch option {
+			case 'r', 'R':
+				options.recursive = true
 			case 'f':
 				options.flush = true
 			case 'a':

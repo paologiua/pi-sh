@@ -1321,3 +1321,34 @@ checks accompany subsequent implementation work; full/stress campaigns are
 deferred as requested, and the checklist above remains the final campaign's
 reference. The closed intermittencies and failed local WebRTC gate stay recorded
 for that campaign rather than being repeatedly rerun now.
+
+### SFTP console milestone — 2026-10-30 (local only)
+
+Implemented `mget`/`mput`, top-level `-r` and command `-r`/`-R` recursion.
+`SFTP_CONSOLE_RECURSION.md` records the contract and remaining differences.
+The new differential runs 96 local OpenSSH 10.2p1 SFTP cases, including
+nested conflicts and continuing siblings, both directions, global/command
+flags, symlink policy, resume and metadata combinations. It compares status,
+trees/contents/modes/links and selected preserved mtimes. The actual-server
+flush fixture now also exercises a nested recursive alias upload/download,
+with advertised and disabled fsync; successful advertisement verifies WRITE,
+fsync and CLOSE ordering. Error-classification/redaction tests include joined
+ordinary and transport failures; cancellation is checked before mutation.
+
+Focused validation passed (the final reporting-only redaction adjustment was
+then checked with the specific error/redaction tests and repeated vet/builds):
+
+- `go test -race ./internal/sftpcli ./internal/copycli ./cmd/pi-sftp ./cmd/pi-cp -count=1 -timeout=120s`
+- `go vet ./internal/sftpcli ./internal/copycli ./cmd/pi-sftp ./cmd/pi-cp`
+- `CGO_ENABLED=0 GOOS=linux GOARCH=386 GO386=softfloat go build ./...`
+- `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...`
+- `go test -race ./internal/sftpcli -run 'TestRecursiveErrorClassificationAndRedaction|TestMultipleMatchFailuresAreEachReported' -count=1 -timeout=30s`
+- `git diff --check`
+
+No Pi/Connect/SSH session, remote writes/listeners, complete/stress campaign,
+push or publication. These focused checks do not supersede the historical
+`RESULT fail=1`, classify its cause, resolve the two original episodes or
+provide a result for the unexecuted shell-free WebRTC reduction. The complete
+checklist remains the final campaign reference. Linux/386 and Windows builds
+are compile evidence; physical iSH and native platform/console recursion
+verification remain pending. The product backlog is still open.
