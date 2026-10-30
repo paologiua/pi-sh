@@ -322,7 +322,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 		if !need(0) {
 			return false, bad
 		}
-		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chmod symlink readlink lpwd lcd quit exit bye help")
+		_, err = fmt.Fprintln(c.Output, "pwd cd ls get put mget mput reget reput mkdir rmdir rm rename chmod symlink readlink version lpwd lcd quit exit bye help")
 		if err == nil {
 			_, err = fmt.Fprintln(c.Output, "get/mget [-afpRr] remote [local]; put/mput [-afpRr] local [remote]; reget/reput resume; -- before a leading-dash source")
 			if err == nil {
@@ -332,6 +332,11 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 				_, err = fmt.Fprintln(c.Output, "get, ls, rm and chmod expand remote globs; put expands local globs; quote or backslash-escape * ? [ to match them literally")
 			}
 		}
+	case "version":
+		if !need(0) {
+			return false, bad
+		}
+		_, err = fmt.Fprintln(c.Output, "SFTP protocol version 3")
 	case "pwd":
 		if !need(0) {
 			return false, bad
