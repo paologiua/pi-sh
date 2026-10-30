@@ -28,6 +28,7 @@ the preceding recursion milestone was recorded separately before these changes.
 | ls | -1afhlnrSt, columns, prefixes, long mode/date/size/ownership layout; 16 exact local OpenSSH comparisons in TestLsOptionsAgainstOpenSSH; -1f streams | Name lookup uses users-groups-by-id v1, older servers use their v3 longname for plain -l; locale/control-name/tie-order edge parity and native checks open |
 | pi-sftp -N | Clears command quiet mode even with batch/-q; does not re-enable the progress meter; TestNoisyOverridesBatchNotices and frontend pre-auth parsing | Connect authentication diagnostics remain product-specific |
 | pi-sftp -B | Sets copy and SFTP packet payload size; default 32768, maximum effective 256KiB minus packet overhead; TestTransferBufferSize and frontend parser case | Large requested sizes clamped to receiver bound; native tuning pending |
+| pi-sftp -R | 1–262144 maximum requests, default 64; bounded offset-based parallel windows for ordinary regular transfers; TestParallelTransferLocalServer | Resume intentionally stays sequential to preserve append ordering; partial failures retain contiguous-prefix accounting, native/fault campaigns pending |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

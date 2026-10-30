@@ -330,3 +330,22 @@ func TestLsOptionsAgainstOpenSSH(t *testing.T) {
 		})
 	}
 }
+
+func TestParallelTransferLocalServer(t *testing.T) {
+	client, _ := preservationServer(t)
+	local, remote := t.TempDir(), t.TempDir()
+	data := bytes.Repeat([]byte{0, 255, 1}, 24001)
+	if err := os.WriteFile(filepath.Join(local, "source"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c := Console{Client: client, LocalDir: local, RemoteDir: remote, BufferSize: 1024, Requests: 4, Batch: true}
+	for _, args := range [][]string{{"put", "source", "target"}, {"get", "target", "result"}} {
+		if _, err := c.Execute(context.Background(), args); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := os.ReadFile(filepath.Join(local, "result"))
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatal("parallel roundtrip", err)
+	}
+}

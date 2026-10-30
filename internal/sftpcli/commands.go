@@ -35,6 +35,8 @@ type Console struct {
 	Recursive      bool
 	LocalUmask     *os.FileMode
 	BufferSize     int
+	Requests       int
+	Context        context.Context
 	Program        string
 	// Progress is optional; pi-cp supplies scp's per-file terminal meter.
 	Progress            *progress.Display
@@ -313,6 +315,7 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if c.initialRemoteDir == "" && c.RemoteDir != "" {
 		c.initialRemoteDir = c.RemoteDir
 	}
+	c.Context = ctx
 	name, a := strings.ToLower(args[0]), args[1:]
 	if name == "lls" {
 		return false, c.localShell(ctx, localLSCommand(strings.Join(a, " ")))
@@ -699,7 +702,7 @@ func (c *Console) get(remote, local string, options transferOptions) (result err
 			return errors.Join(err, target.Close())
 		}
 	}
-	n, err := c.copyData(target, source, path.Base(remote), info.Size(), offset)
+	n, err := c.copyDataMode(target, source, path.Base(remote), info.Size(), offset, options.resume)
 	if resume && err != nil {
 		err = errors.Join(err, target.Truncate(offset+n))
 	}
@@ -791,7 +794,7 @@ func (c *Console) put(local, remote string, options transferOptions) (result err
 			return errors.Join(err, target.Close())
 		}
 	}
-	n, err := c.copyData(target, source, filepath.Base(local), info.Size(), offset)
+	n, err := c.copyDataMode(target, source, filepath.Base(local), info.Size(), offset, options.resume)
 	if resume && err != nil {
 		err = errors.Join(err, target.Truncate(offset+n))
 	}

@@ -1,17 +1,40 @@
 package sftpcli
 
 import (
+	"context"
 	"io"
 	"pi-sh/internal/progress"
 )
 
 func (c *Console) copyData(dst io.Writer, src io.Reader, name string, size, offset int64) (int64, error) {
-	if c.Progress == nil || c.ProgressDisabled {
-		return copyFileDataBuffer(dst, src, c.BufferSize)
+	return c.copyDataMode(dst, src, name, size, offset, false)
+}
+
+func (c *Console) copyDataMode(dst io.Writer, src io.Reader, name string, size, offset int64, sequential bool) (int64, error) {
+	var meter *progress.Transfer
+	if c.Progress != nil && !c.ProgressDisabled {
+		meter = c.Progress.Start(name, size, offset)
+		defer meter.Stop()
 	}
-	meter := c.Progress.Start(name, size, offset)
-	defer meter.Stop()
-	return copyFileDataBuffer(progressWriter{dst, meter}, src, c.BufferSize)
+	if !sequential && c.Requests > 1 {
+		reader, rok := src.(io.ReaderAt)
+		writer, wok := dst.(io.WriterAt)
+		if rok && wok {
+			ctx := c.Context
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			chunk := c.BufferSize
+			if chunk <= 0 {
+				chunk = 32768
+			}
+			return parallelCopy(ctx, writer, reader, size, offset, chunk, c.Requests, meter)
+		}
+	}
+	if meter != nil {
+		dst = progressWriter{dst, meter}
+	}
+	return copyFileDataBuffer(dst, src, c.BufferSize)
 }
 
 type progressWriter struct {
