@@ -8,6 +8,7 @@ the preceding recursion milestone was recorded separately before these changes.
 
 | Command | Behavior and essential local evidence | Native / remaining limits |
 | --- | --- | --- |
+| chdir | Alias of cd; silent success, `TestChdirAlias` | Same remote path policy as cd; no new native check |
 | version | `SFTP protocol version 3`, byte-for-byte against the installed OpenSSH output; `TestVersionConsoleOutput` | v3 is the only version negotiated by the pinned backend; no new native check |
 
 Command names are case-insensitive (`TestCommandsIgnoreCase`), matching OpenSSH.

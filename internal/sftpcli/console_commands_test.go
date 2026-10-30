@@ -30,3 +30,16 @@ func TestCommandsIgnoreCase(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestChdirAlias(t *testing.T) {
+	c := Console{Client: memoryClient(t), RemoteDir: "/"}
+	if err := c.Client.Mkdir("/sub"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Execute(context.Background(), []string{"chdir", "sub"}); err != nil {
+		t.Fatal(err)
+	}
+	if c.RemoteDir != "/sub" {
+		t.Fatal(c.RemoteDir)
+	}
+}

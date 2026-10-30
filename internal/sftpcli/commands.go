@@ -286,6 +286,9 @@ func (c *Console) Execute(ctx context.Context, args []string) (bool, error) {
 	if name == "mget" || name == "mput" {
 		name = strings.TrimPrefix(name, "m")
 	}
+	if name == "chdir" {
+		name = "cd"
+	}
 	unsortedListing := false
 	options := transferOptions{flush: c.Flush, resume: c.Resume, preserve: c.Preserve, recursive: c.Recursive}
 	if name == "reget" || name == "reput" {
