@@ -18,7 +18,6 @@ import (
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/forwardspec"
-	"pi-sh/internal/progress"
 	"pi-sh/internal/sftpcli"
 	"pi-sh/internal/sftpclient"
 	"pi-sh/internal/sshconfig"
@@ -166,7 +165,7 @@ func app() int {
 	if *noisy || (!quietProgress && *batch == "") {
 		fmt.Fprintf(os.Stderr, "Connected to %s.\n", parsed.Host)
 	}
-	console := sftpcli.Console{Client: session.Client, Bandwidth: bandwidth, Requests: int(*requests), BufferSize: sftpclient.TransferBuffer(*buffer), RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: progress.NewTerminal(os.Stdout, false), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
+	console := sftpcli.Console{Client: session.Client, Bandwidth: bandwidth, Requests: int(*requests), BufferSize: sftpclient.TransferBuffer(*buffer), RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: sftpProgress(os.Stdout, os.Stderr), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
 	err = console.Run(ctx)
 	closeErr := session.Close()
 	if err != nil || closeErr != nil {
