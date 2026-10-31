@@ -47,6 +47,10 @@ func app() int {
 	batch := f.Bool("B", false, "batch mode (BatchMode yes): fails before any prompt, since Connect sign-in always needs a person")
 	f.Bool("s", false, "use the SFTP protocol (always the case)")
 	f.Bool("T", false, "no effect: strict filename checking applies only to the legacy SCP protocol, as in scp's SFTP mode")
+	f.Usage = func() {
+		fmt.Fprintln(f.Output(), "usage: pi-cp (--direct-login|--browser) [-Bpqrv] [-F file|none] [-l limit] [-o option] [-X setting] source ... destination\n       remote operand: [email::]device:path\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		cliargs.PrintOptions(f)
+	}
 	cliargs.Refuse(f, map[string]string{
 		"3": "remote-to-remote copies are not implemented",
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,

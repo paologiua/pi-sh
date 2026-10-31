@@ -1,5 +1,10 @@
 # Tests and verification — 2026-10-21
 
+Reusable entry points: `./scripts/test.sh` for local checks and
+`./scripts/test.sh full` for the documented complete checklist (explicit Bash
+5.2.37/5.3 paths required). See [DISTRIBUTION.md](DISTRIBUTION.md). The scripts
+do not replace the historical evidence or classify the unresolved WebRTC failure.
+
 The SFTP integration now roundtrips1MiB of all-byte data through the actual local
 Bash broker/PTY and existing OpenSSH server, both directly and over local Pion
 WebRTC peers. Focused runs pass in approximately23/24 seconds. The old20-second

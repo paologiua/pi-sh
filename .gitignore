@@ -5,3 +5,7 @@
 coverage.out
 .DS_Store
 /.claude/worktrees/
+
+# Default go build output at the repository root.
+/pi-sh
+/pi-sh.exe

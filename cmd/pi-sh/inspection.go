@@ -65,6 +65,8 @@ func writeInspection(o options, stdout, stderr io.Writer) error {
 	writer := stdout
 	var text string
 	switch o.inspection {
+	case "help":
+		text = clientHelp
 	case "version":
 		writer = stderr
 		text = clientVersion()

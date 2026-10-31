@@ -1,5 +1,21 @@
 # Development status — 2026-10-22
 
+Update, 31 October 2026: CLI_COMPATIBILITY.md now inventories every advertised
+OpenSSH 10.2p1 short option as implemented, adapted or refused. pi-sh has offline
+-h/--help; transfer-client help has usage summaries, and the zero-value -q flag
+help panic is fixed. README is rewritten for GitHub. install.sh supports
+checksum-verified GitHub release downloads or local archives; scripts/build.sh
+and scripts/test.sh provide reusable native/all-platform and local/full modes.
+Focused CLI tests, transfer-frontends' complete race tests, targeted vet, installer
+fixtures and all seven public-client archive builds passed. Local installation
+from an actual archive and all six -h/--help invocations passed. No complete
+project campaign or Pi session was run; the historical WebRTC failure is still
+open. The owner provided the private repository paologiua/pi-sh; installer and
+README now use that repository by default, with --repo retained for forks. The
+curl-to-bash path has a network-free fixture. Anonymous installation remains
+unavailable while private and without release assets; local archive installation
+works. No release, push, visibility change or licensing decision was made. See DISTRIBUTION.md for usage and remaining publication prerequisites.
+
 Update, 30 October 2026: the owner's requested SFTP console command/option
 list is implemented in separate commits. Prompt/help, command output, selected
 ordinary failures/capability refusals and listing layouts are compared with the

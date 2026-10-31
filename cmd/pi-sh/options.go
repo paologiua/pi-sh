@@ -83,6 +83,9 @@ func parseOptions(args []string) (options, error) {
 		}
 		if strings.HasPrefix(a, "--") {
 			switch a {
+			case "--help":
+				o.inspection = "help"
+				return o, nil
 			case "--browser":
 				o.browser = true
 			case "--direct-login":
@@ -101,6 +104,9 @@ func parseOptions(args []string) (options, error) {
 		for j := 1; j < len(a); j++ {
 			c := a[j]
 			switch c {
+			case 'h':
+				o.inspection = "help"
+				return o, nil
 			case 'n':
 				o.stdinNull = true
 				seen["stdinnull"] = true

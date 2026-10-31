@@ -146,3 +146,21 @@ func TestInspectionFlagsAfterCommandStartRemainCommandOperands(t *testing.T) {
 		t.Fatalf("command operands changed: %+v %v", o, err)
 	}
 }
+
+func TestOfflineHelpDoesNotLoadConfigOrAuthenticate(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help"}, {"-h"},
+		{"-F", filepath.Join(t.TempDir(), "missing-config"), "--help"},
+		{"--browser", "--direct-login", "--help"},
+	} {
+		code, out, diagnostic := runInspection(t, args...)
+		if code != 0 || diagnostic != "" || !strings.HasPrefix(out, "usage: pi-sh ") {
+			t.Fatalf("%q: code%d out%q err%q", args, code, out, diagnostic)
+		}
+		for _, required := range []string{"--experimental-command", "-R", "-l email", "Recognized but refused", "SSH_COMPATIBILITY.md"} {
+			if !strings.Contains(out, required) {
+				t.Errorf("help missing %q", required)
+			}
+		}
+	}
+}

@@ -13,6 +13,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '26'
+      - if: runner.os != 'Windows'
+        run: |
+          bash -n install.sh scripts/build.sh scripts/test.sh scripts/test-install.sh
+          bash scripts/test-install.sh
       - run: node --test internal/browserauth/companion_test.mjs
       - uses: actions/setup-go@v5
         with:

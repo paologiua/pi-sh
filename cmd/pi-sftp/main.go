@@ -78,6 +78,10 @@ func app() int {
 	f.Var(progressQuietFlag{verbosity.QuietFlag(), &quietProgress}, "q", "quiet: suppress connection notices, warnings and diagnostics")
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
+	f.Usage = func() {
+		fmt.Fprintln(f.Output(), "usage: pi-sftp (--direct-login|--browser) [-afNpqrv] [-B buffer] [-R requests] [-b file|-] [-F file|none] [-l limit] [-o option] [-s server] [-X setting] [email::]device\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		cliargs.PrintOptions(f)
+	}
 	cliargs.Refuse(f, map[string]string{
 		"4": sshconfig.ReasonFamily, "6": sshconfig.ReasonFamily, "C": sshconfig.ReasonCompress,
 		"A": forwardspec.ErrAgentForwarding.Error(),

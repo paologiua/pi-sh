@@ -1,5 +1,8 @@
 # OpenSSH behavioral compatibility matrix
 
+For an inventory of every advertised OpenSSH 10.2p1 short option, current help
+commands and the visual-parity boundary, see [CLI_COMPATIBILITY.md](CLI_COMPATIBILITY.md).
+
 Baseline inventory reviewed 2026-10-19 against the upstream
 [ssh](https://man.openbsd.org/ssh.1),
 [ssh_config](https://man.openbsd.org/ssh_config.5),
