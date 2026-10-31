@@ -1,5 +1,16 @@
 # Development status — 2026-10-22
 
+Update, 31 October 2026 — alpha version and help: the selected suite version is
+v0.1.0-alpha.1. All three clients accept -V/--version offline, using shared safe
+build metadata. Help groups -V, --version immediately before -h, --help and states
+only "Tested with Raspberry Pi Connect 2.13.0." Agent 2.14.0 remains unverified;
+CONNECT_COMPATIBILITY.md separates package-changelog inspection from native tests.
+The installer defaults to the selected alpha tag; explicit latest retains stable
+release resolution. Focused CLI/version/config/parser tests and installer fixtures
+pass, as recorded in TESTING.md. The historical WebRTC failure and deferred full
+campaign remain open. No Pi change, agent upgrade or GitHub release is part of
+this source synchronization.
+
 Update, 31 October 2026: CLI_COMPATIBILITY.md now inventories every advertised
 OpenSSH 10.2p1 short option as implemented, adapted or refused. pi-sh has offline
 -h/--help; transfer-client help has usage summaries, and the zero-value -q flag

@@ -46,16 +46,17 @@ routine test command.
 ## Installer and release layout
 
 ```sh
-./install.sh --repo paologiua/pi-sh --version v0.1.0
+./install.sh --repo paologiua/pi-sh --version v0.1.0-alpha.1
 ./install.sh --from-dir ./dist --bin-dir "$HOME/.local/bin"
 ./install.sh --help
 ```
 
 Download mode requires a real GitHub repository and published release with
 `pi-sh_OS_ARCH.tar.gz` and `SHA256SUMS` assets generated together by build.sh.
-The default is latest; pin --version for repeatability. Latest is resolved once
-before fetching both files. The installer checks the archive's SHA-256 before
-extracting the three clients, uses no sudo and defaults to ~/.local/bin.
+The default is the selected alpha, v0.1.0-alpha.1. Pass --version with another
+tag to select a release. Explicit --version latest resolves GitHub's latest stable
+release once before fetching both files; it does not select prereleases.
+The installer checks the archive's SHA-256 before extracting the three clients, uses no sudo and defaults to ~/.local/bin.
 It prints a PATH hint without changing shell configuration. Existing client
 files in that directory are replaced. --from-dir exercises the same archive and
 checksum path without network access. SHA-256 verifies release-file integrity;
@@ -67,10 +68,11 @@ public-installation examples. They require public access and a published release
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
 # Pin a release:
-curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.1
 ```
 
-The repository is real; v0.1.0 is an example release tag, not an existing release.
+v0.1.0-alpha.1 is the selected project version; its GitHub release has not been
+created. This document does not assert that download assets already exist.
 The installer defaults to paologiua/pi-sh. --repo or PI_SH_REPO selects another
 repository, for example a fork. The source URL downloads the script; --repo
 selects the repository hosting the binary release assets. With curl, script

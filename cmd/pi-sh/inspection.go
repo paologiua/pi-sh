@@ -3,11 +3,10 @@ package main
 import (
 	"errors"
 	"io"
-	"runtime"
 	"sort"
 	"strings"
 
-	"pi-sh/internal/sshconfig"
+	"pi-sh/internal/buildinfo"
 	"pi-sh/internal/terminal"
 )
 
@@ -42,23 +41,11 @@ func queryCapabilities(query string) ([]string, error) {
 	return values, nil
 }
 
-// Build metadata is read from the executable only. Never print build settings,
-// VCS paths, environment variables or other configuration alongside the version.
+// Version information uses the selected project version and whitelisted build
+// provenance. VCS paths, environment values and other settings are never printed.
 // The release token is shared with Match version.
 func clientVersion() string {
-	return sshconfig.Release() + " " + versionToken(runtime.Version()) + " " + runtime.GOOS + "/" + runtime.GOARCH + " (unofficial)\n"
-}
-
-func versionToken(value string) string {
-	if len(value) == 0 || len(value) > 128 {
-		return "devel"
-	}
-	for _, c := range value {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '+' || c == '-') {
-			return "devel"
-		}
-	}
-	return value
+	return buildinfo.Line("pi-sh")
 }
 
 func writeInspection(o options, stdout, stderr io.Writer) error {

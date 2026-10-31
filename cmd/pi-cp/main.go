@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/signal"
 
+	"pi-sh/internal/buildinfo"
 	"pi-sh/internal/cliargs"
+	"pi-sh/internal/connectcompat"
 	"pi-sh/internal/connectsession"
 	"pi-sh/internal/copycli"
 	"pi-sh/internal/diag"
@@ -27,6 +29,8 @@ func (o *optionList) Set(s string) error { *o = append(*o, s); return nil }
 func main()                              { os.Exit(app()) }
 func app() int {
 	f := flag.NewFlagSet("pi-cp", flag.ContinueOnError)
+	version := f.Bool("version", false, "Print client version without login or network access")
+	f.BoolVar(version, "V", false, "Print client version without login or network access")
 	direct := f.Bool("direct-login", false, "memory-only direct Raspberry Pi ID login")
 	browser := f.Bool("browser", false, "authorized Connect browser companion")
 	preserve := f.Bool("p", false, "preserve ordinary permission bits and access/modification times")
@@ -48,7 +52,8 @@ func app() int {
 	f.Bool("s", false, "use the SFTP protocol (always the case)")
 	f.Bool("T", false, "no effect: strict filename checking applies only to the legacy SCP protocol, as in scp's SFTP mode")
 	f.Usage = func() {
-		fmt.Fprintln(f.Output(), "usage: pi-cp (--direct-login|--browser) [-Bpqrv] [-F file|none] [-l limit] [-o option] [-X setting] source ... destination\n       remote operand: [email::]device:path\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		fmt.Fprintln(f.Output(), "usage: pi-cp (--direct-login|--browser) [-Bpqrv] [-F file|none] [-l limit] [-o option] [-X setting] source ... destination\n       remote operand: [email::]device:path\n       pi-cp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		fmt.Fprint(f.Output(), connectcompat.Help)
 		cliargs.PrintOptions(f)
 	}
 	cliargs.Refuse(f, map[string]string{
@@ -66,6 +71,12 @@ func app() int {
 			return 0
 		}
 		return 1
+	}
+	if *version {
+		if err := buildinfo.WriteVersion(os.Stderr, "pi-cp"); err != nil {
+			return 1
+		}
+		return 0
 	}
 	if *direct == *browser {
 		fmt.Fprintln(os.Stderr, "usage: pi-cp (--direct-login|--browser) [-Bpqrv] [options] source(s) destination\n       remote operands: [email::]device:path or scp://[email%40domain@]device[/path]")

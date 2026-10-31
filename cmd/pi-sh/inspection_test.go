@@ -44,7 +44,7 @@ func runInspection(t *testing.T, args ...string) (int, string, string) {
 }
 
 func TestOfflineVersionDoesNotLoadConfigOrAuthenticate(t *testing.T) {
-	for _, args := range [][]string{{"-V"}, {"-nVxz"}, {"-G", "-V"}, {"-F", filepath.Join(t.TempDir(), "missing-private-config"), "-V"}, {"--browser", "--direct-login", "-V", "-z"}} {
+	for _, args := range [][]string{{"--version"}, {"-F", filepath.Join(t.TempDir(), "missing-config"), "--version"}, {"--browser", "--direct-login", "--version"}, {"-V"}, {"-nVxz"}, {"-G", "-V"}, {"-F", filepath.Join(t.TempDir(), "missing-private-config"), "-V"}, {"--browser", "--direct-login", "-V", "-z"}} {
 		code, out, diagnostic := runInspection(t, args...)
 		if code != 0 || out != "" || !strings.HasPrefix(diagnostic, "pi-sh_") || !strings.Contains(diagnostic, "unofficial") || strings.Count(diagnostic, "\n") != 1 {
 			t.Fatalf("%q: code%d out%q err%q", args, code, out, diagnostic)
@@ -141,8 +141,8 @@ func TestInspectionRejectsInvalidPriorOptionsBeforeEarlyExit(t *testing.T) {
 }
 
 func TestInspectionFlagsAfterCommandStartRemainCommandOperands(t *testing.T) {
-	o, err := parseOptions([]string{"--browser", "--experimental-command", "device", "printf", "-V", "-Qhelp"})
-	if err != nil || o.inspection != "" || strings.Join(o.args, "|") != "device|printf|-V|-Qhelp" {
+	o, err := parseOptions([]string{"--browser", "--experimental-command", "device", "printf", "-V", "-Qhelp", "--version"})
+	if err != nil || o.inspection != "" || strings.Join(o.args, "|") != "device|printf|-V|-Qhelp|--version" {
 		t.Fatalf("command operands changed: %+v %v", o, err)
 	}
 }
@@ -157,7 +157,7 @@ func TestOfflineHelpDoesNotLoadConfigOrAuthenticate(t *testing.T) {
 		if code != 0 || diagnostic != "" || !strings.HasPrefix(out, "usage: pi-sh ") {
 			t.Fatalf("%q: code%d out%q err%q", args, code, out, diagnostic)
 		}
-		for _, required := range []string{"--experimental-command", "-R", "-l email", "Recognized but refused", "SSH_COMPATIBILITY.md"} {
+		for _, required := range []string{"--experimental-command", "-R", "-l email", "Recognized but refused", "SSH_COMPATIBILITY.md", "Tested with Raspberry Pi Connect 2.13.0."} {
 			if !strings.Contains(out, required) {
 				t.Errorf("help missing %q", required)
 			}

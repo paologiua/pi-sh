@@ -1405,3 +1405,28 @@ No Pi session, remote write/listener, push or publication. New native command/
 tuning paths, arbitrary failure/lifecycle cases and physical iSH remain open;
 CGO-disabled builds are compile evidence only. The complete checklist above
 remains the deferred final campaign reference.
+
+### Alpha version, offline flags and help — 31 October 2026
+
+Selected v0.1.0-alpha.1 for the suite. All clients accept -V/--version without
+configuration reads or authentication. The shared buildinfo tests check release
+identity, bounded Git revision/dirty metadata and failed/short output writes.
+Existing help checks cover the baseline-agent line and combined version aliases;
+actual native binary help was checked to place version immediately before help.
+Untested agent versions are documented rather than listed in CLI help.
+
+Before source synchronization, focused checks passed on the final code:
+
+- `go test -race ./internal/buildinfo ./internal/cliargs ./internal/sshconfig ./cmd/pi-cp ./cmd/pi-sftp -count=1 -timeout=90s`
+- `go test ./cmd/pi-sh -run '^(TestOffline.*|TestInspection.*|TestMatch.*)$' -count=1 -timeout=60s`
+- `bash scripts/test-install.sh`: local archives, corrupt/incomplete archive refusal,
+  pinned-alpha downloads and explicit latest resolution through a local curl
+  stand-in, including piped bash without script arguments. No live release used.
+- `bash -n install.sh scripts/test-install.sh`, local documentation-link checks
+  and `git diff --check`.
+
+Earlier in the increment, targeted vet, seven public-client archive builds,
+native version/stream/help checks and Linux/386 softfloat cross-builds passed.
+These checks do not rerun the deferred full/stress campaign, classify the
+historical WebRTC failure, establish current-alpha Pi acceptance or verify
+Connect 2.14.0. No Pi session, remote write, upgrade or restart was performed.

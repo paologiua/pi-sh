@@ -18,8 +18,13 @@ func PrintOptions(f *flag.FlagSet) {
 		"R": "num_requests", "S": "program", "s": "server",
 		"sftp-server": "path", "X": "sftp_option",
 	}
+	shortVersion, longVersion := f.Lookup("V"), f.Lookup("version")
+	combinedVersion := shortVersion != nil && longVersion != nil && !takesValue(shortVersion) && !takesValue(longVersion)
 	fmt.Fprintln(f.Output(), "\nOptions:")
 	f.VisitAll(func(option *flag.Flag) {
+		if combinedVersion && (option.Name == "V" || option.Name == "version") {
+			return // Both spellings are shown together immediately before help.
+		}
 		prefix := "-"
 		if len(option.Name) > 1 {
 			prefix = "--"
@@ -52,5 +57,9 @@ func PrintOptions(f *flag.FlagSet) {
 		}
 		fmt.Fprintln(f.Output(), strings.TrimRight(line, " "))
 	})
+	if combinedVersion {
+		_, description := flag.UnquoteUsage(shortVersion)
+		fmt.Fprintf(f.Output(), "  %-24s  %s\n", "-V, --version", description)
+	}
 	fmt.Fprintf(f.Output(), "  %-24s  %s\n", "-h, --help", "Show this help without login or network access")
 }

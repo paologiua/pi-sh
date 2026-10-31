@@ -20,7 +20,8 @@ No new remote software, authentication change, replay or Pi write is introduced.
 
 Offline -V/-Q returns before auth, discovery, terminal changes or configuration
 file loading. Version output uses executable metadata only, with bounded safe
-version tokens; build settings/environment/VCS paths are omitted. Unknown query
+version tokens. Only a validated Git revision and dirty bit may be added as build
+metadata; other build settings, environment values and VCS paths are omitted. Unknown query
 text and writer error contents are not echoed. Query names explicitly distinguish
 pi-sh implementation from SSH algorithm support or verified runtime behavior.
 See LOCAL_INSPECTION.md; no new remote access or credential path is introduced.

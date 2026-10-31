@@ -31,7 +31,7 @@ into SSH. Unsupported options fail before login instead of being silently ignore
 | `-w` | Refused: no tun/tap network configuration |
 
 Additional options: `--direct-login`, `--browser`, `--experimental-command`,
-`--legacy-command`, `--legacy-shell`, `-h` and `--help`. Commands currently require
+`--legacy-command`, `--legacy-shell`, `--version`, `-h` and `--help`. Commands currently require
 `--experimental-command`; normal `ssh host command` spelling alone is insufficient.
 `[email::]device` selects the Connect device/account; `pi@device` is not Unix login.
 
@@ -47,7 +47,7 @@ Additional options: `--direct-login`, `--browser`, `--experimental-command`,
 | `-4 -6 -A -C -c -i -J -P` | Refused: corresponding SSH routing/agent/compression/crypto/key/proxy/port options unavailable |
 | `-D -S` | Refused: cannot replace Connect with a local SFTP/SSH transport program |
 
-Additional options: `--direct-login`, `--browser`, `--sftp-server`, `-h`, `--help`.
+Additional options: `--direct-login`, `--browser`, `--sftp-server`, `-V`, `--version`, `-h`, `--help`.
 Remote operands use `[email::]device:path`. No remote shell expansion is implied.
 
 ## pi-sftp versus sftp
@@ -59,7 +59,7 @@ Remote operands use `[email::]device:path`. No remote shell expansion is implied
 | `-4 -6 -A -C -c -i -J -P` | Refused: SSH address/agent/compression/crypto/key/proxy/port features unavailable |
 | `-D -S` | Refused: no local server/transport replacement |
 
-Additional options: `--direct-login`, `--browser`, `--read-only`, `-h`, `--help`.
+Additional options: `--direct-login`, `--browser`, `--read-only`, `-V`, `--version`, `-h`, `--help`.
 An initial remote path in the destination is refused; use `cd` or `get` in the console.
 
 The console implements the command list printed by `help`/`?`, including aliases,
@@ -80,7 +80,8 @@ help
 ~?
 ```
 
-Offline help returns success without login. pi-sh writes help to stdout;
+All three clients also support -V/--version offline (client build, not SFTP server
+protocol). Offline help returns success without login. pi-sh writes help to stdout;
 pi-cp/pi-sftp retain Go flag's stderr help stream. `-h`/`--help` are convenience
 extensions, not claimed to match OpenSSH's help invocation or typography.
 

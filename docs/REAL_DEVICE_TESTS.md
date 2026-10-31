@@ -1,5 +1,10 @@
 # Authorized real-device evidence — 2026-10-19/22
 
+For the current agent-version summary, see
+[CONNECT_COMPATIBILITY.md](CONNECT_COMPATIBILITY.md). The recorded native baseline
+is 2.13.0; the upstream 2.14.0 package inspection is not a device test. Historical
+results below retain their original client builds and scopes.
+
 ## 2026-10-23 Raspberry Pi ID account selection, direct login (owner run)
 
 The owner ran read-only direct-login checks of the merged CLI branch, typing the

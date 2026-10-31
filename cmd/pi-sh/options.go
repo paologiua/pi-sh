@@ -83,6 +83,9 @@ func parseOptions(args []string) (options, error) {
 		}
 		if strings.HasPrefix(a, "--") {
 			switch a {
+			case "--version":
+				o.inspection = "version"
+				return o, nil
 			case "--help":
 				o.inspection = "help"
 				return o, nil

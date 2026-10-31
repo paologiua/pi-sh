@@ -1,9 +1,12 @@
 # Offline version and capability queries — 2026-10-21
 
-pi-sh -V prints one line on stderr and exits0. It identifies pi-sh as unofficial,
-the module version (devel for a local unversioned build), Go build version and
-GOOS/GOARCH target. This does not claim a released version or physical iSH runtime
-support. Build settings, VCS paths and environment values are not printed.
+All three clients support `-V` and `--version`, print one line on stderr and
+exit 0 without login, configuration reads or network access. pi-sh also retains
+its capability queries. The line includes the client name, project version
+(v0.1.0-alpha.1, plus safe Git revision/dirty metadata when available), Go build version, GOOS/GOARCH target and
+the unofficial marker. This does not claim a released version or physical iSH runtime
+support. Only a validated Git revision and dirty bit are read from build settings; VCS
+paths, other build settings and environment values are not printed.
 
 pi-sh -Q help lists the query names on stdout. The available queries are:
 
@@ -41,7 +44,13 @@ word or explicit --. Post-host -V/-Q therefore retain immediate exit; later
 -V/-Qhelp tokens after the command word or -- remain command operands. Thirteen
 post-host configuration comparisons and explicit inspection/operand tests cover
 this boundary; general unimplemented options remain refused.
-Only pi-sh gains these switches: pi-cp/pi-sftp retain their own supported syntax.
+`--version` is an alias of pi-sh -V, with the same immediate-exit behavior.
+pi-cp and pi-sftp now also accept -V/--version, before their first operand or --.
+Their normal option parsing validates all supplied flags before the version exit;
+valid -F paths are not opened and authentication is skipped. Invalid earlier or
+later options still fail. Their -V/--version flags are project extensions: no
+OpenSSH scp/sftp version flag parity is claimed. The `version` console command
+continues to report SFTP server protocol information, not the CLI version.
 
 ## Evidence and current validation boundary
 
@@ -66,3 +75,12 @@ regression gate was subsequently completed and native command resize/control
 checks are recorded in REAL_DEVICE_TESTS.md. The later input-frame exhaustion
 recurrence was separately reproduced and corrected in TTY_COMPLETION.md. Current
 validation and remaining native/runtime gates are listed in TESTING.md.
+
+## Suite version flags — 31 October 2026
+
+Shared internal/buildinfo formatting gives all three clients v0.1.0-alpha.1 and
+keeps the pi-sh version token shared with Match version. TestOfflineVersionDoesNotLoadConfigOrAuthenticate covers all
+three clients, including missing configuration paths, conflicting auth flags and
+quiet output. Buildinfo tests cover client identity, invalid build tokens and
+failed/short writes without leaking writer diagnostics. These changes have local
+checks only; they do not establish a release, Pi or iSH runtime verification.

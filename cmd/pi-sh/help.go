@@ -1,12 +1,14 @@
 package main
 
+import "pi-sh/internal/connectcompat"
+
 const clientHelp = `usage: pi-sh (--direct-login|--browser) [options] [email::]device [command ...]
        pi-sh -G [-F file|none] [-o option] [device]
-       pi-sh -V | -Q query | --help
+       pi-sh -V | --version | -Q query | --help
 
 Unofficial SSH-like client over Raspberry Pi Connect (not the SSH protocol).
 Commands require --experimental-command. Login credentials stay in memory.
-
+` + connectcompat.Help + `
 Connection:
   --direct-login       Raspberry Pi ID password/TOTP login in this process
   --browser            Use an authorized Connect browser companion
@@ -40,8 +42,8 @@ Diagnostics and offline information:
   -E file              Append diagnostics to file
   -y                   Send diagnostics to local syslog (Unix)
   -G                   Print supported effective configuration without login
-  -V                   Print client version
   -Q query             List capabilities; use -Q help for query names
+  -V, --version        Print client version without login or network access
   -h, --help           Show this help without login or network access
 
 Recognized but refused SSH options:

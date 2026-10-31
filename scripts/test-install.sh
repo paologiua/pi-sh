@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deterministic installer contract checks, with local fake binaries only.
 set -euo pipefail
+unset PI_SH_REPO PI_SH_VERSION PI_SH_BIN_DIR
 cd "$(dirname "$0")/.."
 stage=$(mktemp -d "${TMPDIR:-/tmp}/pi-sh-install-test.XXXXXXXX")
 trap 'rm -rf "$stage"' EXIT
@@ -40,7 +41,7 @@ if [[ $resolve == 1 ]]; then
   [[ $url == https://github.com/paologiua/pi-sh/releases/latest ]]
   printf 'https://github.com/paologiua/pi-sh/releases/tag/v0.1.0'
 else
-  [[ $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0/* ]]
+  [[ $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0-alpha.1/* || $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0/* ]]
   cp "$PI_SH_INSTALL_FIXTURES/${url##*/}" "$output"
 fi
 CURL
@@ -50,6 +51,9 @@ for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/download/$client") == fixture
 # Emulate the configured script delivered through curl | bash, without arguments.
 cat install.sh | env -u PI_SH_REPO PATH="$stage/tools:$PATH" PI_SH_INSTALL_FIXTURES="$stage/releases" PI_SH_BIN_DIR="$stage/piped" bash
 for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/piped/$client") == fixture-ok ]]; done
+# Stable-latest resolution remains available explicitly; alpha is the default.
+PATH="$stage/tools:$PATH" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.sh --version latest --bin-dir "$stage/latest"
+for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/latest/$client") == fixture-ok ]]; done
 printf 'corruption' >> "$stage/releases/$archive"
 if bash install.sh --from-dir "$stage/releases" --bin-dir "$stage/should-not-exist" > "$stage/error" 2>&1; then echo 'Corrupt archive accepted' >&2; exit 1; fi
 [[ ! -e $stage/should-not-exist ]]

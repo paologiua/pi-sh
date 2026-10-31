@@ -7,8 +7,8 @@ agent and infrastructure from a terminal. It aims for practical OpenSSH command
 and interface compatibility over Connect's HTTPS/WebRTC transport.
 
 It is independent of, and not endorsed by, Raspberry Pi or OpenSSH. It does not
-implement the SSH wire protocol. **Development preview: compatibility and runtime
-verification are incomplete; no public release is currently configured.**
+implement the SSH wire protocol. **Development version: v0.1.0-alpha.1. Compatibility and runtime verification
+are incomplete; a GitHub release has not been published.**
 
 | Client | Purpose | Familiar interface |
 | --- | --- | --- |
@@ -37,6 +37,22 @@ on the Raspberry Pi. The in-memory adapters use existing remote facilities.
 SFTP requires an already installed compatible `sftp-server`; forwarding requires
 an existing compatible connector. See [architecture](docs/ARCHITECTURE.md),
 [transport](docs/TRANSPORT.md) and [remote requirements](docs/SHELL_BROKER.md).
+
+## Raspberry Pi Connect compatibility
+
+| Connect agent on the device | Verification status |
+| --- | --- |
+| **2.13.0** | Baseline for the recorded real-device tests: selected shells/commands, transfers and forwarding passed in development builds. The latest native plan identifies Connect Lite 2.13.0. |
+| **2.14.0** | Available upstream; not yet tested with this suite. Compatibility is unverified, rather than known to fail. |
+| Other versions | Not evaluated; no minimum or maximum supported version is established. |
+
+These results cover specific tests and client builds, not every feature of the
+current alpha. Agent version alone is insufficient: hosted authentication and
+signaling can change independently, and existing remote tools still matter.
+Each client's `--help` states `Tested with Raspberry Pi Connect 2.13.0.` The CLI
+`--version` flags report the local client, not the Connect agent.
+See [Connect version evidence and limits](docs/CONNECT_COMPATIBILITY.md) and
+[real-device results](docs/REAL_DEVICE_TESTS.md).
 
 ## Quick start
 
@@ -145,6 +161,26 @@ than silently ignored. Forwarding uses the existing Connect shell and an existin
 connector, with explicit binding and cleanup limits.
 [Configuration](docs/CONFIGURATION.md), [forwarding](docs/FORWARDING.md).
 
+## Client version
+
+Each client supports the same offline version flags:
+
+```sh
+pi-sh --version
+pi-cp --version
+pi-sftp --version
+# Short form, matching ssh -V:
+pi-sh -V
+```
+
+Version output is one line on stderr and includes the client name, project version,
+Go version and OS/architecture. It exits successfully without login or network
+access. The selected version is `v0.1.0-alpha.1` for all three clients. Git builds
+append safe source metadata, for example `+g77699a479687.dirty`; `dirty` means
+uncommitted source changes were included. This is build identification, not a
+claim that a GitHub release has been published. The `version` command inside the
+SFTP console reports the server protocol version instead of the CLI build.
+
 ## Compatibility and current limits
 
 **Not every SSH/SCP/SFTP parameter is functional.** All advertised short options
@@ -193,7 +229,8 @@ Once the repository is public and a release with binaries is available:
 curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
 ```
 
-The installer defaults to `paologiua/pi-sh`; no `--repo` is needed for this project.
+The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.1`; no `--repo`
+is needed for this project.
 Use `--repo owner/name` to select a fork. For the private repository, use an
 authenticated Git checkout and the local build/install commands above; the installer
 does not request or save GitHub credentials.

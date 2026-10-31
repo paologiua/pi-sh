@@ -10,9 +10,10 @@ import (
 	"os/exec"
 	"os/user"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
+
+	"pi-sh/internal/buildinfo"
 )
 
 // Session types reported to Match sessiontype, as in OpenSSH 10.2.
@@ -137,17 +138,7 @@ func runShell(command string, stderr io.Writer) (int, error) {
 // Release is the client version string compared by Match version. It names
 // this unofficial client, never OpenSSH, so "Match version OpenSSH_*" is false.
 func Release() string {
-	version := "devel"
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" && len(info.Main.Version) <= 128 {
-		version = info.Main.Version
-		for _, c := range version {
-			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '+' || c == '-') {
-				version = "devel"
-				break
-			}
-		}
-	}
-	return "pi-sh_" + version
+	return "pi-sh_" + buildinfo.Version()
 }
 
 // Criteria accepting an argument, including the criterion=argument spelling.

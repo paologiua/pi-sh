@@ -5,7 +5,7 @@ usage() {
   cat <<'HELP'
 usage: install.sh [--repo owner/name] [--version tag|latest] [--bin-dir path]
                   [--from-dir directory] [--help]
-Defaults: PI_SH_REPO or the configured repository, PI_SH_VERSION=latest,
+Defaults: PI_SH_REPO or the configured repository, PI_SH_VERSION=v0.1.0-alpha.1,
           PI_SH_BIN_DIR=$HOME/.local/bin
 --from-dir installs from a local directory containing release archives and SHA256SUMS.
 No sudo, Go compiler, credentials or Raspberry Pi access is needed.
@@ -13,7 +13,7 @@ HELP
 }
 # Override with PI_SH_REPO or --repo when using a fork.
 repo=${PI_SH_REPO:-paologiua/pi-sh}
-version=${PI_SH_VERSION:-latest}
+version=${PI_SH_VERSION:-v0.1.0-alpha.1}
 bin_dir=${PI_SH_BIN_DIR:-${HOME:?HOME is required}/.local/bin}
 from_dir=''
 while [[ $# -gt 0 ]]; do
