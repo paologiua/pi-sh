@@ -9,6 +9,7 @@ case "$mode" in
     echo 'local: unit/integration tests, vet, module integrity, browser tests, platform checks.'
     echo 'full: also race tests, Bash 5.2.37/5.3 fallback checks, seven cross-build/test compilations.'
     echo 'full requires PI_SH_TEST_BASH_52 and PI_SH_TEST_BASH_53 executable paths.'
+    echo 'macOS/Linux: Bash >=4.3 required; set PI_SH_TEST_BASH or use Bash on PATH/Homebrew.'
     echo 'Optional external-tool fixtures may skip; consult output and docs/TESTING.md.'
     exit 0 ;;
   local|full) ;;
@@ -23,6 +24,33 @@ if [[ $mode == full ]]; then
     [[ $found == "$required"* ]] || { echo "Expected Bash $required, found $found" >&2; exit 1; }
   done
 fi
+# The simulated remote shell needs modern Bash on the development host. Select
+# it once for every Go test process, including subprocess fixtures.
+case $(go env GOHOSTOS) in
+  darwin|linux)
+    if [[ -n ${PI_SH_TEST_BASH:-} ]]; then
+      bash_candidates=("$PI_SH_TEST_BASH")
+    elif [[ $mode == full ]]; then
+      bash_candidates=("$PI_SH_TEST_BASH_53")
+    else
+      bash_candidates=("$(command -v bash || true)" /opt/homebrew/bin/bash /usr/local/bin/bash)
+    fi
+    selected_bash=''
+    for candidate in "${bash_candidates[@]}"; do
+      if [[ -n $candidate ]] && "$candidate" -c '((BASH_VERSINFO[0]>4||(BASH_VERSINFO[0]==4&&BASH_VERSINFO[1]>=3)))' >/dev/null 2>&1; then
+        selected_bash=$candidate
+        break
+      fi
+    done
+    if [[ -z $selected_bash ]]; then
+      echo 'Bash >=4.3 is required for local integration tests.' >&2
+      echo 'Set PI_SH_TEST_BASH=/path/to/modern/bash (macOS system Bash 3.2 is too old).' >&2
+      exit 2
+    fi
+    export PI_SH_TEST_BASH="$selected_bash"
+    printf 'Local shell fixtures use Bash: %s\n' "$PI_SH_TEST_BASH"
+    ;;
+esac
 fail=0
 run() {
   printf '\nChecking:'; printf ' %q' "$@"; printf '\n'

@@ -1,5 +1,13 @@
 # Development status — 2026-10-22
 
+Update, 31 October 2026 — local test prerequisites: the owner's RESULT fail=1
+was reproduced with macOS Bash 3.2. Missing modern Bash caused false empty-result
+assertions in two tests and readiness timeouts in four suspension cases. Parent
+prerequisite checks and test.sh preflight are corrected. The three regressions
+and original cases pass with Bash 5.3; one default local runner pass completed
+RESULT fail=0. See TESTING.md. This is separate from historical unclassified
+WebRTC episodes and does not establish Pi or iSH runtime verification.
+
 Update, 31 October 2026 — alpha version and help: the selected suite version is
 v0.1.0-alpha.1. All three clients accept -V/--version offline, using shared safe
 build metadata. Help groups -V, --version immediately before -h, --help and states

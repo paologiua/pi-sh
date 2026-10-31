@@ -16,6 +16,47 @@ are incomplete; a GitHub release has not been published.**
 | `pi-cp` | Files and recursive directory copies over SFTP | `scp` |
 | `pi-sftp` | Interactive and batch file operations | `sftp` |
 
+## Installation
+
+### Install with curl
+
+Once the repository is public and a release with binaries is available, install
+all three clients on macOS, Linux or iSH with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
+```
+
+### Install with wget
+
+Alternatively, use `wget` to run the same installer:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
+```
+
+**Currently, the repository is private and release assets have not been
+published.** The commands above require public access and published release
+archives. For now, use an authenticated checkout and build/install locally:
+
+```sh
+./scripts/build.sh all
+./install.sh --from-dir ./dist
+```
+
+The default installation directory is `~/.local/bin`, with no sudo or shell-profile
+edits. The installer verifies SHA-256 before installing all three clients.
+Windows users extract the `.exe` files from the Windows archive.
+
+The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.1`; no `--repo`
+is needed for this project. Use `--repo owner/name` to select a fork. The installer
+does not request or save GitHub credentials.
+
+Build targets: macOS amd64/arm64; Linux 386/amd64/arm64; Windows amd64/arm64.
+Archives and their checksum manifest are written to `dist/`. This matrix represents
+supported build targets, not a promise for every architecture understood by Go.
+[Distribution and installer options](docs/DISTRIBUTION.md), [iSH](docs/ISH_COMPATIBILITY.md).
+
 ## Features
 
 - Direct Raspberry Pi ID password/TOTP login, with credentials and cookies held
@@ -208,42 +249,12 @@ Read the [CLI comparison](docs/CLI_COMPATIBILITY.md) for the short-option invent
 the [complete SSH/SCP/SFTP matrix](docs/SSH_COMPATIBILITY.md) for detailed limits,
 and [real-device evidence](docs/REAL_DEVICE_TESTS.md) for what was actually verified.
 
-## Installation and builds
-
-The repository is [paologiua/pi-sh](https://github.com/paologiua/pi-sh) and is
-currently private. Anonymous curl downloads are unavailable while it stays private,
-and release assets have not been published. Build locally or install from generated archives:
-
-```sh
-./scripts/build.sh all
-./install.sh --from-dir ./dist
-```
-
-The default installation directory is `~/.local/bin`, with no sudo or shell-profile
-edits. macOS/Linux/iSH installation verifies SHA-256 before installing all three
-clients. Windows users extract the `.exe` files from the Windows archive.
-
-Once the repository is public and a release with binaries is available:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
-```
-
-The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.1`; no `--repo`
-is needed for this project.
-Use `--repo owner/name` to select a fork. For the private repository, use an
-authenticated Git checkout and the local build/install commands above; the installer
-does not request or save GitHub credentials.
-
-Build targets: macOS amd64/arm64; Linux 386/amd64/arm64; Windows amd64/arm64.
-Archives and their checksum manifest are written to `dist/`. This matrix represents
-supported build targets, not a promise for every architecture understood by Go.
-[Distribution and installer options](docs/DISTRIBUTION.md), [iSH](docs/ISH_COMPATIBILITY.md).
-
 ## Development
 
 Go is needed for the clients; Node is used only for browser-companion development
-tests. Neither is installed on the Pi by this project.
+tests. Local Unix integration tests also need Bash >=4.3 on the development
+computer (macOS system Bash 3.2 is too old); set `PI_SH_TEST_BASH` to a suitable
+existing executable if needed. Neither is installed on the Pi by this project.
 
 ```sh
 ./scripts/build.sh             # three local binaries

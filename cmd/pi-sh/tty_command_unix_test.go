@@ -26,9 +26,7 @@ import (
 	"pi-sh/internal/transport"
 )
 
-// A local shell PTY stands in for the agent. Signaling, authentication and
-// actual Pi teardown are not simulated by this fixture.
-func ttyPeers(t *testing.T, ctx context.Context) (*transport.Peer, *transport.Channel, *transport.Peer, <-chan terminal.Size) {
+func ttyTestBash(t *testing.T) string {
 	t.Helper()
 	bash := os.Getenv("PI_SH_TEST_BASH")
 	if bash == "" {
@@ -37,6 +35,14 @@ func ttyPeers(t *testing.T, ctx context.Context) (*transport.Peer, *transport.Ch
 	if bash == "" || exec.Command(bash, "-c", "((BASH_VERSINFO[0]>4||(BASH_VERSINFO[0]==4&&BASH_VERSINFO[1]>=3)))").Run() != nil {
 		t.Skip("local Bash >=4.3 required")
 	}
+	return bash
+}
+
+// A local shell PTY stands in for the agent. Signaling, authentication and
+// actual Pi teardown are not simulated by this fixture.
+func ttyPeers(t *testing.T, ctx context.Context) (*transport.Peer, *transport.Channel, *transport.Peer, <-chan terminal.Size) {
+	t.Helper()
+	bash := ttyTestBash(t)
 	tools := t.TempDir()
 	if err := os.Symlink(bash, filepath.Join(tools, "bash")); err != nil {
 		t.Fatal(err)

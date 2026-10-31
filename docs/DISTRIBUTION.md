@@ -22,17 +22,23 @@ Windows archives contain .exe files; extract and place them on PATH manually.
 
 ## Test
 
-Run from macOS/Linux or a suitable Bash development environment with Go and Node:
+Run from macOS/Linux or a suitable Bash development environment with Go and Node.
+Local Unix shell fixtures require Bash >=4.3 on the development computer. Set
+PI_SH_TEST_BASH to its path; otherwise the runner checks PATH and the standard
+Homebrew locations. macOS /bin/bash 3.2 does not satisfy this test prerequisite.
 
 ```sh
 ./scripts/test.sh           # uncached module tests, vet, integrity, browser/platform checks
+PI_SH_TEST_BASH=/path/to/modern/bash ./scripts/test.sh  # explicit local Bash
 PI_SH_TEST_BASH_52=/path/to/bash-5.2.37 \
 PI_SH_TEST_BASH_53=/path/to/bash-5.3 \
   ./scripts/test.sh full    # plus race, fallback and cross-build/test compilation checks
 ```
 
 Both modes summarize failures with `RESULT fail=N` and exit nonzero on failures.
-Full mode validates both explicit Bash versions before beginning. It implements
+The runner rejects an unavailable/old explicitly selected Bash before starting
+checks. Full mode validates both explicit Bash versions before beginning and
+uses the selected 5.3 for its main run unless PI_SH_TEST_BASH is set. It implements
 the regular checklist in [TESTING.md](TESTING.md), adding fresh test runs and
 installer checks. Optional tool-dependent fixtures can skip; inspect test output
 and the prerequisites in that document. Local ssh/sshd, sftp-server, Perl, PTY

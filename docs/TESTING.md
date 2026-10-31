@@ -1430,3 +1430,38 @@ native version/stream/help checks and Linux/386 softfloat cross-builds passed.
 These checks do not rerun the deferred full/stress campaign, classify the
 historical WebRTC failure, establish current-alpha Pi acceptance or verify
 Connect 2.14.0. No Pi session, remote write, upgrade or restart was performed.
+
+### Missing modern Bash in the local runner — 31 October 2026
+
+An owner-run default test.sh ended RESULT fail=1: the root go test command
+failed in cmd/pi-sh, internal/fwdbroker and internal/shellbroker. The selected
+local Bash was macOS /bin/bash 3.2.57, below the >=4.3 fixture prerequisite.
+The detection/context tests skipped their inner fixtures then asserted on empty
+maps/output; the suspension parent waited 25 seconds for each of four helpers
+that had skipped before readiness. This was reproduced independently of any Pi.
+
+Fast subprocess regressions named TestMissingBashSkips* reproduced the exact
+empty-result failures and a bounded readiness wait before the fix. Prerequisite
+checks now run at the parent level. The suspension parent also notices an early
+helper exit instead of waiting for its readiness deadline. The runner selects
+an explicitly supplied PI_SH_TEST_BASH, Bash from PATH or standard Homebrew
+locations, and rejects unsuitable Bash before any check. In full mode it uses
+PI_SH_TEST_BASH_53 for the main pass unless explicitly overridden.
+
+Validation:
+
+- The original three test functions and all four suspension cases pass with
+  Bash 5.3; the suspension group completed in 0.43 s in the focused run.
+- All three missing-Bash subprocess regressions fail before the fix and pass
+  afterward; old Bash is rejected by test.sh before the first Checking line.
+- One default local test.sh run with Bash 5.3 completed with RESULT fail=0:
+  module integrity/vet, root and nested Go tests, browser tests, platform checks
+  and installer fixtures. Tests requiring optional tools may still skip.
+- The verification used an allowlisted environment and local process/PTy/network
+  permissions, not the Codex sandbox's denied ps access. No inherited credentials
+  were supplied to fixtures. The log remains local, outside the repository.
+
+This diagnoses the owner's missing-Bash failures. It does not identify or close
+the separately recorded historical WebRTC intermittencies, perform the deferred
+full/race/stress campaign, or establish real-device/physical-iSH acceptance.
+No Pi session, write, agent upgrade or restart was involved.

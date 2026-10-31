@@ -98,8 +98,7 @@ func startMux(t *testing.T, connector string) (*Mux, error) {
 	return startMuxDelayed(t, connector, 0)
 }
 
-// startMuxDelayed is startMux with a one-way carrier delay in each direction.
-func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux, error) {
+func modernForwardBash(t *testing.T) string {
 	t.Helper()
 	bash := os.Getenv("PI_SH_TEST_BASH")
 	if bash == "" {
@@ -108,6 +107,13 @@ func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux
 	if bash == "" || exec.Command(bash, "-c", "((BASH_VERSINFO[0]>4||(BASH_VERSINFO[0]==4&&BASH_VERSINFO[1]>=3)))").Run() != nil {
 		t.Skip("Bash >=4.3 required; set PI_SH_TEST_BASH")
 	}
+	return bash
+}
+
+// startMuxDelayed is startMux with a one-way carrier delay in each direction.
+func startMuxDelayed(t *testing.T, connector string, oneWay time.Duration) (*Mux, error) {
+	t.Helper()
+	bash := modernForwardBash(t)
 	tools := t.TempDir()
 	link := func(name, target string) {
 		if err := os.Symlink(target, filepath.Join(tools, name)); err != nil {
@@ -813,6 +819,7 @@ var testTools func(dir string)
 // at most three, each cut to 200 bytes, NUL bytes and trailing newlines
 // dropped as Bash command substitution does, stdout and stderr together.
 func TestAdapterDetectionMatchesBash(t *testing.T) {
+	modernForwardBash(t) // A skipped subtest must not become an empty-map failure.
 	testTools = func(dir string) {
 		for name, body := range map[string]string{
 			"ncat":  `printf '\n\nNcat: Version 7.94 ( https://nmap.org/ncat )\r\n%0300d\na\000b\nfourth\n\n\n' 0; exit 2`,
@@ -873,5 +880,24 @@ func TestRemoteImplSwitchKeepsBashAdapter(t *testing.T) {
 	}
 	if m.Adapter != "bash" || m.Connector().Name != "perl" {
 		t.Fatal("adapter", m.Adapter, "connector", m.Connector().Name)
+	}
+}
+
+// Missing optional test tools must skip the parent before nested fixtures start.
+func TestMissingBashSkipsAdapterDetectionMatchesBash(t *testing.T) {
+	stub := filepath.Join(t.TempDir(), "unsupported-bash")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAdapterDetectionMatchesBash$", "-test.v")
+	cmd.Env = append(os.Environ(), "PI_SH_TEST_BASH="+stub)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatal("missing Bash left the parent waiting for an unavailable fixture")
+	}
+	if err != nil || !strings.Contains(string(output), "--- SKIP: TestAdapterDetectionMatchesBash") {
+		t.Fatalf("missing Bash must skip the parent: %v\n%s", err, output)
 	}
 }

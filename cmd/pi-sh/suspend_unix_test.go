@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -88,6 +89,7 @@ func suspendFileFD(t *testing.T, f *os.File) int {
 }
 
 func TestSuspendTTYSessionOverWebRTC(t *testing.T) {
+	ttyTestBash(t) // Check in the parent before starting a helper that could skip.
 	for _, mode := range []string{"tty", "interactive"} {
 		// escape types ~^Z; signal sends an external SIGTSTP, as kill -TSTP or
 		// a job-control shell would, which must use the same local handoff.
@@ -164,6 +166,9 @@ func testSuspendSession(t *testing.T, mode, trigger string) {
 	}()
 	select {
 	case <-observed.ready:
+	case err := <-waited:
+		finished = true
+		t.Fatalf("session helper exited before remote command readiness: %v", err)
 	case <-ctx.Done():
 		t.Fatal("remote command never ready", observed.text())
 	}
@@ -261,5 +266,24 @@ func testSuspendSession(t *testing.T, mode, trigger string) {
 	// Like OpenSSH, only the typed escape prints a local suspension notice.
 	if !strings.Contains(text, "seen:x\n31 97\n") || strings.Contains(text, "[suspend pi-sh]") != (trigger == "escape") {
 		t.Fatal("resume output", text)
+	}
+}
+
+// Missing optional test tools must skip the parent before nested fixtures start.
+func TestMissingBashSkipsSuspendTTYSessionOverWebRTC(t *testing.T) {
+	stub := filepath.Join(t.TempDir(), "unsupported-bash")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSuspendTTYSessionOverWebRTC$", "-test.v")
+	cmd.Env = append(os.Environ(), "PI_SH_TEST_BASH="+stub)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatal("missing Bash left the parent waiting for an unavailable fixture")
+	}
+	if err != nil || !strings.Contains(string(output), "--- SKIP: TestSuspendTTYSessionOverWebRTC") {
+		t.Fatalf("missing Bash must skip the parent: %v\n%s", err, output)
 	}
 }

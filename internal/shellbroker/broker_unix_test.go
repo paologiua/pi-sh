@@ -531,6 +531,7 @@ func TestShellBrokerFallsBackToBash(t *testing.T) {
 // group and session in both brokers: the Perl broker restores the
 // dispositions it started with, as the Bash coprocess did with trap -.
 func TestShellBrokerImplsGiveCommandSameContext(t *testing.T) {
+	modernTTYBash(t) // Check before comparing results from optional subtests.
 	if _, err := exec.LookPath("perl"); err != nil {
 		t.Skip("perl unavailable")
 	}
@@ -638,4 +639,23 @@ func TestShellBrokerSlowOutputWithFastInput(t *testing.T) {
 			t.Fatalf("code %d, %v, %d of %d bytes", code, err, out.Len(), len(input))
 		}
 	})
+}
+
+// Missing optional test tools must skip the parent before nested fixtures start.
+func TestMissingBashSkipsShellBrokerImplsGiveCommandSameContext(t *testing.T) {
+	stub := filepath.Join(t.TempDir(), "unsupported-bash")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestShellBrokerImplsGiveCommandSameContext$", "-test.v")
+	cmd.Env = append(os.Environ(), "PI_SH_TEST_BASH="+stub)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatal("missing Bash left the parent waiting for an unavailable fixture")
+	}
+	if err != nil || !strings.Contains(string(output), "--- SKIP: TestShellBrokerImplsGiveCommandSameContext") {
+		t.Fatalf("missing Bash must skip the parent: %v\n%s", err, output)
+	}
 }
