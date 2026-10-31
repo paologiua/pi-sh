@@ -57,7 +57,7 @@ Regardless of product capabilities, AGENTS.md prohibits installation, service re
 | --- | --- |
 | Independent CLI/service scope | Private development resumed by user instruction; provider/legal interpretation remains unresolved for publication review. |
 | Remote-device restrictions | Mandatory throughout development; no remote mutations authorized by this document. |
-| Project licence | Maintainer decision required before public release. |
+| Project licence | MIT selected with maintainer authorisation on 2026-10-31 for original code and documentation; see [LICENSE](../LICENSE). Third-party licences and service/publication questions remain separate. |
 | Dependency licences | Pion and imported module-root licences inventoried in [DEPENDENCIES.md](DEPENDENCIES.md); full notices retained. Source-file exceptions and release-linked code still need review. |
 | Agent/web asset licences | Official agent 2.13.0 package declares BSD-3-clause with third-party notices; web assets/service rights remain unresolved. No upstream source/assets vendored. |
 | Trademark/attribution | Use unofficial original branding; review final naming and notices. |

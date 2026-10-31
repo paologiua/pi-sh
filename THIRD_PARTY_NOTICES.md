@@ -1,5 +1,10 @@
 # Third-party licence texts
 
+Original pi-sh code and documentation are licensed under the MIT License in
+[LICENSE](LICENSE). Third-party components retain the licences and copyright
+notices reproduced below; the root MIT licence does not replace them. Historical
+notes below that leave the original-code licence undecided predate this selection.
+
 TTY foreground-worker tests also consult the local GNU Bash 5.3 source/manual
 and execute that development tool. Its source identifies the Free Software
 Foundation copyright and GPL version 3 or later. No GNU source or executable is

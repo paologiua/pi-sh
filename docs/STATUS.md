@@ -1,5 +1,11 @@
 # Development status — 2026-10-22
 
+Update, 31 October 2026 — project licence: the maintainer authorised selecting
+the MIT License for original code and documentation. LICENSE records the grant;
+third-party notices and licences remain unchanged. Distribution archives include
+LICENSE. This resolves the original-code licence decision, not the separate
+service or public-release review.
+
 Update, 31 October 2026 — local test prerequisites: the owner's RESULT fail=1
 was reproduced with macOS Bash 3.2. Missing modern Bash caused false empty-result
 assertions in two tests and readiness timeouts in four suspension cases. Parent

@@ -1,5 +1,10 @@
 # Dependency licence inventory
 
+Update, 31 October 2026: the maintainer selected the [MIT License](../LICENSE)
+for original pi-sh code and documentation. Third-party licences remain unchanged.
+Earlier licence-decision notes below are historical; public-release review and
+service-related questions remain separate.
+
 The scp-style progress display directly imports x/text/width v0.42.0 for Unicode
 column widths (pure Go, no CGO). This was already the version selected by the
 transitive module graph; its source and checksums are now downloaded and pinned

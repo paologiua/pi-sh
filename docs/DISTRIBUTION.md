@@ -16,8 +16,8 @@ The release matrix is macOS amd64/arm64, Linux 386/amd64/arm64 and Windows
 amd64/arm64. All use CGO_ENABLED=0; Linux/386 uses GO386=softfloat for iSH.
 These are supported build targets, not every target recognized by Go, and do
 not certify runtime behavior. Each archive contains all three clients, README,
-notices and the project documentation. A root LICENSE is included
-when present; the maintainer's own licensing decision is still pending.
+notices and the project documentation. The root MIT LICENSE is included
+in every archive; third-party components retain their own licences.
 Windows archives contain .exe files; extract and place them on PATH manually.
 
 ## Test
@@ -92,6 +92,6 @@ repository visibility or publish any assets.
 macOS/Linux/iSH use the installer; Windows uses manual archive extraction.
 iSH still needs GOMAXPROCS=1 PI_SH_ISH_RELAY=1 for the experimentally verified path.
 
-Before publishing, resolve original-code licensing, review third-party notices
+Before publishing, review third-party notices
 and service/publication scope as recorded in [SERVICE_CONSTRAINTS.md](SERVICE_CONSTRAINTS.md).
 No script publishes, uploads, creates a GitHub release or changes the Pi.

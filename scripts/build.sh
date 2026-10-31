@@ -29,9 +29,8 @@ for target in darwin/amd64 darwin/arm64 linux/386 linux/amd64 linux/arm64 window
   for client in pi-sh pi-cp pi-sftp; do
     CGO_ENABLED=0 GOOS=$os GOARCH=$arch GO386=softfloat go build -trimpath -o "$stage/$name/$client$suffix" "./cmd/$client"
   done
-  cp README.md THIRD_PARTY_NOTICES.md "$stage/$name/"
+  cp LICENSE README.md THIRD_PARTY_NOTICES.md "$stage/$name/"
   cp -R docs "$stage/$name/docs"
-  [[ ! -f LICENSE ]] || cp LICENSE "$stage/$name/"
   tar -czf "dist/$name.tar.gz" -C "$stage/$name" .
   echo "Built dist/$name.tar.gz"
 done

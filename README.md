@@ -280,8 +280,8 @@ TLS/DTLS verification and Connect authorization are preserved. Do not attach
 cookies, tokens, SDP/ICE details or authenticated captures to reports.
 See [security](docs/SECURITY.md) and [diagnostics](docs/DIAGNOSTICS.md).
 
-Original-code licensing and public-release review are still pending; this checkout
-does not yet grant an open-source license for the original project code.
+Original project code and documentation are licensed under the [MIT License](LICENSE).
+Third-party components retain their own licenses and copyright notices.
 Dependency licenses and the local SFTP fork are documented in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [dependencies](docs/DEPENDENCIES.md).
 Service/publication questions remain recorded in [service constraints](docs/SERVICE_CONSTRAINTS.md).
