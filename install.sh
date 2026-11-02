@@ -62,16 +62,33 @@ if [[ -n $from_dir ]]; then
 else
   [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'Set PI_SH_REPO=owner/name or pass --repo owner/name.' >&2; exit 2; }
   [[ $version =~ ^[A-Za-z0-9_.-]+$ && $version != . && $version != .. ]] || { echo 'Invalid release tag.' >&2; exit 2; }
-  command -v curl >/dev/null || { echo 'curl is required.' >&2; exit 1; }
+  # curl when present, else wget (iSH/Alpine ship BusyBox wget, often without curl).
+  if command -v curl >/dev/null; then downloader=curl
+  elif command -v wget >/dev/null; then downloader=wget
+  else echo 'curl or wget is required.' >&2; exit 1; fi
+  wget_opts=(-q)
+  # GNU wget can refuse non-HTTPS redirects; BusyBox wget has no such option.
+  if [[ $downloader == wget ]] && wget --help 2>&1 | grep -q -e '--https-only'; then wget_opts+=(--https-only); fi
+  fetch() { # url output
+    if [[ $downloader == curl ]]; then curl -fsSL --proto '=https' --proto-redir '=https' "$1" -o "$2"
+    else wget "${wget_opts[@]}" -O "$2" "$1"; fi
+  }
   base="https://github.com/$repo/releases"
   if [[ $version == latest ]]; then
     # Resolve once: checksum and archive must belong to the same release.
-    resolved=$(curl -fsSL --proto '=https' --proto-redir '=https' -o /dev/null -w '%{url_effective}' "$base/latest")
-    version=${resolved##*/}
-    [[ $resolved == "$base/tag/$version" && $version =~ ^[A-Za-z0-9_.-]+$ ]] || { echo 'Cannot resolve latest release.' >&2; exit 1; }
+    if [[ $downloader == curl ]]; then
+      resolved=$(curl -fsSL --proto '=https' --proto-redir '=https' -o /dev/null -w '%{url_effective}' "$base/latest")
+      version=${resolved##*/}
+      [[ $resolved == "$base/tag/$version" ]] || version=''
+    else
+      # wget cannot report the final URL portably; ask the API for the stable tag.
+      fetch "https://api.github.com/repos/$repo/releases/latest" "$stage/latest.json" || true
+      version=$(sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$stage/latest.json" 2>/dev/null | head -n 1)
+    fi
+    [[ $version =~ ^[A-Za-z0-9_.-]+$ && $version != . && $version != .. ]] || { echo 'Cannot resolve latest release.' >&2; exit 1; }
   fi
   for file in "$archive" SHA256SUMS; do
-    curl -fsSL --proto '=https' --proto-redir '=https' "$base/download/$version/$file" -o "$stage/$file"
+    fetch "$base/download/$version/$file" "$stage/$file" || { echo "Download failed: $file ($version); nothing installed." >&2; exit 1; }
   done
 fi
 expected=$(awk -v file="$archive" '$2 == file && length($1) == 64 {print $1}' "$stage/SHA256SUMS")

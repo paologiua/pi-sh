@@ -55,6 +55,46 @@ for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/piped/$client") == fixture-ok
 # Stable-latest resolution remains available explicitly; alpha is the default.
 PATH="$stage/tools:$PATH" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.sh --version latest --bin-dir "$stage/latest"
 for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/latest/$client") == fixture-ok ]] || exit 1; done
+# wget fallback: PATH has only the tools the installer needs, no curl.
+mkdir "$stage/nocurl"
+for tool in bash env uname tar gzip sha256sum shasum mktemp rm rmdir cp awk sed head mkdir install grep cat chmod dirname; do
+  found=$(command -v "$tool" || true); [[ -z $found ]] || ln -s "$found" "$stage/nocurl/$tool"
+done
+cat > "$stage/nocurl/wget" <<'WGET'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ ${1:-} == --help ]]; then [[ ${FAKE_GNU_WGET:-0} == 1 ]] && echo '  --https-only  only follow secure HTTPS links'; exit 0; fi
+output=''; url=''; https_only=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -q) shift;;
+    -O) output=$2; shift 2;;
+    --https-only) https_only=1; shift;;
+    https://*) url=$1; shift;;
+    *) exit 9;;
+  esac
+done
+[[ $https_only == "${FAKE_GNU_WGET:-0}" ]] || exit 8
+case $url in
+  https://api.github.com/repos/paologiua/pi-sh/releases/latest)
+    printf '{\n  "url": "x",\n  "tag_name": "v0.1.0",\n  "name": "x"\n}\n' > "$output" ;;
+  https://github.com/paologiua/pi-sh/releases/download/v0.1.0-alpha.2/*|https://github.com/paologiua/pi-sh/releases/download/v0.1.0/*)
+    cp "$PI_SH_INSTALL_FIXTURES/${url##*/}" "$output" ;;
+  *) exit 7 ;;
+esac
+WGET
+chmod +x "$stage/nocurl/wget"
+for gnu in 0 1; do
+  cat install.sh | env PATH="$stage/nocurl" FAKE_GNU_WGET=$gnu PI_SH_INSTALL_FIXTURES="$stage/releases" PI_SH_BIN_DIR="$stage/wget$gnu" bash > /dev/null
+  for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/wget$gnu/$client") == fixture-ok ]] || exit 1; done
+done
+env PATH="$stage/nocurl" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.sh --version latest --bin-dir "$stage/wget-latest" > /dev/null
+for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/wget-latest/$client") == fixture-ok ]] || exit 1; done
+if env PATH="$stage/nocurl" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.sh --version v9.9.9 --bin-dir "$stage/wget-missing" > "$stage/error" 2>&1; then echo 'Missing release accepted' >&2; exit 1; fi
+[[ ! -e $stage/wget-missing ]] && grep -q 'Download failed' "$stage/error" || exit 1
+rm "$stage/nocurl/wget"
+if env PATH="$stage/nocurl" bash install.sh --bin-dir "$stage/no-tool" > "$stage/error" 2>&1; then echo 'Missing downloader accepted' >&2; exit 1; fi
+grep -q 'curl or wget is required' "$stage/error" || exit 1
 # iSH: launchers on the bin dir set the workaround variables, binaries live in libexec.
 mkdir "$stage/envfiles" "$stage/envrelease"
 for client in pi-sh pi-cp pi-sftp; do

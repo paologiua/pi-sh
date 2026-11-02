@@ -68,6 +68,15 @@ files in that directory are replaced. --from-dir exercises the same archive and
 checksum path without network access. SHA-256 verifies release-file integrity;
 there is no release-signature verification implemented.
 
+Downloads use curl when it is on PATH (HTTPS only, including redirects) and
+otherwise wget, so the `wget -qO- … | bash` route works where curl is missing,
+as on a stock iSH/Alpine image with BusyBox wget. GNU wget gets --https-only;
+BusyBox wget has no equivalent, so redirect targets are not restricted there
+(the starting URLs are HTTPS and the archive must still match SHA256SUMS). With
+wget, `--version latest` reads tag_name from the GitHub releases/latest API, which,
+like curl's redirect, selects only stable releases. Both paths are tested with
+local stand-ins; real BusyBox wget has not been run against a release.
+
 The repository is public; these commands need the selected release's assets on GitHub:
 
 ```sh
