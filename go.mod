@@ -11,6 +11,7 @@ require (
 	github.com/pion/turn/v5 v5.1.2
 	github.com/pion/webrtc/v4 v4.2.24
 	github.com/pkg/sftp v1.13.11
+	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
@@ -31,7 +32,6 @@ require (
 	github.com/pion/srtp/v3 v3.1.3 // indirect
 	github.com/pion/stun/v4 v4.0.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
-	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 )
 

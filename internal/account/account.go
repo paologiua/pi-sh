@@ -98,6 +98,17 @@ func FilePath() string {
 	return path
 }
 
+// ConfigDir reports the pi-sh configuration directory that holds the default
+// account file ($XDG_CONFIG_HOME/pi-sh when absolute, otherwise
+// ~/.config/pi-sh), or "" when no home directory is known. It is not created.
+func ConfigDir() string {
+	path := FilePath()
+	if path == "" {
+		return ""
+	}
+	return filepath.Dir(path)
+}
+
 func filePath(lookup func(string) (string, bool), home func() (string, error)) (string, error) {
 	// The XDG base directory specification ignores relative values.
 	if dir, ok := lookup("XDG_CONFIG_HOME"); ok && filepath.IsAbs(dir) {
