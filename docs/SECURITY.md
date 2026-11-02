@@ -266,8 +266,8 @@ credential, never the password or one-time code) can be saved, OpenSSH-like:
   not the sessions, in the macOS Keychain (`security`, generic password
   service `pi-sh`, account `sessions`) or Linux Secret Service (`secret-tool`,
   attributes `service pi-sh account sessions`). The secret is written on the
-  tool's stdin, never in argv. `--forget-passphrase` deletes that entry even
-  with UseKeychain off and keeps the sessions; it first asks for the
+  tool's stdin, never in argv. `--forget-keychain-passphrase` deletes that
+  entry even with UseKeychain off and keeps the sessions; it first asks for the
   passphrase and checks it against the file, so the person cannot lose
   access by forgetting a passphrase they never typed again. Without a
   supported keyring (iSH, Windows) the passphrase is never stored at all.

@@ -120,7 +120,7 @@ runs ask only for it. Passwords and one-time codes are never saved:
 ./bin/pi-sh --sessions                  # list saved sessions and check them
 ./bin/pi-sh --logout me@example.com     # sign out and delete the saved session
 ./bin/pi-sh --passphrase                # set it up front, or change it
-./bin/pi-sh --forget-passphrase         # remove it from the keyring (asks it first)
+./bin/pi-sh --forget-keychain-passphrase  # remove it from the keyring (asks it first)
 ./bin/pi-sh --reset-sessions            # sign out and delete everything
 ./bin/pi-sh -o UseKeychain=yes raspberrypi   # keep the passphrase in the keyring
 ```

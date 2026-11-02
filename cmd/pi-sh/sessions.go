@@ -27,8 +27,8 @@ var openSessions = func(opts options, notices io.Writer) sessionManager {
 }
 
 // manageSessions runs --sessions, --logout, --passphrase,
-// --forget-passphrase or --reset-sessions. These pi-sh extensions only touch sessions saved by
-// the pi-sh CLIs.
+// --forget-keychain-passphrase or --reset-sessions. These pi-sh extensions
+// only touch sessions saved by the pi-sh CLIs.
 func manageSessions(ctx context.Context, opts options, stdout, notices io.Writer) error {
 	m := openSessions(opts, notices)
 	defer m.Close()
@@ -76,7 +76,7 @@ func manageSessions(ctx context.Context, opts options, stdout, notices io.Writer
 			fmt.Fprintln(stdout, "Passphrase changed for all saved sessions.")
 		}
 		return nil
-	case "forget-passphrase":
+	case "forget-keychain-passphrase":
 		removed, err := m.ForgetPassphrase(ctx)
 		switch {
 		case errors.Is(err, sessionstore.ErrNoKeyring):

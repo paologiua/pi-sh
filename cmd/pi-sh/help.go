@@ -5,7 +5,7 @@ import "pi-sh/internal/connectcompat"
 const clientHelp = `usage: pi-sh [--direct-login|--browser] [options] [email::]device [command ...]
        pi-sh [options] email [command ...]   (choose the device after sign-in)
        pi-sh -G [-F file|none] [-o option] [device]
-       pi-sh --sessions | --logout email | --passphrase | --forget-passphrase |
+       pi-sh --sessions | --logout email | --passphrase | --forget-keychain-passphrase |
              --reset-sessions
        pi-sh -V | --version | -Q query | --help
 
@@ -26,7 +26,8 @@ Saved sessions (direct login):
   --sessions           List saved sessions and check whether each is signed in
   --logout email       Sign the saved session out of Connect and delete it
   --passphrase         Set (first time) or change the saved-sessions passphrase
-  --forget-passphrase  Remove that passphrase from the system keyring (asks it)
+  --forget-keychain-passphrase
+                       Remove that passphrase from the system keyring (asks it)
   --reset-sessions     Sign out and delete all saved sessions and the passphrase
 
 Session and terminal:
