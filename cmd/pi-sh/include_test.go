@@ -111,7 +111,7 @@ func TestIncludeOpenSSHDifferential(t *testing.T) {
 			args = append(args, "alias")
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			out, err := exec.CommandContext(ctx, ssh, args...).Output()
+			out, err := referenceDumpContext(ctx, ssh, args)
 			if err != nil {
 				t.Fatal("OpenSSH reference", err)
 			}

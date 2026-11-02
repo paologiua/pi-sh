@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -15,7 +17,7 @@ func openSSHDump(t *testing.T, ssh string, args []string) (map[string]string, er
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, ssh, args...).Output()
+	out, err := referenceDumpContext(ctx, ssh, args)
 	if err != nil {
 		return nil, err
 	}
@@ -25,6 +27,54 @@ func openSSHDump(t *testing.T, ssh string, args []string) (map[string]string, er
 		want[key] = value
 	}
 	return want, nil
+}
+
+// referenceDump runs the local `ssh -G` reference and normalizes
+// distribution-patched defaults to upstream OpenSSH, which pi-sh follows.
+func referenceDump(ssh string, args []string) ([]byte, error) {
+	return referenceDumpContext(context.Background(), ssh, args)
+}
+
+func referenceDumpContext(ctx context.Context, ssh string, args []string) ([]byte, error) {
+	out, err := exec.CommandContext(ctx, ssh, args...).Output()
+	if err == nil && debianTrustedDefault(ssh) && !mentionsOption(args, "forwardx11trusted") {
+		out = bytes.Replace(out, []byte("\nforwardx11trusted yes\n"), []byte("\nforwardx11trusted no\n"), 1)
+	}
+	return out, err
+}
+
+var (
+	debianTrustedOnce sync.Once
+	debianTrusted     bool
+)
+
+// debianTrustedDefault reports whether the local OpenSSH was built with
+// Debian's patch that makes ForwardX11Trusted default to yes (Debian, Ubuntu
+// and GitHub's Ubuntu runners). Upstream OpenSSH, which pi-sh follows,
+// defaults to no.
+func debianTrustedDefault(ssh string) bool {
+	debianTrustedOnce.Do(func() {
+		out, err := exec.Command(ssh, "-G", "-F", "none", "pi").Output()
+		debianTrusted = err == nil && strings.Contains(string(out), "\nforwardx11trusted yes\n")
+	})
+	return debianTrusted
+}
+
+// mentionsOption reports whether a case sets the option on the command line
+// or in a -F file, in which case the reference value is kept as printed.
+func mentionsOption(args []string, option string) bool {
+	for i, arg := range args {
+		text := arg
+		if i > 0 && args[i-1] == "-F" {
+			if data, err := os.ReadFile(arg); err == nil {
+				text = string(data)
+			}
+		}
+		if strings.Contains(strings.ToLower(text), option) {
+			return true
+		}
+	}
+	return false
 }
 
 func compareDump(t *testing.T, args []string, want map[string]string) {

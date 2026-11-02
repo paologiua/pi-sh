@@ -60,7 +60,7 @@ func TestLogLevelOpenSSHDifferential(t *testing.T) {
 			}
 		}
 		args := append(append([]string{"-G", "-F", config}, tc.flags...), "host")
-		out, err := exec.Command(ssh, args...).Output()
+		out, err := referenceDump(ssh, args)
 		if err != nil {
 			t.Fatalf("%q: reference failed: %v", args, err)
 		}

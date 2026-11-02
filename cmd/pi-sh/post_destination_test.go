@@ -25,7 +25,7 @@ func TestPostDestinationOptionsAgainstOpenSSH(t *testing.T) {
 	} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			args := append([]string{"-G", "-Fnone"}, tail...)
-			reference, err := exec.Command(ssh, args...).Output()
+			reference, err := referenceDump(ssh, args)
 			if err != nil {
 				t.Fatal("offline reference failed", err)
 			}

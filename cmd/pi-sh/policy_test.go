@@ -79,7 +79,7 @@ func TestPolicyDumpOpenSSHDifferential(t *testing.T) {
 		{"-G", "-F", path, "-oConnectTimeout=3", "-oBatchMode=no", "alias"},
 		{"-G", "-F", "none", "-oTCPKeepAlive=yes", "-oChannelTimeout=none", "ssh://pi"},
 	} {
-		out, err := exec.Command(ssh, args...).Output()
+		out, err := referenceDump(ssh, args)
 		if err != nil {
 			t.Fatal(args, err)
 		}

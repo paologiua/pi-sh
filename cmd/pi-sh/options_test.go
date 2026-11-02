@@ -85,7 +85,7 @@ func TestConfigFileOpenSSHDifferential(t *testing.T) {
 			}
 			args := append([]string{"-G", "-F", path}, tc.flags...)
 			args = append(args, tc.host)
-			out, err := exec.Command(ssh, args...).Output()
+			out, err := referenceDump(ssh, args)
 			if err != nil {
 				if failure, ok := err.(*exec.ExitError); ok {
 					t.Fatalf("reference: %v: %s", err, failure.Stderr)
@@ -231,7 +231,7 @@ func TestOptionsOpenSSHDifferential(t *testing.T) {
 	} {
 		command := append([]string{"-G", "-F", "none"}, args...)
 		command = append(command, "example.invalid")
-		out, err := exec.Command(ssh, command...).Output()
+		out, err := referenceDump(ssh, command)
 		if err != nil {
 			t.Fatalf("ssh -G %q: %v", args, err)
 		}
@@ -264,7 +264,7 @@ func TestEscapeDumpOpenSSHDifferential(t *testing.T) {
 	}
 	for c := 1; c < 128; c++ {
 		args := []string{"-G", "-Fnone", "-e", string(rune(c)), "example.invalid"}
-		out, err := exec.Command(ssh, args...).Output()
+		out, err := referenceDump(ssh, args)
 		if err != nil {
 			t.Fatalf("reference escape %d: %v", c, err)
 		}
