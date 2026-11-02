@@ -41,6 +41,21 @@ func TestOptionsBoundariesAndValidation(t *testing.T) {
 	}
 }
 
+func TestDirectLoginIsDefault(t *testing.T) {
+	for _, tc := range []struct {
+		args   []string
+		direct bool
+	}{{[]string{"device"}, true}, {[]string{"--direct-login", "device"}, true}, {[]string{"--browser", "device"}, false}} {
+		o, err := parseOptions(tc.args)
+		if err != nil {
+			t.Fatal(tc.args, err)
+		}
+		if o.direct != tc.direct || o.browser == tc.direct {
+			t.Errorf("%q: direct=%v browser=%v", tc.args, o.direct, o.browser)
+		}
+	}
+}
+
 func TestConfigFileOpenSSHDifferential(t *testing.T) {
 	ssh, err := exec.LookPath("ssh")
 	if err != nil {

@@ -24,8 +24,8 @@ Host * !special
 
 ```sh
 pi-sh -G -F ./pi-sh.conf workpi
-pi-sh --direct-login -F ./pi-sh.conf workpi
-pi-sh --direct-login --experimental-command -F ./pi-sh.conf -nT workpi 'cat; exit 23'
+pi-sh -F ./pi-sh.conf workpi
+pi-sh --experimental-command -F ./pi-sh.conf -nT workpi 'cat; exit 23'
 ```
 
 The examples exercise local parsing or existing command capabilities; these new
@@ -203,8 +203,8 @@ Match final originalhost pi
 RequestTTY yes/force now selects the experimental command TTY path with the
 stdin-dependent policy in TTY_COMMANDS.md. Legacy TTY requests and interactive
 no-TTY shells still fail before authentication. The broker's no-TTY
-child semantics retain Connect's underlying PTY carrier. Authentication remains
-explicit through `--direct-login` or `--browser`.
+child semantics retain Connect's underlying PTY carrier. Direct login is the
+default authentication; `--browser` selects the companion.
 
 ## Evidence
 

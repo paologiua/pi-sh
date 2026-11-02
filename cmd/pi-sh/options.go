@@ -341,9 +341,8 @@ func parseOptions(args []string) (options, error) {
 	if o.dump {
 		return o, nil
 	}
-	if !o.browser && !o.direct {
-		return o, errors.New("select --browser or --direct-login")
-	}
+	// Direct login is the default; --browser selects the companion instead.
+	o.direct = !o.browser
 	if (o.legacy || o.legacyShell) && (o.forwarding() || o.noSession()) {
 		return o, errors.New("forwarding and -N require the in-memory adapters, not the legacy streams")
 	}

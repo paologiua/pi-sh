@@ -39,7 +39,7 @@ func app() int {
 	var tuningError error
 	version := f.Bool("version", false, "Print client version without login or network access")
 	f.BoolVar(version, "V", false, "Print client version without login or network access")
-	direct := f.Bool("direct-login", false, "use memory-only direct Raspberry Pi ID login")
+	direct := f.Bool("direct-login", false, "use direct Raspberry Pi ID login (default)")
 	browser := f.Bool("browser", false, "use the authorized Connect browser companion")
 	server := f.String("s", "", "existing absolute remote sftp-server path (default: check standard paths)")
 	requests, buffer := new(uint), new(uint)
@@ -83,7 +83,7 @@ func app() int {
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	f.Usage = func() {
-		fmt.Fprintln(f.Output(), "usage: pi-sftp (--direct-login|--browser) [-afNpqrv] [-B buffer] [-R requests] [-b file|-] [-F file|none] [-l limit] [-o option] [-s server] [-X setting] [email::]device\n       pi-sftp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		fmt.Fprintln(f.Output(), "usage: pi-sftp [--direct-login|--browser] [-afNpqrv] [-B buffer] [-R requests] [-b file|-] [-F file|none] [-l limit] [-o option] [-s server] [-X setting] [email::]device\n       pi-sftp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
 		fmt.Fprint(f.Output(), connectcompat.Help)
 		cliargs.PrintOptions(f)
 	}
@@ -113,10 +113,12 @@ func app() int {
 		}
 		return 0
 	}
-	if *direct == *browser || f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: pi-sftp (--direct-login|--browser) [-afpqrv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
+	// Direct login is the default; --browser selects the companion instead.
+	if (*direct && *browser) || f.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: pi-sftp [--direct-login|--browser] [-afpqrv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
 		return 1
 	}
+	*direct = !*browser
 	if _, err := sftpclient.ServerCommand(*server); err != nil {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1

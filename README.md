@@ -103,18 +103,19 @@ For local builds, install **Go 1.27.3 or newer**, as required by go.mod:
 ```sh
 ./scripts/build.sh
 ./bin/pi-sh --help
-./bin/pi-sh --direct-login raspberrypi
+./bin/pi-sh raspberrypi
 ```
 
 Use the exact Connect device name/ID, or an alias from an explicit configuration
-file. Direct login prompts for your account, password and one-time code locally;
-password/code input is hidden. Each process currently signs in again.
+file. Direct login is the default: it prompts for your account, password and
+one-time code locally; password/code input is hidden. Each process currently
+signs in again. Use `--browser` to select the browser companion instead.
 
 Choose the account explicitly to skip the email prompt:
 
 ```sh
-./bin/pi-sh --direct-login me@example.com::raspberrypi
-./bin/pi-sh --direct-login -l me@example.com raspberrypi
+./bin/pi-sh me@example.com::raspberrypi
+./bin/pi-sh -l me@example.com raspberrypi
 ```
 
 The account is a Raspberry Pi ID email. A Unix-style `pi@raspberrypi` cannot select
@@ -129,9 +130,9 @@ Use `-e none` to disable escapes. [Terminal behavior](docs/TERMINAL.md).
 Commands currently require the explicit experimental flag:
 
 ```sh
-./bin/pi-sh --direct-login --experimental-command raspberrypi 'printf "hello\n"; exit 23'
+./bin/pi-sh --experimental-command raspberrypi 'printf "hello\n"; exit 23'
 echo $?   # 23
-./bin/pi-sh --direct-login --experimental-command -tt raspberrypi 'tty'
+./bin/pi-sh --experimental-command -tt raspberrypi 'tty'
 ```
 
 Without a terminal, the broker carries binary stdin, independent stdout/stderr
@@ -144,10 +145,10 @@ like SSH with a PTY. [Command semantics](docs/SHELL_BROKER.md),
 These examples write to the destination you specify; use paths you own:
 
 ```sh
-./bin/pi-cp --direct-login ./notes.txt raspberrypi:notes.txt
-./bin/pi-cp --direct-login raspberrypi:notes.txt ./downloaded.txt
-./bin/pi-cp --direct-login -rp ./photos raspberrypi:photos
-./bin/pi-cp --direct-login -l 1024 -X buffer=32K ./notes.txt raspberrypi:notes.txt
+./bin/pi-cp ./notes.txt raspberrypi:notes.txt
+./bin/pi-cp raspberrypi:notes.txt ./downloaded.txt
+./bin/pi-cp -rp ./photos raspberrypi:photos
+./bin/pi-cp -l 1024 -X buffer=32K ./notes.txt raspberrypi:notes.txt
 ```
 
 `pi-cp` uses SFTP, like modern scp. It has no legacy `-O` fallback or two-device
@@ -158,8 +159,8 @@ copy mode. Recursive copies follow source symbolic links; console recursion in
 ## Use the SFTP console
 
 ```sh
-./bin/pi-sftp --direct-login raspberrypi
-./bin/pi-sftp --direct-login --read-only raspberrypi
+./bin/pi-sftp raspberrypi
+./bin/pi-sftp --read-only raspberrypi
 ```
 
 ```text
@@ -173,7 +174,7 @@ sftp> quit
 Batch commands come from a file or standard input:
 
 ```sh
-printf 'pwd\nls\nquit\n' | ./bin/pi-sftp --direct-login -b - raspberrypi
+printf 'pwd\nls\nquit\n' | ./bin/pi-sftp -b - raspberrypi
 ```
 
 Login still prompts on the controlling terminal. Batch commands are supported;
@@ -193,8 +194,8 @@ Host mypi
 
 ```sh
 ./bin/pi-sh -G -F ./pi-sh.conf mypi
-./bin/pi-sh --direct-login -F ./pi-sh.conf mypi
-./bin/pi-sh --direct-login -N -L 8080:127.0.0.1:80 raspberrypi
+./bin/pi-sh -F ./pi-sh.conf mypi
+./bin/pi-sh -N -L 8080:127.0.0.1:80 raspberrypi
 ```
 
 No default SSH configuration is read. Unsupported settings are refused rather

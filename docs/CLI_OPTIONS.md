@@ -11,7 +11,7 @@ is [ssh(1)](https://man.openbsd.org/ssh.1) and
 ten local differential invocations use the installed OpenSSH_10.2p1.
 
 ```sh
-pi-sh --direct-login --experimental-command -nT device 'cat; exit 23'
+pi-sh --experimental-command -nT device 'cat; exit 23'
 pi-sh --browser -enone device
 pi-sh -G -Fnone -o 'EscapeChar = "none"' -oStdinNull=yes device
 ```
