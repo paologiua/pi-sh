@@ -108,8 +108,23 @@ For local builds, install **Go 1.27.3 or newer**, as required by go.mod:
 
 Use the exact Connect device name/ID, or an alias from an explicit configuration
 file. Direct login is the default: it prompts for your account, password and
-one-time code locally; password/code input is hidden. Each process currently
-signs in again. Use `--browser` to select the browser companion instead.
+one-time code locally; password/code input is hidden. Use `--browser` to select
+the browser companion instead.
+
+After signing in, pi-sh offers to save the session for next time, encrypted
+with a passphrase you choose (Enter skips; nothing is ever saved in plaintext).
+One passphrase protects every saved account, like an SSH key passphrase; later
+runs ask only for it. Passwords and one-time codes are never saved:
+
+```sh
+./bin/pi-sh --sessions                  # list saved sessions and check them
+./bin/pi-sh --logout me@example.com     # sign out and delete the saved session
+./bin/pi-sh --passphrase                # change the passphrase
+./bin/pi-sh -o UseKeychain=yes raspberrypi   # keep the passphrase in the keyring
+```
+
+`UseKeychain yes` (also in a configuration file) stores only the passphrase in
+the macOS Keychain or Linux Secret Service, as Apple's ssh does.
 
 Choose the account explicitly to skip the email prompt:
 

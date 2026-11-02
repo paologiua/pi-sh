@@ -46,6 +46,9 @@ type options struct {
 	// chooseDevice records a destination that names only the account
 	// ("pi-sh email"): the device is chosen from a list after sign-in.
 	chooseDevice bool
+	// manage is a saved-session command (--sessions, --logout, --passphrase)
+	// run instead of a connection; logoutAccount is --logout's account.
+	manage, logoutAccount string
 	// fwd holds -L/-D/-W and the forwarding directives; features holds the
 	// accepted (off) values of refused features and SessionType, so -G
 	// prints them. Remote (-R) forwardings with a remote socket path are refused.
@@ -102,6 +105,21 @@ func parseOptions(args []string) (options, error) {
 				o.legacy = true
 			case "--legacy-shell":
 				o.legacyShell = true
+			case "--sessions", "--passphrase", "--logout":
+				if o.manage != "" {
+					return o, errors.New("select only one of --sessions, --logout and --passphrase")
+				}
+				o.manage = a[2:]
+				if a == "--logout" {
+					if i+1 >= len(args) {
+						return o, errors.New("--logout requires a Raspberry Pi ID account")
+					}
+					i++
+					if err := account.Validate(args[i]); err != nil {
+						return o, err
+					}
+					o.logoutAccount = args[i]
+				}
 			default:
 				return o, errors.New("unsupported pi-sh option")
 			}
@@ -333,6 +351,12 @@ func parseOptions(args []string) (options, error) {
 		return o, err
 	}
 	o.policy.DefaultAccount = defaultAccount
+	if o.manage != "" {
+		if len(o.args) > 0 || o.browser || o.dump {
+			return o, fmt.Errorf("--%s takes no destination, --browser or -G", o.manage)
+		}
+		return o, nil
+	}
 	if len(o.args) > 0 {
 		if err := connpolicy.Target(o.destination()); err != nil {
 			return o, err

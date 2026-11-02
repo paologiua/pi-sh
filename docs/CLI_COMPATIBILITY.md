@@ -30,8 +30,9 @@ into SSH. Unsupported options fail before login instead of being silently ignore
 | `-s` | Refused: arbitrary subsystem requests; use pi-sftp for the existing SFTP server |
 | `-w` | Refused: no tun/tap network configuration |
 
-Additional options: `--direct-login`, `--browser`, `--experimental-command`,
-`--legacy-command`, `--legacy-shell`, `--version`, `-h` and `--help`. Commands currently require
+Additional options: `--direct-login` (default), `--browser`, `--experimental-command`,
+`--legacy-command`, `--legacy-shell`, `--sessions`, `--logout email`, `--passphrase`,
+`--version`, `-h` and `--help`. A bare `email` destination chooses the device after sign-in. Commands currently require
 `--experimental-command`; normal `ssh host command` spelling alone is insufficient.
 `[email::]device` selects the Connect device/account; `pi@device` is not Unix login.
 

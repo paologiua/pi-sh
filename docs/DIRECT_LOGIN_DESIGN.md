@@ -18,6 +18,10 @@ A future local login command must prompt only when its state machine has identif
 
 ## Session boundary and cookies
 
+Update 2026-11-02: the owner chose to persist signed-in sessions in an
+encrypted, passphrase-protected store (SECURITY.md, "Saved sessions"). The
+memory-only boundary below still describes a process that does not save.
+
 Use one owned `http.Client` and an in-memory `cookiejar.Jar` for a single login attempt and its subsequent Connect requests. Configure `publicsuffix.List`; the package explicitly warns that a nil suffix list is insecure. Do not serialize the jar, log cookies, import browser profiles or pass session values through the existing companion URL. [Go cookiejar documentation](https://pkg.go.dev/net/http/cookiejar).
 
 The jar supplies domain, path and Secure matching; it is not a browser security sandbox. Apply the application origin policy before consulting it or making any request. Never assume Go enforces every browser navigation, SameSite, document-origin or script rule. Cookie authentication is bearer-sensitive: accepting a cookie does not establish that the current user may open a particular device. Preserve server-side authorization on every operation. [HTTP cookie model, RFC 6265](https://www.rfc-editor.org/rfc/rfc6265).

@@ -52,9 +52,11 @@ type fakeKeyring struct {
 	sets int
 }
 
-func (k *fakeKeyring) Get() ([]byte, bool, error) { return append([]byte(nil), k.pass...), k.pass != nil, nil }
-func (k *fakeKeyring) Set(p []byte) error         { k.pass = append([]byte(nil), p...); k.sets++; return nil }
-func (k *fakeKeyring) Delete() error              { k.pass = nil; return nil }
+func (k *fakeKeyring) Get() ([]byte, bool, error) {
+	return append([]byte(nil), k.pass...), k.pass != nil, nil
+}
+func (k *fakeKeyring) Set(p []byte) error { k.pass = append([]byte(nil), p...); k.sets++; return nil }
+func (k *fakeKeyring) Delete() error      { k.pass = nil; return nil }
 
 // script answers prompts in order and counts them.
 type script struct {

@@ -175,7 +175,7 @@ func Validate(key, value string) error {
 		_, err := Hostname(value, "placeholder")
 		return err
 	case "user", "port", "batchmode", "numberofpasswordprompts", "connecttimeout", "connectionattempts",
-		"serveraliveinterval", "serveralivecountmax", "tcpkeepalive", "channeltimeout":
+		"serveraliveinterval", "serveralivecountmax", "tcpkeepalive", "channeltimeout", "usekeychain":
 		// Syntax only; connpolicy.FromValues rejects effective settings that
 		// have no Connect equivalent (for example any User or Port).
 		return connpolicy.Validate(key, value)

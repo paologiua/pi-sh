@@ -5,18 +5,26 @@ import "pi-sh/internal/connectcompat"
 const clientHelp = `usage: pi-sh [--direct-login|--browser] [options] [email::]device [command ...]
        pi-sh [options] email [command ...]   (choose the device after sign-in)
        pi-sh -G [-F file|none] [-o option] [device]
+       pi-sh --sessions | --logout email | --passphrase
        pi-sh -V | --version | -Q query | --help
 
 Unofficial SSH-like client over Raspberry Pi Connect (not the SSH protocol).
-Commands require --experimental-command. Login credentials stay in memory.
+Commands require --experimental-command. Passwords and one-time codes are never
+stored; signed-in sessions can be saved, encrypted with one passphrase.
 ` + connectcompat.Help + `
 Connection:
   --direct-login       Raspberry Pi ID password/TOTP login (default)
   --browser            Use an authorized Connect browser companion
   -l email             Raspberry Pi ID account (not a remote Unix user)
+  -o UseKeychain=yes   Keep the saved-sessions passphrase in the system keyring
   -F file|none         Explicit configuration file; no default SSH files read
   -o option            Configuration directive; repeatable, first value wins
   -P tag               Select a configuration tag
+
+Saved sessions (direct login):
+  --sessions           List saved sessions and check whether each is signed in
+  --logout email       Sign the saved session out of Connect and delete it
+  --passphrase         Change the passphrase protecting all saved sessions
 
 Session and terminal:
   --experimental-command  Execute command with binary stdin and separate streams

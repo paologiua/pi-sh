@@ -240,10 +240,43 @@ No Python requirement or automatic legacy-mode downgrade is introduced.
 
 ## Direct HTTPS mode
 
-`--direct-login` uses fresh ordinary HTTPS forms and a private memory-only cookie
-jar with public-suffix checks. Password/TOTP are entered at the controlling
-terminal with echo disabled, sent only to exact observed ID actions, and never
-logged or persisted. Unknown/ambiguous forms, CSRF omissions and credential-body
+Direct login (the default; `--direct-login`) uses fresh ordinary HTTPS forms and
+a private cookie jar with public-suffix checks. Password/TOTP are entered at the
+controlling terminal with echo disabled, sent only to exact observed ID actions,
+and never logged or persisted.
+
+### Saved sessions
+
+After a successful direct login the signed-in session's cookies (a bearer
+credential, never the password or one-time code) can be saved, OpenSSH-like:
+
+- One file, `pi-sh/sessions` in the configuration directory (`$XDG_CONFIG_HOME`
+  or `~/.config`), holds every saved session, encrypted with XChaCha20-Poly1305
+  under a key derived by Argon2id (t=3, 64 MiB, p=4, random salt) from a single
+  passphrase. The header (format, KDF parameters, salt, nonce) is authenticated
+  data; absurd parameters are rejected before the KDF runs.
+- The directory is created 0700 and the file written 0600 through a temporary
+  file and atomic rename, under an exclusive lock on `sessions.lock`; a file
+  readable by others, a symlink or a non-regular file is refused.
+- No plaintext fallback exists: an empty passphrase means nothing is saved.
+  The passphrase is read hidden from the controlling terminal only, never from
+  arguments, environment or files. Three wrong answers or Enter skip saved
+  sessions for that process, as ssh moves on from a key.
+- `UseKeychain yes` (off by default, Apple ssh keyword) keeps the passphrase,
+  not the sessions, in the macOS Keychain (`security`) or Linux Secret Service
+  (`secret-tool`). The secret is written on the tool's stdin, never in argv.
+- A restored session is used only after the Connect devices page, fetched
+  without following redirects, shows the signed-in sign-out form; otherwise it
+  is deleted as expired.
+- `--logout email` submits Connect's own sign-out form (POST `/session` with
+  `_method=delete` and that form's CSRF token, observed 2026-11-02) and deletes
+  the local copy. Whether Connect invalidates other copies of the cookies, and
+  whether the Raspberry Pi ID session ends too, is not verified.
+- While a process runs, the decrypted session and derived key are in memory;
+  zeroing is best effort. Anyone with the file and the passphrase can use the
+  session until it expires or is signed out; the password is not exposed.
+
+ Unknown/ambiguous forms, CSRF omissions and credential-body
 redirects fail closed. HTTP 401 is accepted only at the password transition with
 the exact observed OTP challenge; it is not a general authorization exemption.
 Login uses normal server-owned OAuth parameters/callback, not an invented grant
