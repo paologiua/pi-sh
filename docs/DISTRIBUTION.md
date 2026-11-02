@@ -138,5 +138,6 @@ tests, builds with `scripts/build.sh all`, checks that the built clients report
 the tag without `dirty` and that `SHA256SUMS` matches, then creates the release
 with the seven archives and `SHA256SUMS`. Tags with a suffix (`-alpha.N`, `-rc.N`)
 become prereleases. It uses the workflow's own token; no personal token is stored.
-v0.1.0-alpha.2 was published by hand from locally built archives, before this
-workflow existed; the workflow has not yet run on GitHub.
+For a tag pushed before its notes existed, run the workflow from the Actions tab
+on `main` with that tag: it builds the tag but reads `docs/releases/<tag>.md`
+from `main`. v0.1.0-alpha.2 is published this way.
