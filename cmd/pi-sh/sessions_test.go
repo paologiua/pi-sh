@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pi-sh/internal/savedlogin"
+	"pi-sh/internal/sessionstore"
 )
 
 type fakeManager struct {
@@ -19,6 +20,7 @@ type fakeManager struct {
 	changed   int
 	created   bool
 	removed   bool
+	reset     savedlogin.ResetResult
 }
 
 func (f *fakeManager) List(context.Context, bool) ([]savedlogin.Status, error) { return f.list, f.err }
@@ -30,8 +32,11 @@ func (f *fakeManager) ChangePassphrase(context.Context) (bool, error) {
 	f.changed++
 	return f.created, f.err
 }
-func (f *fakeManager) ForgetPassphrase() (bool, error) { return f.removed, f.err }
-func (f *fakeManager) Close()                          {}
+func (f *fakeManager) ForgetPassphrase(context.Context) (bool, error) { return f.removed, f.err }
+func (f *fakeManager) Reset(context.Context) (savedlogin.ResetResult, error) {
+	return f.reset, f.err
+}
+func (f *fakeManager) Close() {}
 
 func runManage(t *testing.T, f *fakeManager, args ...string) (string, error) {
 	t.Helper()
@@ -81,6 +86,15 @@ func TestSessionCommands(t *testing.T) {
 	if out, err := runManage(t, &fakeManager{}, "--forget-passphrase"); err != nil || !strings.Contains(out, "holds no pi-sh passphrase") {
 		t.Fatalf("--forget-passphrase without entry: %q %v", out, err)
 	}
+	if out, err := runManage(t, &fakeManager{err: sessionstore.ErrNoKeyring}, "--forget-passphrase"); err != nil || !strings.Contains(out, "no supported keyring") {
+		t.Fatalf("--forget-passphrase without keyring: %q %v", out, err)
+	}
+	if out, err := runManage(t, &fakeManager{reset: savedlogin.ResetResult{Removed: true, SignedOut: 2}}, "--reset-sessions"); err != nil || !strings.Contains(out, "(2 signed out of Connect)") {
+		t.Fatalf("--reset-sessions: %q %v", out, err)
+	}
+	if out, err := runManage(t, &fakeManager{}, "--reset-sessions"); err != nil || out != "Nothing was reset.\n" {
+		t.Fatalf("declined --reset-sessions: %q %v", out, err)
+	}
 }
 
 func TestSessionCommandOptions(t *testing.T) {
@@ -89,7 +103,7 @@ func TestSessionCommandOptions(t *testing.T) {
 		t.Fatalf("%+v %v", o.policy, err)
 	}
 	for _, args := range [][]string{
-		{"--logout"}, {"--logout", "pi@raspberrypi"}, {"--sessions", "device"}, {"--sessions", "--passphrase"}, {"--forget-passphrase", "device"},
+		{"--logout"}, {"--logout", "pi@raspberrypi"}, {"--sessions", "device"}, {"--sessions", "--passphrase"}, {"--forget-passphrase", "device"}, {"--reset-sessions", "--sessions"},
 		{"--browser", "--sessions"}, {"-G", "--sessions"}, {"-oUseKeychain=maybe", "--sessions"},
 	} {
 		if _, err := parseOptions(args); err == nil {

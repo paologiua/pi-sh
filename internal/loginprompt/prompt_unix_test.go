@@ -263,3 +263,38 @@ func TestNewPassphraseConfirmsAndSkips(t *testing.T) {
 		t.Fatalf("empty answer must skip: %q %v", r.secret, r.err)
 	}
 }
+
+func TestConfirmNeedsYes(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Skip("pty unavailable:", err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() {
+		var b [256]byte
+		for {
+			if _, err := master.Read(b[:]); err != nil {
+				return
+			}
+		}
+	}()
+	for input, want := range map[string]bool{"yes\n": true, "YES\n": true, "y\n": false, "\n": false} {
+		done := make(chan bool, 1)
+		go func() {
+			yes, err := confirm(ctx, slave, slave, "Delete?")
+			if err != nil {
+				t.Error(err)
+			}
+			done <- yes
+		}()
+		if _, err := master.Write([]byte(input)); err != nil {
+			t.Fatal(err)
+		}
+		if got := <-done; got != want {
+			t.Errorf("%q: confirmed=%v", input, got)
+		}
+	}
+}

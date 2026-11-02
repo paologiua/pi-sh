@@ -267,7 +267,10 @@ credential, never the password or one-time code) can be saved, OpenSSH-like:
   service `pi-sh`, account `sessions`) or Linux Secret Service (`secret-tool`,
   attributes `service pi-sh account sessions`). The secret is written on the
   tool's stdin, never in argv. `--forget-passphrase` deletes that entry even
-  with UseKeychain off and keeps the sessions.
+  with UseKeychain off and keeps the sessions; it first asks for the
+  passphrase and checks it against the file, so the person cannot lose
+  access by forgetting a passphrase they never typed again. Without a
+  supported keyring (iSH, Windows) the passphrase is never stored at all.
 - `--passphrase` sets the passphrase before any session exists (an empty
   store) or re-encrypts every session under a new one.
 - A restored session is used only after the Connect devices page, fetched
@@ -275,8 +278,12 @@ credential, never the password or one-time code) can be saved, OpenSSH-like:
   is deleted as expired.
 - `--logout email` submits Connect's own sign-out form (POST `/session` with
   `_method=delete` and that form's CSRF token, observed 2026-11-02) and deletes
-  the local copy. After the last session is removed, the file and the keyring
-  passphrase are deleted too; the next saved session asks for a new one. Whether Connect invalidates other copies of the cookies, and
+  the local copy. As with an ssh key file, the (then empty) store and its
+  passphrase remain after the last logout.
+- `--reset-sessions`, after a typed `yes`, signs every still-valid session
+  out of Connect when the store can be unlocked, then deletes the file and
+  the keyring passphrase. With a forgotten passphrase it deletes them locally
+  and warns that those sessions stay valid on Connect until they expire. Whether Connect invalidates other copies of the cookies, and
   whether the Raspberry Pi ID session ends too, is not verified.
 - While a process runs, the decrypted session and derived key are in memory;
   zeroing is best effort. Anyone with the file and the passphrase can use the

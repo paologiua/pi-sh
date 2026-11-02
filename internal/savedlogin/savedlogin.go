@@ -23,9 +23,10 @@ type Prompts struct {
 	Passphrase    func(ctx context.Context, label string) ([]byte, error)
 	NewPassphrase func(ctx context.Context, label string) ([]byte, error)
 	Choose        func(ctx context.Context, heading string, items []string) (int, error)
+	Confirm       func(ctx context.Context, question string) (bool, error)
 }
 
-var terminal = Prompts{loginprompt.Passphrase, loginprompt.NewPassphrase, loginprompt.Choose}
+var terminal = Prompts{loginprompt.Passphrase, loginprompt.NewPassphrase, loginprompt.Choose, loginprompt.Confirm}
 
 // unlockAttempts matches ssh's three passphrase prompts per key.
 const unlockAttempts = 3
@@ -35,6 +36,7 @@ const (
 	labelCreate = "Save this session for next time? Choose a passphrase for saved pi-sh sessions (Enter to skip):"
 	labelChange = "New passphrase for saved pi-sh sessions:"
 	labelFirst  = "Choose a passphrase for saved pi-sh sessions:"
+	labelVerify = "Passphrase for saved pi-sh sessions (to confirm you remember it):"
 )
 
 // ErrLocked means the saved sessions exist but were not unlocked.
@@ -334,9 +336,6 @@ func (m *Manager) Logout(ctx context.Context, account string) (serverSignedOut b
 	if _, err := m.vault.Delete(entry.Account); err != nil {
 		return false, err
 	}
-	if err := m.removeIfEmpty(); err != nil {
-		return false, err
-	}
 	if errors.Is(signOut, webauth.ErrSignedOut) {
 		return false, nil
 	}
@@ -393,34 +392,132 @@ func (m *Manager) ChangePassphrase(ctx context.Context) (created bool, err error
 }
 
 // ForgetPassphrase deletes the passphrase from the system keyring, whether
-// or not UseKeychain is on now. Saved sessions are kept; the passphrase is
-// asked for again next time. removed is false when no entry existed.
-func (m *Manager) ForgetPassphrase() (removed bool, err error) {
+// or not UseKeychain is on now. Saved sessions are kept, so the person must
+// first type the passphrase (never read from the keyring here): forgetting
+// it from the keyring must not lock them out. removed is false when no entry
+// existed. Without a supported keyring it returns sessionstore.ErrNoKeyring.
+func (m *Manager) ForgetPassphrase(ctx context.Context) (removed bool, err error) {
 	k, err := m.systemKeyring()
 	if err != nil {
 		return false, err
 	}
-	_, found, err := k.Get()
+	stored, found, err := k.Get()
+	clear(stored)
 	if err != nil || !found {
 		return false, err
+	}
+	if m.store != nil {
+		exists, err := m.store.Exists()
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			if err := m.verify(ctx); err != nil {
+				return false, err
+			}
+		}
 	}
 	return true, k.Delete()
 }
 
-// removeIfEmpty deletes the sessions file once no session is left, and with
-// it the keyring passphrase, which then protects nothing. The next saved
-// session asks for a new passphrase. A keyring failure is only reported.
-func (m *Manager) removeIfEmpty() error {
-	entries, err := m.vault.List()
-	if err != nil || len(entries) > 0 {
-		return err
+// verify asks for the passphrase up to three times and checks it against
+// the sessions file without keeping the vault.
+func (m *Manager) verify(ctx context.Context) error {
+	for range unlockAttempts {
+		pass, err := m.prompts.Passphrase(ctx, labelVerify)
+		if err != nil {
+			return err
+		}
+		if pass == nil {
+			break
+		}
+		v, err := m.store.Unlock(pass)
+		clear(pass)
+		if err == nil {
+			v.Close()
+			return nil
+		}
+		if !errors.Is(err, sessionstore.ErrPassphrase) {
+			return err
+		}
+		fmt.Fprintln(m.notices, "Incorrect passphrase.")
 	}
-	m.Close()
-	if err := m.store.Remove(); err != nil {
-		return err
+	return errors.New("passphrase not confirmed; the keyring entry was kept")
+}
+
+// ResetResult reports what Reset did.
+type ResetResult struct {
+	// Removed is false when there was nothing to reset or it was declined.
+	Removed bool
+	// SignedOut counts sessions signed out of Connect; Unconfirmed counts
+	// saved sessions that could not be signed out (locked, expired or a
+	// failed request) and may stay valid on Connect until they expire.
+	SignedOut, Unconfirmed int
+	// Locked means the sessions were deleted without being unlocked, so
+	// none of them was signed out of Connect.
+	Locked bool
+}
+
+// Reset deletes every saved session, the sessions file and the keyring
+// passphrase after the person confirms. When the sessions can be unlocked,
+// each one still signed in is first signed out of Connect; with a forgotten
+// passphrase they are only deleted locally.
+func (m *Manager) Reset(ctx context.Context) (ResetResult, error) {
+	var r ResetResult
+	if m.store == nil {
+		return r, errors.New("cannot locate the pi-sh configuration directory")
 	}
-	if _, err := m.ForgetPassphrase(); err != nil && !errors.Is(err, sessionstore.ErrNoKeyring) {
-		fmt.Fprintf(m.notices, "Could not remove the passphrase from the keyring: %v\n", err)
+	exists, err := m.store.Exists()
+	if err != nil {
+		return r, err
 	}
-	return nil
+	if exists {
+		yes, err := m.prompts.Confirm(ctx, "Delete all saved pi-sh sessions and their passphrase?")
+		if err != nil || !yes {
+			return r, err
+		}
+		if err := m.unlock(ctx); err != nil {
+			return r, err
+		}
+		if m.vault != nil {
+			entries, err := m.vault.List()
+			if err != nil {
+				return r, err
+			}
+			for _, e := range entries {
+				c := m.newClient()
+				err := c.Restore(e.Data)
+				if err == nil {
+					err = c.Verify(ctx)
+				}
+				if err == nil {
+					err = c.Logout(ctx)
+				}
+				switch {
+				case err == nil:
+					r.SignedOut++
+				case !errors.Is(err, webauth.ErrSignedOut):
+					r.Unconfirmed++
+					fmt.Fprintf(m.notices, "%s: Connect sign-out failed: %v\n", e.Account, err)
+				}
+			}
+		} else {
+			r.Locked = true
+		}
+		m.Close()
+		if err := m.store.Remove(); err != nil {
+			return r, err
+		}
+		r.Removed = true
+	}
+	if k, err := m.systemKeyring(); err == nil {
+		_, found, gerr := k.Get()
+		if gerr == nil && found {
+			if err := k.Delete(); err != nil {
+				return r, err
+			}
+			r.Removed = true
+		}
+	}
+	return r, nil
 }

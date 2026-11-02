@@ -182,6 +182,33 @@ func newPassphrase(ctx context.Context, in, out *os.File, label string) ([]byte,
 	return nil, errors.New("passphrases did not match")
 }
 
+// Confirm asks question on the controlling terminal and reports whether the
+// person typed "yes" (any other answer, including Enter, declines).
+func Confirm(ctx context.Context, question string) (bool, error) {
+	in, out, err := openTerminal()
+	if err != nil {
+		return false, errors.New("confirmation requires a controlling terminal")
+	}
+	defer in.Close()
+	if out != in {
+		defer out.Close()
+	}
+	return confirm(ctx, in, out, question)
+}
+
+func confirm(ctx context.Context, in, out *os.File, question string) (yes bool, err error) {
+	err = onTerminal(ctx, in, out, func(*terminalGuard) error {
+		fmt.Fprintf(out, "%s Type yes to continue: ", question)
+		line, err := readLine(in, 32)
+		if err != nil {
+			return errors.New("could not read confirmation")
+		}
+		yes = strings.EqualFold(strings.TrimSpace(line), "yes")
+		return nil
+	})
+	return yes, err
+}
+
 // readLine reads one visible line, without its terminator, up to limit bytes.
 func readLine(in *os.File, limit int) (string, error) {
 	var line []byte
