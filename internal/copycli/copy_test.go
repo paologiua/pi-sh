@@ -33,6 +33,25 @@ func TestCopyOperandSyntax(t *testing.T) {
 	}
 }
 
+func TestCopyAccountOnlyOperandChoosesDevice(t *testing.T) {
+	p, err := New([]string{"local", "me@example.com:notes.txt"})
+	if err != nil || !p.Upload || !p.Choose || p.Device != "" || p.Account != "me@example.com" || p.Target.Path != "notes.txt" {
+		t.Fatalf("upload: %+v %v", p, err)
+	}
+	p, err = New([]string{"me@example.com:a", "me@example.com:", "local"})
+	if err != nil || p.Upload || !p.Choose || p.Sources[1].Path != "." {
+		t.Fatalf("download: %+v %v", p, err)
+	}
+	for _, args := range [][]string{
+		{"pi@raspberrypi:x", "local"}, {"me@example.com:a", "other@example.com:b", "local"},
+		{"me@example.com:a", "me@example.com::pi:b", "local"}, {"local", "me@example.com:a", "local2"},
+	} {
+		if _, err := New(args); err == nil {
+			t.Errorf("accepted %q", args)
+		}
+	}
+}
+
 func TestCopyMultipleBinaryFilesAndDirectoryPreflight(t *testing.T) {
 	local, remote := net.Pipe()
 	server := sftp.NewRequestServer(remote, sftp.InMemHandler())

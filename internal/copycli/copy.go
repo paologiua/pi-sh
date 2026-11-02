@@ -22,13 +22,20 @@ import (
 // the copy, and pi-cp exits 255.
 var ErrLocalSource = errors.New("stat local")
 
-// Operand is a local path (Device empty) or a remote device path. Account is
-// the Raspberry Pi ID account from email::device:path or an scp:// user.
-type Operand struct{ Device, Path, Account string }
+// Operand is a local path or a remote device path. Account is the Raspberry
+// Pi ID account from email::device:path, email:path or an scp:// user. Choose
+// marks email:path, whose device is chosen after sign-in (Device empty).
+type Operand struct {
+	Device, Path, Account string
+	Choose                bool
+}
+
+// Remote reports whether the operand names a path on a Connect device.
+func (o Operand) Remote() bool { return o.Device != "" || o.Choose }
 
 // Parse follows OpenSSH scp operand syntax: [user@]host:path, [user@][addr]:path
 // and scp://[user@]host[:port][/path], plus the pi-sh account form
-// email::device:path. A Unix-style user, a port or an address literal has no
+// email::device:path or email:path. A Unix-style user, a port or an address literal has no
 // Connect equivalent and is refused explicitly. A URI user is the account
 // when it is an email address (percent-encode '@' as %40).
 func Parse(s string) (Operand, error) {
@@ -41,6 +48,11 @@ func Parse(s string) (Operand, error) {
 	}
 	if !remote {
 		return Operand{Path: s}, nil
+	}
+	if !d.URI && !d.Account && d.User != "" && account.Validate(d.User+"@"+d.Host) == nil {
+		// pi-sh extension: email:path names only the account; the device is
+		// chosen after sign-in. Unix-style user@host:path stays refused.
+		return Operand{Path: d.Path, Account: d.User + "@" + d.Host, Choose: true}, nil
 	}
 	if err := connpolicy.DestinationUser(d); err != nil {
 		return Operand{}, err
@@ -64,7 +76,9 @@ type Plan struct {
 	Target  Operand
 	Device  string
 	// Account is the remote operands' common account, or "" (see Parse).
-	Account              string
+	Account string
+	// Choose means the device is chosen after sign-in (email:path).
+	Choose               bool
 	Upload               bool
 	Preserve             bool
 	Recursive            bool
@@ -84,28 +98,28 @@ func New(args []string) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	p.Upload = p.Target.Device != ""
+	p.Upload = p.Target.Remote()
 	for _, text := range args[:len(args)-1] {
 		source, err := Parse(text)
 		if err != nil {
 			return nil, err
 		}
-		if p.Upload && source.Device != "" {
+		if p.Upload && source.Remote() {
 			return nil, errors.New("remote-to-remote copy is not implemented")
 		}
-		if !p.Upload && source.Device == "" {
+		if !p.Upload && !source.Remote() {
 			return nil, errors.New("local-only and mixed-direction copies are not implemented")
 		}
 		if !p.Upload {
-			if p.Device != "" && (p.Device != source.Device || p.Account != source.Account) {
+			if len(p.Sources) > 0 && (p.Device != source.Device || p.Account != source.Account || p.Choose != source.Choose) {
 				return nil, errors.New("download sources must use the same Connect device/alias and account")
 			}
-			p.Device, p.Account = source.Device, source.Account
+			p.Device, p.Account, p.Choose = source.Device, source.Account, source.Choose
 		}
 		p.Sources = append(p.Sources, source)
 	}
 	if p.Upload {
-		p.Device, p.Account = p.Target.Device, p.Target.Account
+		p.Device, p.Account, p.Choose = p.Target.Device, p.Target.Account, p.Target.Choose
 	}
 	// Reject unsupported ~user remote paths before any login.
 	remote := p.Sources

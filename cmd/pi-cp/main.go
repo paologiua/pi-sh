@@ -52,7 +52,7 @@ func app() int {
 	f.Bool("s", false, "use the SFTP protocol (always the case)")
 	f.Bool("T", false, "no effect: strict filename checking applies only to the legacy SCP protocol, as in scp's SFTP mode")
 	f.Usage = func() {
-		fmt.Fprintln(f.Output(), "usage: pi-cp [--direct-login|--browser] [-Bpqrv] [-F file|none] [-l limit] [-o option] [-X setting] source ... destination\n       remote operand: [email::]device:path\n       pi-cp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		fmt.Fprintln(f.Output(), "usage: pi-cp [--direct-login|--browser] [-Bpqrv] [-F file|none] [-l limit] [-o option] [-X setting] source ... destination\n       remote operand: [email::]device:path or email:path (device chosen after sign-in)\n       pi-cp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
 		fmt.Fprint(f.Output(), connectcompat.Help)
 		cliargs.PrintOptions(f)
 	}
@@ -80,7 +80,7 @@ func app() int {
 	}
 	// Direct login is the default; --browser selects the companion instead.
 	if *direct && *browser {
-		fmt.Fprintln(os.Stderr, "usage: pi-cp [--direct-login|--browser] [-Bpqrv] [options] source(s) destination\n       remote operands: [email::]device:path or scp://[email%40domain@]device[/path]")
+		fmt.Fprintln(os.Stderr, "usage: pi-cp [--direct-login|--browser] [-Bpqrv] [options] source(s) destination\n       remote operands: [email::]device:path, email:path or scp://[email%40domain@]device[/path]")
 		return 1
 	}
 	*direct = !*browser
@@ -122,6 +122,12 @@ func app() int {
 		return 255
 	}
 	defer source.Close()
+	if plan.Choose {
+		if _, err := connectsession.ChooseDevice(ctx, source, os.Stderr); err != nil {
+			sessionFailure(log, err)
+			return 255
+		}
+	}
 	carrier, err := connectsession.DialWithPolicy(ctx, source, policy)
 	if err != nil {
 		sessionFailure(log, err)

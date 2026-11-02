@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"pi-sh/internal/account"
 	"pi-sh/internal/buildinfo"
 	"pi-sh/internal/cliargs"
 	"pi-sh/internal/connectcompat"
@@ -83,7 +84,7 @@ func app() int {
 	var overrides optionList
 	f.Var(&overrides, "o", "supported configuration directive (repeatable)")
 	f.Usage = func() {
-		fmt.Fprintln(f.Output(), "usage: pi-sftp [--direct-login|--browser] [-afNpqrv] [-B buffer] [-R requests] [-b file|-] [-F file|none] [-l limit] [-o option] [-s server] [-X setting] [email::]device\n       pi-sftp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
+		fmt.Fprintln(f.Output(), "usage: pi-sftp [--direct-login|--browser] [-afNpqrv] [-B buffer] [-R requests] [-b file|-] [-F file|none] [-l limit] [-o option] [-s server] [-X setting] [email::]device | email\n       pi-sftp -V | --version\n\nUnofficial Raspberry Pi Connect client. Options marked not supported are refused.\nUse -h or --help for this help; see docs/SSH_COMPATIBILITY.md for limits.")
 		fmt.Fprint(f.Output(), connectcompat.Help)
 		cliargs.PrintOptions(f)
 	}
@@ -115,7 +116,7 @@ func app() int {
 	}
 	// Direct login is the default; --browser selects the companion instead.
 	if (*direct && *browser) || f.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: pi-sftp [--direct-login|--browser] [-afpqrv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias")
+		fmt.Fprintln(os.Stderr, "usage: pi-sftp [--direct-login|--browser] [-afpqrv] [-s existing-server] [-b file|-] [-F file|none] [-o option] [email::]device-or-alias | email")
 		return 1
 	}
 	*direct = !*browser
@@ -123,7 +124,13 @@ func app() int {
 		fmt.Fprintln(os.Stderr, "pi-sftp:", err)
 		return 1
 	}
+	// pi-sh extension: a bare Raspberry Pi ID email names only the account;
+	// the device is chosen after sign-in. Unix-style user@host stays refused.
+	choose := !strings.HasPrefix(f.Arg(0), "sftp://") && account.Validate(f.Arg(0)) == nil
 	parsed, err := sshdest.SFTP(f.Arg(0))
+	if choose {
+		parsed, err = sshdest.Destination{User: f.Arg(0), Account: true}, nil
+	}
 	if err == nil {
 		err = connpolicy.DestinationUser(parsed)
 	}
@@ -168,6 +175,15 @@ func app() int {
 		return 255
 	}
 	defer source.Close()
+	host := parsed.Host
+	if choose {
+		device, err := connectsession.ChooseDevice(ctx, source, os.Stderr)
+		if err != nil {
+			sessionFailure(log, err)
+			return 255
+		}
+		host = device.Name
+	}
 	carrier, err := connectsession.DialWithPolicy(ctx, source, policy)
 	if err != nil {
 		sessionFailure(log, err)
@@ -180,7 +196,7 @@ func app() int {
 		return 255
 	}
 	if *noisy || (!quietProgress && *batch == "") {
-		fmt.Fprintf(os.Stderr, "Connected to %s.\n", parsed.Host)
+		fmt.Fprintf(os.Stderr, "Connected to %s.\n", host)
 	}
 	console := sftpcli.Console{Client: session.Client, Bandwidth: bandwidth, Requests: int(*requests), BufferSize: sftpclient.TransferBuffer(*buffer), RemoteUmask: &session.OriginalUmask, Flush: *flush, Resume: *resume, Preserve: *preserve, Recursive: *recursive, Progress: sftpProgress(os.Stdout, os.Stderr), ProgressDisabled: quietProgress, Input: input, Output: os.Stdout, Errors: os.Stderr, Batch: *batch != "", Noisy: *noisy, Quiet: quietProgress}
 	err = console.Run(ctx)

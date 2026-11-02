@@ -30,3 +30,16 @@ func TestDestinationMatchSession(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountOnlyDestinationRefusesConfiguration(t *testing.T) {
+	target, _, policy, err := ResolveSession("", "none", nil, "", map[string]string{"user": "me@example.com"})
+	if err != nil || target != "" || policy.Account != "me@example.com" {
+		t.Fatalf("account only: %q %+v %v", target, policy, err)
+	}
+	if _, _, _, err := ResolveSession("", filepath.Join(t.TempDir(), "missing"), nil, "", nil); err != ErrChooseDevice {
+		t.Fatalf("-F: %v", err)
+	}
+	if _, _, _, err := ResolveSession("", "none", []string{"HostName=pi"}, "", nil); err != ErrChooseDevice {
+		t.Fatalf("HostName: %v", err)
+	}
+}

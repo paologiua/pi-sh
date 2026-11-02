@@ -45,13 +45,22 @@ func Resolve(original, config string, overrides []string, operand map[string]str
 }
 
 // ResolveSession is Resolve with SettingsWithServer's Match session and values.
+// ErrChooseDevice refuses configuration for a destination that names only
+// the account: configuration is matched against a device chosen later.
+var ErrChooseDevice = errors.New("choosing the device after sign-in (an email without device) cannot be combined with -F or HostName; name the device as email::device")
+
 func ResolveSession(original, config string, overrides []string, server string, operand map[string]string) (string, map[string]string, connpolicy.Policy, error) {
 	return resolve(original, config, overrides, server, operand)
 }
 
 func resolve(original, config string, overrides []string, server string, operand map[string]string) (string, map[string]string, connpolicy.Policy, error) {
 	policy := connpolicy.Default()
-	if _, err := sshconfig.Hostname("%h", original); err != nil {
+	// An empty original names only the account: the device is chosen after
+	// sign-in, so no configuration file or HostName may apply to it.
+	if original == "" && config != "none" {
+		return "", nil, policy, ErrChooseDevice
+	}
+	if _, err := sshconfig.Hostname("%h", original); err != nil && original != "" {
 		return "", nil, policy, err
 	}
 	values := map[string]string{}
@@ -124,7 +133,9 @@ func resolve(original, config string, overrides []string, server string, operand
 	}
 	policy.DefaultAccount = defaultAccount
 	target := original
-	if name := values["hostname"]; name != "" {
+	if name := values["hostname"]; name != "" && original == "" {
+		return "", values, policy, ErrChooseDevice
+	} else if name != "" {
 		if target, err = sshconfig.Hostname(name, original); err != nil {
 			return "", values, policy, err
 		}

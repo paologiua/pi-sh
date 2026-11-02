@@ -139,6 +139,8 @@ terminal it prints the list and exits 255 without connecting):
 
 ```sh
 ./bin/pi-sh me@example.com
+./bin/pi-sftp me@example.com
+./bin/pi-cp ./notes.txt me@example.com:notes.txt
 ```
 
 The account is a Raspberry Pi ID email. A Unix-style `pi@raspberrypi` cannot select

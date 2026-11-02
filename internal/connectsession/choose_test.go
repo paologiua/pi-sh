@@ -1,4 +1,4 @@
-package main
+package connectsession
 
 import (
 	"reflect"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestDeviceLabelsDisambiguateRepeatedNames(t *testing.T) {
-	got := deviceLabels([]webauth.Device{{ID: "a", Name: "pi"}, {ID: "b", Name: "pi"}, {ID: "c", Name: "garage"}, {ID: "d"}})
+	got := DeviceLabels([]webauth.Device{{ID: "a", Name: "pi"}, {ID: "b", Name: "pi"}, {ID: "c", Name: "garage"}, {ID: "d"}})
 	want := []string{"pi (a)", "pi (b)", "garage", " (d)"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("labels = %q", got)

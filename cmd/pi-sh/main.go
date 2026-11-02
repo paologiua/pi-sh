@@ -109,7 +109,7 @@ func app() int {
 	}
 	source, err := authentication(ctx, destination, opts.direct, opts.policy)
 	if err == nil && opts.chooseDevice {
-		if err = chooseDevice(ctx, source, os.Stderr); err != nil {
+		if _, err = connectsession.ChooseDevice(ctx, source, os.Stderr); err != nil {
 			source.Close()
 			log.Failure(diag.Fatal, err)
 			return 255
