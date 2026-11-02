@@ -88,8 +88,10 @@ curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | b
 ```
 
 v0.1.0-alpha.2 is the selected project version and installer default.
-v0.1.0-alpha.1 is published as a GitHub prerelease (assets checked 2 November
-2026); alpha.2 works through the installer only after its assets are published.
+v0.1.0-alpha.1 and v0.1.0-alpha.2 are published as GitHub prereleases. alpha.2
+was built and published by release.yml on 2 November 2026; the installer from
+main then installed it on macOS/arm64 and the clients reported
+`v0.1.0-alpha.2+g1ebf24bacdfe`.
 The installer defaults to paologiua/pi-sh. --repo or PI_SH_REPO selects another
 repository, for example a fork. The source URL downloads the script; --repo
 selects the repository hosting the binary release assets. With curl, script
