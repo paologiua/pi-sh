@@ -8,14 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
-	"golang.org/x/net/publicsuffix"
 )
 
 type Stage string
@@ -50,11 +48,14 @@ type page struct {
 	loginForm   bool
 }
 
-// Client owns only an in-memory jar. No session serialization is exposed.
+// Client owns an in-memory jar. Export serializes a signed-in session only
+// for the encrypted session store; nothing else writes it.
 type Client struct {
 	http                   *http.Client
 	root                   string
 	identity               string
+	account                string
+	jar                    *recordingJar
 	allowed                map[string]bool
 	pending                *form
 	stage                  Stage
@@ -62,8 +63,8 @@ type Client struct {
 }
 
 func New() *Client {
-	jar, _ := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
-	c := &Client{root: "https://connect.raspberrypi.com", identity: "https://id.raspberrypi.com", allowed: map[string]bool{"https://connect.raspberrypi.com": true, "https://id.raspberrypi.com": true}}
+	jar := newJar()
+	c := &Client{jar: jar, root: "https://connect.raspberrypi.com", identity: "https://id.raspberrypi.com", allowed: map[string]bool{"https://connect.raspberrypi.com": true, "https://id.raspberrypi.com": true}}
 	c.http = &http.Client{Jar: jar, Timeout: 30 * time.Second}
 	c.http.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 16 || !c.permitted(req.URL) {
@@ -264,6 +265,7 @@ func (c *Client) Password(ctx context.Context, email string, password []byte) (S
 	v.Set("password", string(password))
 	c.passwordSent = true
 	c.pending = nil
+	c.account = email
 	p, err := c.load(ctx, http.MethodPost, f.action, v)
 	if err != nil {
 		return "", err

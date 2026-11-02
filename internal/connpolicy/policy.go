@@ -40,7 +40,7 @@ var (
 
 // keys is ordered so that the first reported refusal is deterministic.
 var keys = []string{"user", "port", "batchmode", "numberofpasswordprompts", "connecttimeout",
-	"connectionattempts", "serveraliveinterval", "serveralivecountmax", "tcpkeepalive", "channeltimeout"}
+	"connectionattempts", "serveraliveinterval", "serveralivecountmax", "tcpkeepalive", "channeltimeout", "usekeychain"}
 
 // Known reports whether key (lowercase) is a connection-policy directive.
 func Known(key string) bool {
@@ -68,6 +68,10 @@ type Policy struct {
 	// ServerAliveIntervalSeconds 0 disables the configured liveness bound.
 	ServerAliveIntervalSeconds int
 	ServerAliveCountMax        int
+	// UseKeychain keeps the saved-sessions passphrase in the system keyring
+	// (macOS Keychain, Linux Secret Service), as Apple's ssh UseKeychain
+	// keeps a key passphrase. Off by default.
+	UseKeychain bool
 }
 
 func Default() Policy {
@@ -86,7 +90,7 @@ func Validate(key, value string) error {
 		if !sshdest.ValidPort(value) {
 			return errors.New("invalid Port value")
 		}
-	case "batchmode", "tcpkeepalive":
+	case "batchmode", "tcpkeepalive", "usekeychain":
 		_, err := flag(key, value)
 		return err
 	case "numberofpasswordprompts", "serveralivecountmax":
@@ -144,6 +148,8 @@ func FromValues(values map[string]string) (Policy, error) {
 			return p, ErrPort
 		case "batchmode":
 			p.BatchMode, _ = flag(key, value)
+		case "usekeychain":
+			p.UseKeychain, _ = flag(key, value)
 		case "numberofpasswordprompts":
 			n, _ := integer(key, value, 0)
 			if n > 1 {
@@ -337,6 +343,8 @@ func name(key string) string {
 		return "BatchMode"
 	case "tcpkeepalive":
 		return "TCPKeepAlive"
+	case "usekeychain":
+		return "UseKeychain"
 	case "numberofpasswordprompts":
 		return "NumberOfPasswordPrompts"
 	case "serveralivecountmax":

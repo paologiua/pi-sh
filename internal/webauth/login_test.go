@@ -15,7 +15,7 @@ import (
 
 func fixture(t *testing.T, mfa string) (*Client, *int) {
 	t.Helper()
-	passwords := new(int)
+	passwords, signOuts := new(int), new(int)
 	var connect, identity *httptest.Server
 	identity = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -74,9 +74,22 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 			if r.FormValue("password") != "" {
 				t.Error("password reached Connect callback")
 			}
+			http.SetCookie(w, &http.Cookie{Name: "connect_session", Value: "synthetic-session", Path: "/", MaxAge: 3600, Secure: true, HttpOnly: true})
 			http.Redirect(w, r, "/devices", http.StatusSeeOther)
+		case "/session":
+			// Connect's sign-out form, as observed: POST /session, _method=delete.
+			if r.Method != "POST" || r.FormValue("_method") != "delete" || r.FormValue("authenticity_token") != "synthetic-sign-out-csrf" || r.Header.Get("Origin") != connect.URL {
+				t.Error("sign-out form mismatch")
+			}
+			*signOuts++
+			http.SetCookie(w, &http.Cookie{Name: "connect_session", Path: "/", MaxAge: -1})
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 		case "/devices":
-			fmt.Fprint(w, `<meta name="csrf-token" content="synthetic-session-csrf"><a href="/devices/00000000-0000-0000-0000-000000000001">fixture</a>`)
+			if cookie, e := r.Cookie("connect_session"); e != nil || cookie.Value != "synthetic-session" || *signOuts > 0 {
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+				return
+			}
+			fmt.Fprint(w, `<meta name="csrf-token" content="synthetic-session-csrf"><form class="button_to" method="post" action="/session"><input type="hidden" name="_method" value="delete"><button type="submit">Sign out</button><input type="hidden" name="authenticity_token" value="synthetic-sign-out-csrf"></form><a href="/devices/00000000-0000-0000-0000-000000000001">fixture</a>`)
 			if mfa == "two-devices" {
 				fmt.Fprint(w, `<a href="/devices/00000000-0000-0000-0000-000000000002"> another </a><a href="/devices/00000000-0000-0000-0000-000000000001">fixture</a>`)
 			}

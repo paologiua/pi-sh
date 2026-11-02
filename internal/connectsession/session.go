@@ -17,6 +17,7 @@ import (
 	"pi-sh/internal/connpolicy"
 	"pi-sh/internal/diag"
 	"pi-sh/internal/loginprompt"
+	"pi-sh/internal/savedlogin"
 	"pi-sh/internal/shellbroker"
 	"pi-sh/internal/transport"
 	"pi-sh/internal/webauth"
@@ -34,7 +35,8 @@ const (
 	MsgDiscovery            diag.Message = "discovery: resolving destination device"
 	MsgDiscoveryDone        diag.Message = "discovery: destination device prepared"
 	MsgAuthenticated        diag.Message = "Authenticated to Raspberry Pi Connect"
-	MsgSignedIn             diag.Message = "signed in directly; session is held in memory for this process"
+	MsgSignedIn             diag.Message = "signed in directly"
+	MsgSaveFailed           diag.Message = "authentication: the session could not be saved for later"
 	MsgBridgeReady          diag.Message = "authentication: loopback companion bridge listening"
 	MsgBrowserNotice        diag.Message = "experimental browser authentication; no account credentials leave Chrome"
 	MsgConfiguration        diag.Message = "signaling: requesting session configuration"
@@ -124,6 +126,9 @@ type directSource struct {
 	current     signaling
 	used        bool
 	live        []signaling
+	// closed runs once after the connections close (saving the session).
+	closed    func()
+	closeOnce sync.Once
 }
 
 // signaling is the part of a prepared Connect connection the source keeps:
@@ -220,6 +225,9 @@ func (s *directSource) Close() error {
 	for _, c := range conns {
 		_ = c.Close()
 	}
+	if s.closed != nil {
+		s.closeOnce.Do(s.closed)
+	}
 	return nil
 }
 
@@ -309,7 +317,9 @@ func (b boundedLogin) Code(ctx context.Context, code []byte) (webauth.Stage, err
 	return b.bound(ctx, func(ctx context.Context) (webauth.Stage, error) { return b.client.Code(ctx, code) })
 }
 
-// Authenticate does not persist credentials. The caller owns the returned source.
+// Authenticate never stores passwords or one-time codes. Direct login resumes
+// or saves the session in the encrypted session store (savedlogin), only with
+// the person's passphrase. The caller owns the returned source.
 // notices is a local operator stream; browser mode prints a temporary capability.
 func Authenticate(ctx context.Context, destination string, direct bool, notices io.Writer, program string) (Source, error) {
 	return AuthenticateWithPolicy(ctx, destination, direct, connpolicy.Default(), notices, program)
@@ -328,21 +338,45 @@ func AuthenticateWithPolicy(ctx context.Context, destination string, direct bool
 		log = diag.Default(notices, program)
 	}
 	if direct {
-		client := webauth.New()
-		loginCtx, stop := context.WithTimeout(ctx, loginLimit)
-		log.Debug(MsgLoginStart)
-		if policy.LoginAccount() != "" {
-			log.Debug(MsgLoginAccount)
-		}
-		err := loginprompt.AuthenticateAs(loginCtx, loggedLogin{boundedLogin{client, policy.ConnectTimeout()}, log}, policy.LoginAccount())
-		stop()
+		saved := savedlogin.Open(policy.UseKeychain, notices)
+		resumed, account, err := saved.Resume(ctx, policy.LoginAccount())
 		if err != nil {
+			saved.Close()
 			return nil, err
 		}
-		log.Debug(MsgLoginDone)
-		log.Verbose(MsgAuthenticated, diag.State("method", "direct-login"))
+		var client *webauth.Client
+		if resumed != nil {
+			client = resumed.(*webauth.Client)
+			log.Verbose(MsgAuthenticated, diag.State("method", "saved-session"))
+		} else {
+			client = webauth.New()
+			loginCtx, stop := context.WithTimeout(ctx, loginLimit)
+			log.Debug(MsgLoginStart)
+			if account != "" {
+				log.Debug(MsgLoginAccount)
+			}
+			err := loginprompt.AuthenticateAs(loginCtx, loggedLogin{boundedLogin{client, policy.ConnectTimeout()}, log}, account)
+			stop()
+			if err != nil {
+				saved.Close()
+				return nil, err
+			}
+			log.Debug(MsgLoginDone)
+			log.Verbose(MsgAuthenticated, diag.State("method", "direct-login"))
+			if err := saved.Save(ctx, client); err != nil {
+				// The session works; only keeping it for later failed.
+				log.Failure(diag.Error, fmt.Errorf("the session could not be saved for later: %w", err))
+			}
+		}
 		log.Info(MsgSignedIn)
-		return newDirectSource(client, ctx, destination, log), nil
+		source := newDirectSource(client, ctx, destination, log)
+		source.closed = func() {
+			if saved.Refresh(client) != nil {
+				log.Debug(MsgSaveFailed)
+			}
+			saved.Close()
+		}
+		return source, nil
 	}
 	if policy.DefaultAccount != "" {
 		// The default only replaces the direct-login email prompt; the

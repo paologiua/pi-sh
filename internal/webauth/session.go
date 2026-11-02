@@ -38,6 +38,7 @@ type Connection struct {
 	ICE                 webrtc.Configuration
 	client              *Client
 	prefix, csrf        string
+	signOut             string // the sign-out form's CSRF token, when signed in
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	failures            chan string
@@ -163,6 +164,10 @@ func (s *Connection) devices(ctx context.Context) (map[string]Device, error) {
 		if n.Data == "meta" && attr(n, "name") == "csrf-token" {
 			s.csrf = attr(n, "content")
 		}
+		if n.Data == "form" {
+			s.signOutForm(n)
+			return
+		}
 		if n.Data != "a" {
 			return
 		}
@@ -180,6 +185,34 @@ func (s *Connection) devices(ctx context.Context) (map[string]Device, error) {
 		}
 	})
 	return devices, nil
+}
+
+// signOutForm records the token of Connect's sign-out form, observed on the
+// signed-in devices page on 2026-11-02: POST /session with a hidden
+// _method=delete and authenticity_token. Its presence marks a signed-in page.
+func (s *Connection) signOutForm(n *html.Node) {
+	c := s.client
+	u, err := url.Parse(c.root)
+	if err != nil || !strings.EqualFold(attr(n, "method"), http.MethodPost) {
+		return
+	}
+	if u, err = u.Parse(attr(n, "action")); err != nil || origin(u) != c.root || u.Path != "/session" || u.RawQuery != "" {
+		return
+	}
+	var method, token string
+	walk(n, func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "input" && attr(n, "type") == "hidden" {
+			switch attr(n, "name") {
+			case "_method":
+				method = attr(n, "value")
+			case "authenticity_token":
+				token = attr(n, "value")
+			}
+		}
+	})
+	if strings.EqualFold(method, "delete") && token != "" {
+		s.signOut = token
+	}
 }
 
 func (s *Connection) request(ctx context.Context, method, target string, body []byte, accept, csrf string) (*reply, []byte, error) {

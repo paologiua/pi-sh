@@ -59,7 +59,7 @@ var accepted = map[string]struct {
 // refused keywords are known OpenSSH 10.2 keywords without a pi-sh equivalent.
 var refused = map[string]string{
 	"identityfile": ReasonAuth, "identitiesonly": ReasonAuth, "identityagent": ReasonAuth, "certificatefile": ReasonAuth,
-	"addkeystoagent": ReasonAuth, "pkcs11provider": ReasonAuth, "securitykeyprovider": ReasonAuth, "usekeychain": ReasonAuth,
+	"addkeystoagent": ReasonAuth, "pkcs11provider": ReasonAuth, "securitykeyprovider": ReasonAuth,
 	"pubkeyauthentication": ReasonAuth, "passwordauthentication": ReasonAuth, "kbdinteractiveauthentication": ReasonAuth,
 	"kbdinteractivedevices": ReasonAuth, "preferredauthentications": ReasonAuth, "challengeresponseauthentication": ReasonAuth,
 

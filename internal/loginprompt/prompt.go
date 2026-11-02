@@ -3,6 +3,7 @@
 package loginprompt
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -113,6 +114,72 @@ func choose(ctx context.Context, in, out *os.File, heading string, items []strin
 		}
 	})
 	return choice, err
+}
+
+// Passphrase reads one hidden line after label. An empty answer returns nil.
+func Passphrase(ctx context.Context, label string) ([]byte, error) {
+	in, out, err := openTerminal()
+	if err != nil {
+		return nil, errors.New("passphrase entry requires a controlling terminal")
+	}
+	defer in.Close()
+	if out != in {
+		defer out.Close()
+	}
+	return passphrase(ctx, in, out, label)
+}
+
+func passphrase(ctx context.Context, in, out *os.File, label string) (secret []byte, err error) {
+	err = onTerminal(ctx, in, out, func(guard *terminalGuard) error {
+		fmt.Fprintf(out, "%s ", label)
+		secret, err = readSecret(ctx, in, guard)
+		fmt.Fprintln(out)
+		return err
+	})
+	if err != nil {
+		clear(secret)
+		return nil, err
+	}
+	if len(secret) == 0 {
+		return nil, nil
+	}
+	return secret, nil
+}
+
+// NewPassphrase asks for a new passphrase and its confirmation, like
+// ssh-keygen, up to three times. An empty first answer returns nil (skip).
+func NewPassphrase(ctx context.Context, label string) ([]byte, error) {
+	in, out, err := openTerminal()
+	if err != nil {
+		return nil, errors.New("passphrase entry requires a controlling terminal")
+	}
+	defer in.Close()
+	if out != in {
+		defer out.Close()
+	}
+	return newPassphrase(ctx, in, out, label)
+}
+
+func newPassphrase(ctx context.Context, in, out *os.File, label string) ([]byte, error) {
+	for range 3 {
+		first, err := passphrase(ctx, in, out, label)
+		if err != nil || first == nil {
+			return nil, err
+		}
+		again, err := passphrase(ctx, in, out, "Enter the same passphrase again:")
+		if err != nil {
+			clear(first)
+			return nil, err
+		}
+		same := bytes.Equal(first, again)
+		clear(again)
+		if same {
+			return first, nil
+		}
+		clear(first)
+		fmt.Fprintln(out, "Passphrases do not match. Try again.")
+	}
+	return nil, errors.New("passphrases did not match")
 }
 
 // readLine reads one visible line, without its terminator, up to limit bytes.

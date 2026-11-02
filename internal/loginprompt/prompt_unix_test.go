@@ -217,3 +217,49 @@ func TestChooseRetriesUntilValidSelection(t *testing.T) {
 		t.Fatalf("empty answer did not cancel: %v", r.err)
 	}
 }
+
+func TestNewPassphraseConfirmsAndSkips(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Skip("pty unavailable:", err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() {
+		var b [256]byte
+		for {
+			if _, err := master.Read(b[:]); err != nil {
+				return
+			}
+		}
+	}()
+	type result struct {
+		secret []byte
+		err    error
+	}
+	done := make(chan result, 1)
+	run := func(input string) result {
+		go func() {
+			s, err := newPassphrase(ctx, slave, slave, "New passphrase:")
+			done <- result{s, err}
+		}()
+		if _, err := master.Write([]byte(input)); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case r := <-done:
+			return r
+		case <-ctx.Done():
+			t.Fatal("newPassphrase did not return")
+			return result{}
+		}
+	}
+	if r := run("one\rtwo\rgood\rgood\r"); r.err != nil || string(r.secret) != "good" {
+		t.Fatalf("mismatch then match: %q %v", r.secret, r.err)
+	}
+	if r := run("\r"); r.err != nil || r.secret != nil {
+		t.Fatalf("empty answer must skip: %q %v", r.secret, r.err)
+	}
+}
