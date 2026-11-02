@@ -4,10 +4,12 @@ set -euo pipefail
 usage() {
   cat <<'HELP'
 usage: install.sh [--repo owner/name] [--version tag|latest] [--bin-dir path]
-                  [--from-dir directory] [--keep-old] [--help]
+                  [--from-dir directory] [--downloader curl|wget] [--keep-old] [--help]
 Defaults: PI_SH_REPO or the configured repository, PI_SH_VERSION=v0.1.0-alpha.2,
           PI_SH_BIN_DIR=$HOME/.local/bin (on iSH: /usr/local/bin when writable)
 --from-dir installs from a local directory containing release archives and SHA256SUMS.
+--downloader (or PI_SH_DOWNLOADER) picks the download tool; by default curl is
+used when present, otherwise wget.
 On iSH the binaries go to <bin-dir>/../libexec/pi-sh and <bin-dir> receives
 launchers that default GOMAXPROCS=1 and PI_SH_ISH_RELAY=1 (both overridable).
 PI_SH_INSTALL_ISH=1|0 forces or disables iSH detection.
@@ -23,17 +25,19 @@ version=${PI_SH_VERSION:-v0.1.0-alpha.2}
 bin_dir=${PI_SH_BIN_DIR:-}
 from_dir=''
 keep_old=0
+downloader=${PI_SH_DOWNLOADER:-}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --keep-old) keep_old=1; shift ;;
-    --repo|--version|--bin-dir|--from-dir)
+    --repo|--version|--bin-dir|--from-dir|--downloader)
       [[ $# -ge 2 && -n $2 ]] || { echo "Missing value for $1" >&2; exit 2; }
-      case "$1" in --repo) repo=$2;; --version) version=$2;; --bin-dir) bin_dir=$2;; --from-dir) from_dir=$2;; esac
+      case "$1" in --repo) repo=$2;; --version) version=$2;; --bin-dir) bin_dir=$2;; --from-dir) from_dir=$2;; --downloader) downloader=$2;; esac
       shift 2 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+case $downloader in ''|curl|wget) ;; *) echo 'The downloader must be curl or wget.' >&2; exit 2 ;; esac
 case $(uname -s) in Darwin) os=darwin;; Linux) os=linux;; *) echo 'Use the Windows release archive on Windows; this installer supports macOS/Linux/iSH.' >&2; exit 1;; esac
 case $(uname -m) in x86_64|amd64) arch=amd64;; arm64|aarch64) arch=arm64;; i386|i486|i586|i686|x86) arch=386;; *) echo 'Unsupported architecture.' >&2; exit 1;; esac
 [[ $os != darwin || $arch != 386 ]] || { echo 'macOS/386 is unsupported.' >&2; exit 1; }
@@ -63,9 +67,12 @@ else
   [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'Set PI_SH_REPO=owner/name or pass --repo owner/name.' >&2; exit 2; }
   [[ $version =~ ^[A-Za-z0-9_.-]+$ && $version != . && $version != .. ]] || { echo 'Invalid release tag.' >&2; exit 2; }
   # curl when present, else wget (iSH/Alpine ship BusyBox wget, often without curl).
-  if command -v curl >/dev/null; then downloader=curl
-  elif command -v wget >/dev/null; then downloader=wget
-  else echo 'curl or wget is required.' >&2; exit 1; fi
+  case $downloader in
+    curl|wget) command -v "$downloader" >/dev/null || { echo "$downloader is not installed." >&2; exit 1; } ;;
+    '') if command -v curl >/dev/null; then downloader=curl
+        elif command -v wget >/dev/null; then downloader=wget
+        else echo 'curl or wget is required.' >&2; exit 1; fi ;;
+  esac
   wget_opts=(-q)
   # GNU wget can refuse non-HTTPS redirects; BusyBox wget has no such option.
   if [[ $downloader == wget ]] && wget --help 2>&1 | grep -q -e '--https-only'; then wget_opts+=(--https-only); fi

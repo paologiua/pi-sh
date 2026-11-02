@@ -70,7 +70,9 @@ there is no release-signature verification implemented.
 
 Downloads use curl when it is on PATH (HTTPS only, including redirects) and
 otherwise wget, so the `wget -qO- … | bash` route works where curl is missing,
-as on a stock iSH/Alpine image with BusyBox wget. GNU wget gets --https-only;
+as on a stock iSH/Alpine image with BusyBox wget. A piped script cannot tell
+which tool fetched it, so `--downloader curl|wget` (or PI_SH_DOWNLOADER) selects
+one explicitly; the README's wget command passes `--downloader wget`. GNU wget gets --https-only;
 BusyBox wget has no equivalent, so redirect targets are not restricted there
 (the starting URLs are HTTPS and the archive must still match SHA256SUMS). With
 wget, `--version latest` reads tag_name from the GitHub releases/latest API, which,

@@ -28,12 +28,11 @@ curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | b
 
 ### Install with wget
 
-Alternatively, use `wget` to run the same installer. It then downloads the
-release with curl if available, otherwise with wget, so curl is not required
-(useful on iSH, which ships BusyBox wget):
+Alternatively, use `wget` for the installer and its downloads (curl is not
+required; useful on iSH, which ships BusyBox wget):
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --downloader wget
 ```
 
 The installer downloads the release named by its default version, so a new

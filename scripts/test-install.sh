@@ -92,6 +92,18 @@ env PATH="$stage/nocurl" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.s
 for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/wget-latest/$client") == fixture-ok ]] || exit 1; done
 if env PATH="$stage/nocurl" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.sh --version v9.9.9 --bin-dir "$stage/wget-missing" > "$stage/error" 2>&1; then echo 'Missing release accepted' >&2; exit 1; fi
 [[ ! -e $stage/wget-missing ]] && grep -q 'Download failed' "$stage/error" || exit 1
+# An explicit wget choice wins even when curl is installed.
+mkdir "$stage/both"
+cp "$stage/nocurl/wget" "$stage/both/wget"
+printf '#!/bin/sh\nexit 99\n' > "$stage/both/curl"; chmod +x "$stage/both/curl"
+env PATH="$stage/both:$PATH" PI_SH_INSTALL_FIXTURES="$stage/releases" bash install.sh --downloader wget --bin-dir "$stage/chosen" > /dev/null
+for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/chosen/$client") == fixture-ok ]] || exit 1; done
+cat install.sh | env PATH="$stage/both:$PATH" PI_SH_INSTALL_FIXTURES="$stage/releases" PI_SH_DOWNLOADER=wget PI_SH_BIN_DIR="$stage/chosen-env" bash > /dev/null
+for client in pi-sh pi-cp pi-sftp; do [[ $("$stage/chosen-env/$client") == fixture-ok ]] || exit 1; done
+if env PATH="$stage/nocurl" bash install.sh --downloader curl --bin-dir "$stage/no-curl" > "$stage/error" 2>&1; then echo 'Missing curl accepted' >&2; exit 1; fi
+grep -q 'curl is not installed' "$stage/error" && [[ ! -e $stage/no-curl ]] || exit 1
+if bash install.sh --downloader ftp --bin-dir "$stage/bad-tool" > "$stage/error" 2>&1; then echo 'Invalid downloader accepted' >&2; exit 1; fi
+[[ ! -e $stage/bad-tool ]] || exit 1
 rm "$stage/nocurl/wget"
 if env PATH="$stage/nocurl" bash install.sh --bin-dir "$stage/no-tool" > "$stage/error" 2>&1; then echo 'Missing downloader accepted' >&2; exit 1; fi
 grep -q 'curl or wget is required' "$stage/error" || exit 1
