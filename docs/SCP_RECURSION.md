@@ -24,8 +24,11 @@ This is not a complete Windows reserved-name/normalization inventory.
 
 Directory permissions have intentionally asymmetric reference behavior:
 
-- Upload restores source ordinary directory permission bits even without `-p`,
-  including an existing target directory. Newly created directories have temporary
+- Upload sets a directory to the source's ordinary permission bits when it
+  creates it, or with `-p`; an existing directory at any depth keeps its mode
+  without `-p`. This follows OpenSSH 10.3 (`upload_dir_internal` sets attributes
+  only if `created || preserve_flag`); OpenSSH 10.2 also changed existing
+  directories without `-p`. Newly created directories have temporary
   owner write/execute access until children finish. The suite's private server
   creation mask is checked before relaxing a new directory's mode.
 - Download creates directories with source ordinary bits plus temporary owner
@@ -37,8 +40,11 @@ Directory permissions have intentionally asymmetric reference behavior:
   preserved. All directory metadata operations are path-based and can race with
   path replacement. Source and destination trees must remain stable.
 
-The reference is the installed OpenSSH_10.2p1 client and existing local OpenSSH
-`sftp-server`, connected directly with `scp -D`; there is no SSH connection and
+The reference is the local OpenSSH client (10.2p1 on the Mac, 10.3p1 on GitHub's
+macOS runner) and its `sftp-server`, connected directly with `scp -D`; with a
+local client older than 10.3, the existing-directory case without `-p` is
+checked against 10.3's result instead of the local scp, and
+`TestRecursiveUploadKeepsExistingDirectoryModes` checks that rule at every depth; there is no SSH connection and
 all test mutations are in temporary Mac directories. The
 [OpenSSH 10.2 source](https://github.com/openssh/openssh-portable/blob/V_10_2_P1/sftp-client.c)
 also identifies the depth limit and the different directory mode paths.

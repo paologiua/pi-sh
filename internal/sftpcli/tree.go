@@ -180,8 +180,9 @@ func (c *Console) treeDirOptions(ctx context.Context, upload bool, source, targe
 		return shown(os.ErrInvalid, "directory copy conflicts with a non-directory destination")
 	}
 	adjustLocalMode := mode|0300 != mode
-	if upload || adjustLocalMode || options.preserve {
-		// OpenSSH uploads restore source directory permissions even without -p.
+	if (upload && (created || options.preserve)) || (!upload && (adjustLocalMode || options.preserve)) {
+		// Uploads set a directory's mode when they created it, or with -p
+		// (OpenSSH 10.3; 10.2 also changed existing directories without -p).
 		// Downloads chmod only when temporary owner write/execute bits were needed;
 		// otherwise an existing directory retains its mode even with -p.
 		if created {

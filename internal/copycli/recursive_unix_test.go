@@ -10,6 +10,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -266,9 +269,15 @@ func TestRecursiveCopyAgainstLocalSCP(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
-							wi, err := os.Stat(ref)
+							var wi os.FileInfo
+							wi, err = os.Stat(ref)
 							if err != nil {
 								t.Fatal(err)
+							}
+							if upload && existing && !preserve && !openSSHAtLeast(t, 10, 3) {
+								// OpenSSH 10.3 sets an existing directory's mode only with -p;
+								// older references still chmod it, so check 10.3's result.
+								wi = existingDirectoryInfo{FileInfo: wi, mode: os.ModeDir | 0700}
 							}
 							if gi.Mode() != wi.Mode() || (preserve && !existing && gi.ModTime().Unix() != wi.ModTime().Unix()) {
 								t.Fatalf("root metadata differs: got %o/%d want %o/%d", gi.Mode(), gi.ModTime().Unix(), wi.Mode(), wi.ModTime().Unix())
@@ -405,5 +414,80 @@ func TestRecursiveUploadPrivateCreation(t *testing.T) {
 		if err != nil || info.Mode().Perm() != mode {
 			t.Fatalf("private-server final mode differs for %q: %v", name, err)
 		}
+	}
+}
+
+// existingDirectoryInfo stands in for the reference root when the local
+// OpenSSH predates the behaviour pi-cp follows.
+type existingDirectoryInfo struct {
+	os.FileInfo
+	mode os.FileMode
+}
+
+func (e existingDirectoryInfo) Mode() os.FileMode { return e.mode }
+
+var (
+	openSSHVersionOnce         sync.Once
+	openSSHMajor, openSSHMinor int
+)
+
+// openSSHAtLeast reports whether the local `ssh -V` is at least major.minor.
+func openSSHAtLeast(t *testing.T, major, minor int) bool {
+	t.Helper()
+	openSSHVersionOnce.Do(func() {
+		out, _ := exec.Command("ssh", "-V").CombinedOutput()
+		if m := regexp.MustCompile(`OpenSSH_(\d+)\.(\d+)`).FindSubmatch(out); m != nil {
+			openSSHMajor, _ = strconv.Atoi(string(m[1]))
+			openSSHMinor, _ = strconv.Atoi(string(m[2]))
+		}
+	})
+	if openSSHMajor == 0 {
+		t.Fatal("cannot read the local OpenSSH version")
+	}
+	return openSSHMajor > major || (openSSHMajor == major && openSSHMinor >= minor)
+}
+
+// OpenSSH 10.3 upload_dir_internal: an existing destination directory, at
+// any depth, keeps its mode unless -p is given; created directories get the
+// source mode.
+func TestRecursiveUploadKeepsExistingDirectoryModes(t *testing.T) {
+	client, _ := recursiveClient(t)
+	for _, preserve := range []bool{false, true} {
+		t.Run(fmt.Sprintf("preserve%t", preserve), func(t *testing.T) {
+			root := t.TempDir()
+			src, dst := root+"/src", root+"/dst"
+			for _, name := range []string{src, src + "/old", src + "/new", dst, dst + "/old"} {
+				if err := os.Mkdir(name, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, name := range []string{src, src + "/old", src + "/new"} {
+				if err := os.Chmod(name, 0751); err != nil {
+					t.Fatal(err)
+				}
+			}
+			plan, err := New([]string{src + "/.", "device:" + dst})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var diagnostic bytes.Buffer
+			plan.Recursive, plan.Preserve, plan.Errors = true, preserve, &diagnostic
+			if err := plan.Run(context.Background(), client, nil); err != nil {
+				t.Fatal(err, diagnostic.String())
+			}
+			existing := os.FileMode(0700)
+			if preserve {
+				existing = 0751
+			}
+			for name, want := range map[string]os.FileMode{dst: existing, dst + "/old": existing, dst + "/new": 0751} {
+				info, err := os.Stat(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != want {
+					t.Errorf("%s: mode %o, want %o", name, info.Mode().Perm(), want)
+				}
+			}
+		})
 	}
 }
