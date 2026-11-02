@@ -121,3 +121,22 @@ and launchers have not yet been run on physical iSH.
 Before publishing, review third-party notices
 and service/publication scope as recorded in [SERVICE_CONSTRAINTS.md](SERVICE_CONSTRAINTS.md).
 No script publishes, uploads, creates a GitHub release or changes the Pi.
+
+## Publishing a release
+
+`.github/workflows/release.yml` publishes a release when a `v*` tag is pushed
+(or from the Actions tab with an existing tag). Before tagging:
+
+1. Set `Release` in `internal/buildinfo/version.go` and the `install.sh` default
+   to the new tag, and update the version references in the docs.
+2. Write the release notes in `docs/releases/<tag>.md`.
+3. Commit, then `git tag -a <tag> -m "pi-sh <tag>" && git push origin main <tag>`.
+
+The workflow refuses a tag that does not match the version, installer default or
+notes file, or whose release already exists. It runs the installer, vet and Go
+tests, builds with `scripts/build.sh all`, checks that the built clients report
+the tag without `dirty` and that `SHA256SUMS` matches, then creates the release
+with the seven archives and `SHA256SUMS`. Tags with a suffix (`-alpha.N`, `-rc.N`)
+become prereleases. It uses the workflow's own token; no personal token is stored.
+v0.1.0-alpha.2 was published by hand from locally built archives, before this
+workflow existed; the workflow has not yet run on GitHub.

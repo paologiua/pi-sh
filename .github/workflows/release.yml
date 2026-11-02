@@ -1,0 +1,67 @@
+name: Release
+# Pushing a v* tag builds, checks and publishes that tag's GitHub release.
+# Prepare first: set internal/buildinfo Release and the install.sh default to the
+# tag, and add docs/releases/<tag>.md with the release notes.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish (for example v0.1.0-alpha.3)
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Validate tag name
+        run: '[[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::Invalid tag"; exit 1; }'
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check that version, installer and notes match the tag
+        run: |
+          release=$(sed -n 's/^const Release = "\(.*\)"$/\1/p' internal/buildinfo/version.go)
+          [[ $release == "$TAG" ]] || { echo "::error::internal/buildinfo Release is $release, not $TAG"; exit 1; }
+          grep -qF "version=\${PI_SH_VERSION:-$TAG}" install.sh || { echo "::error::install.sh does not default to $TAG"; exit 1; }
+          [[ -s docs/releases/$TAG.md ]] || { echo "::error::docs/releases/$TAG.md is missing"; exit 1; }
+          ! gh release view "$TAG" >/dev/null 2>&1 || { echo "::error::Release $TAG already exists"; exit 1; }
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Test
+        run: |
+          bash -n install.sh scripts/build.sh scripts/test.sh scripts/test-install.sh
+          bash scripts/test-install.sh
+          go vet ./...
+          go test ./...
+          go test -C third_party/sftp ./...
+      - name: Build release archives
+        run: ./scripts/build.sh all
+      - name: Check the built version
+        run: |
+          mkdir "$RUNNER_TEMP/check"
+          tar -xzf dist/pi-sh_linux_amd64.tar.gz -C "$RUNNER_TEMP/check" ./pi-sh ./pi-cp ./pi-sftp
+          for client in pi-sh pi-cp pi-sftp; do
+            line=$("$RUNNER_TEMP/check/$client" -V 2>&1)
+            echo "$line"
+            [[ $line == "${client}_$TAG+g"* && $line != *dirty* ]] || { echo "::error::Unexpected version: $line"; exit 1; }
+          done
+          (cd dist && sha256sum -c SHA256SUMS)
+      - name: Publish the release
+        run: |
+          prerelease=()
+          [[ $TAG != *-* ]] || prerelease=(--prerelease)
+          gh release create "$TAG" dist/pi-sh_*.tar.gz dist/SHA256SUMS \
+            --verify-tag --title "pi-sh $TAG" --notes-file "docs/releases/$TAG.md" "${prerelease[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
