@@ -1,5 +1,13 @@
 # Development status — 2026-10-22
 
+Update, 2 November 2026 — v0.1.0-alpha.2: the suite version moves to
+v0.1.0-alpha.2 for the direct-login default, device choice after sign-in and
+encrypted saved sessions. The installer defaults to this tag and, on iSH,
+installs launchers in /usr/local/bin that default GOMAXPROCS=1 and
+PI_SH_ISH_RELAY=1, removing earlier project copies from ~/.local/bin and ~/bin.
+Launchers and cleanup are fixture-tested only; physical iSH runtime and the
+published release remain to be verified.
+
 Update, 31 October 2026 — project licence: the maintainer authorised selecting
 the MIT License for original code and documentation. LICENSE records the grant;
 third-party notices and licences remain unchanged. Distribution archives include

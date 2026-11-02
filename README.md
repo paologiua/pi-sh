@@ -7,8 +7,8 @@ agent and infrastructure from a terminal. It aims for practical OpenSSH command
 and interface compatibility over Connect's HTTPS/WebRTC transport.
 
 It is independent of, and not endorsed by, Raspberry Pi or OpenSSH. It does not
-implement the SSH wire protocol. **Development version: v0.1.0-alpha.1. Compatibility and runtime verification
-are incomplete; a GitHub release has not been published.**
+implement the SSH wire protocol. **Development version: v0.1.0-alpha.2. Compatibility and runtime verification
+are incomplete; releases are published as GitHub prereleases.**
 
 | Client | Purpose | Familiar interface |
 | --- | --- | --- |
@@ -20,8 +20,7 @@ are incomplete; a GitHub release has not been published.**
 
 ### Install with curl
 
-Once the repository is public and a release with binaries is available, install
-all three clients on macOS, Linux or iSH with:
+Install all three clients on macOS, Linux or iSH with:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
@@ -35,9 +34,9 @@ Alternatively, use `wget` to run the same installer:
 wget -qO- https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
 ```
 
-**Currently, the repository is private and release assets have not been
-published.** The commands above require public access and published release
-archives. For now, use an authenticated checkout and build/install locally:
+The installer downloads the release named by its default version, so a new
+installer default works only once that release's assets are published. To
+install from a checkout instead:
 
 ```sh
 ./scripts/build.sh all
@@ -46,9 +45,14 @@ archives. For now, use an authenticated checkout and build/install locally:
 
 The default installation directory is `~/.local/bin`, with no sudo or shell-profile
 edits. The installer verifies SHA-256 before installing all three clients.
+On iSH it installs into `/usr/local/bin` (already on PATH for iSH's default root
+shell; `~/.local/bin` if not writable) as small launchers that set
+`GOMAXPROCS=1` and `PI_SH_ISH_RELAY=1` unless already exported, so plain
+`pi-sh`, `pi-cp` and `pi-sftp` work; the binaries live in `/usr/local/libexec/pi-sh`.
+Earlier pi-sh copies in `~/.local/bin` or `~/bin` are removed (`--keep-old` keeps them).
 Windows users extract the `.exe` files from the Windows archive.
 
-The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.1`; no `--repo`
+The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.2`; no `--repo`
 is needed for this project. Use `--repo owner/name` to select a fork. The installer
 does not request or save GitHub credentials.
 
@@ -244,7 +248,7 @@ pi-sh -V
 
 Version output is one line on stderr and includes the client name, project version,
 Go version and OS/architecture. It exits successfully without login or network
-access. The selected version is `v0.1.0-alpha.1` for all three clients. Git builds
+access. The selected version is `v0.1.0-alpha.2` for all three clients. Git builds
 append safe source metadata, for example `+g77699a479687.dirty`; `dirty` means
 uncommitted source changes were included. This is build identification, not a
 claim that a GitHub release has been published. The `version` command inside the

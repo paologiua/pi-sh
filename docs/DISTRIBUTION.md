@@ -52,14 +52,14 @@ routine test command.
 ## Installer and release layout
 
 ```sh
-./install.sh --repo paologiua/pi-sh --version v0.1.0-alpha.1
+./install.sh --repo paologiua/pi-sh --version v0.1.0-alpha.2
 ./install.sh --from-dir ./dist --bin-dir "$HOME/.local/bin"
 ./install.sh --help
 ```
 
 Download mode requires a real GitHub repository and published release with
 `pi-sh_OS_ARCH.tar.gz` and `SHA256SUMS` assets generated together by build.sh.
-The default is the selected alpha, v0.1.0-alpha.1. Pass --version with another
+The default is the selected alpha, v0.1.0-alpha.2. Pass --version with another
 tag to select a release. Explicit --version latest resolves GitHub's latest stable
 release once before fetching both files; it does not select prereleases.
 The installer checks the archive's SHA-256 before extracting the three clients, uses no sudo and defaults to ~/.local/bin.
@@ -68,29 +68,44 @@ files in that directory are replaced. --from-dir exercises the same archive and
 checksum path without network access. SHA-256 verifies release-file integrity;
 there is no release-signature verification implemented.
 
-The repository is currently private, so these anonymous curl commands are future
-public-installation examples. They require public access and a published release:
+The repository is public; these commands need the selected release's assets on GitHub:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
 # Pin a release:
-curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.1
+curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.2
 ```
 
-v0.1.0-alpha.1 is the selected project version; its GitHub release has not been
-created. This document does not assert that download assets already exist.
+v0.1.0-alpha.2 is the selected project version and installer default.
+v0.1.0-alpha.1 is published as a GitHub prerelease (assets checked 2 November
+2026); alpha.2 works through the installer only after its assets are published.
 The installer defaults to paologiua/pi-sh. --repo or PI_SH_REPO selects another
 repository, for example a fork. The source URL downloads the script; --repo
 selects the repository hosting the binary release assets. With curl, script
 arguments follow `bash -s --`, as the pinned-release example above shows.
 
-While the repository remains private, use an authenticated Git checkout, then
-`./scripts/build.sh all` and `./install.sh --from-dir ./dist`. Anonymous downloads
-cannot access private source or release assets. No GitHub token or password is
+From a Git checkout, `./scripts/build.sh all` and `./install.sh --from-dir ./dist`
+install without downloading release assets. No GitHub token or password is
 requested, stored or embedded by the installer. This work does not change
 repository visibility or publish any assets.
 macOS/Linux/iSH use the installer; Windows uses manual archive extraction.
 iSH still needs GOMAXPROCS=1 PI_SH_ISH_RELAY=1 for the experimentally verified path.
+When the installer detects iSH (linux/386 with /proc/ish or an `-ish` kernel
+release; force with PI_SH_INSTALL_ISH=1 or disable with 0), it defaults to
+/usr/local/bin when writable, puts the binaries in `<bin-dir>/../libexec/pi-sh`
+and writes POSIX sh launchers to the bin directory. Each launcher applies
+`: "${GOMAXPROCS:=1}"` and `: "${PI_SH_ISH_RELAY:=1}"`, exports both and execs
+the binary with the original arguments, so exported values still win. A launcher
+is required because the Go runtime reads GOMAXPROCS before main runs.
+On iSH it then removes earlier copies from ~/.local/bin and ~/bin (the old
+installer default and the manual-copy location) and from their ../libexec/pi-sh,
+unless --keep-old is passed. A file is removed only if it is a regular file
+containing this project's Go build-info path (`pi-sh/cmd/<client>`) or the
+launcher header; symlinks, unrelated files and the new install directory are
+left alone, and each removal is printed. Run `hash -r` in an open shell afterwards.
+scripts/test-install.sh checks the launchers with local fixtures (defaults,
+overrides, argument preservation, paths with spaces and quotes); the detection
+and launchers have not yet been run on physical iSH.
 
 Before publishing, review third-party notices
 and service/publication scope as recorded in [SERVICE_CONSTRAINTS.md](SERVICE_CONSTRAINTS.md).

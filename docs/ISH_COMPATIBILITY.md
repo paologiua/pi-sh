@@ -7,6 +7,15 @@ output and SIGWINCH for resize. These operations, actual progress output and
 file transfers still require physical iSH verification; the successful iSH shell
 and non-TTY command below do not establish them. See SCP_PROGRESS.md.
 
+## Installer launchers
+
+`install.sh` on iSH writes `pi-sh`, `pi-cp` and `pi-sftp` launchers to
+`/usr/local/bin` (fallback `~/.local/bin`) that default both variables below and
+exec the binaries in `../libexec/pi-sh`, and removes earlier project copies in
+`~/.local/bin`/`~/bin` (`--keep-old` to skip); see DISTRIBUTION.md. iSH detection
+(`/proc/ish` or an `-ish` kernel release) and the launchers are tested only with
+local fixtures, not yet on physical iSH.
+
 ## Experimental relay workaround
 
 `PI_SH_ISH_RELAY=1` selects an explicit local transport workaround in `pi-sh`
