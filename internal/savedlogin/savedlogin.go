@@ -34,6 +34,7 @@ const (
 	labelUnlock = "Passphrase for saved pi-sh sessions (Enter to skip):"
 	labelCreate = "Save this session for next time? Choose a passphrase for saved pi-sh sessions (Enter to skip):"
 	labelChange = "New passphrase for saved pi-sh sessions:"
+	labelFirst  = "Choose a passphrase for saved pi-sh sessions:"
 )
 
 // ErrLocked means the saved sessions exist but were not unlocked.
@@ -58,13 +59,16 @@ type Manager struct {
 	notices   io.Writer
 	newClient func() Session
 	now       func() time.Time
+	// systemKeyring reaches the keyring even when UseKeychain is off, so a
+	// passphrase left there can be forgotten.
+	systemKeyring func() (sessionstore.Keyring, error)
 }
 
 // Open prepares the default store. useKeychain selects the system keyring
 // for the passphrase; an unavailable keyring is reported and not used.
 // Nothing is read or prompted until a session is needed.
 func Open(useKeychain bool, notices io.Writer) *Manager {
-	m := &Manager{prompts: terminal, notices: notices, newClient: func() Session { return webauth.New() }, now: time.Now}
+	m := &Manager{prompts: terminal, notices: notices, newClient: func() Session { return webauth.New() }, now: time.Now, systemKeyring: sessionstore.SystemKeyring}
 	if store, err := sessionstore.Default(); err == nil {
 		m.store = store
 	}
@@ -330,6 +334,9 @@ func (m *Manager) Logout(ctx context.Context, account string) (serverSignedOut b
 	if _, err := m.vault.Delete(entry.Account); err != nil {
 		return false, err
 	}
+	if err := m.removeIfEmpty(); err != nil {
+		return false, err
+	}
 	if errors.Is(signOut, webauth.ErrSignedOut) {
 		return false, nil
 	}
@@ -337,27 +344,83 @@ func (m *Manager) Logout(ctx context.Context, account string) (serverSignedOut b
 }
 
 // ChangePassphrase re-encrypts every saved session under a new passphrase.
-func (m *Manager) ChangePassphrase(ctx context.Context) error {
+// Without a sessions file it creates an empty one protected by the new
+// passphrase (first setup) and reports created.
+func (m *Manager) ChangePassphrase(ctx context.Context) (created bool, err error) {
+	if m.store == nil {
+		return false, errors.New("cannot locate the pi-sh configuration directory")
+	}
+	exists, err := m.store.Exists()
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		pass, err := m.prompts.NewPassphrase(ctx, labelFirst)
+		if err != nil || pass == nil {
+			if err == nil {
+				err = errors.New("no passphrase set")
+			}
+			return false, err
+		}
+		defer clear(pass)
+		v, err := m.store.Create(pass)
+		if err != nil {
+			return false, err
+		}
+		m.vault = v
+		m.remember(pass)
+		return true, nil
+	}
 	if err := m.unlock(ctx); err != nil {
-		return err
+		return false, err
 	}
 	if m.vault == nil {
-		if m.skipped {
-			return ErrLocked
-		}
-		return errors.New("there are no saved sessions")
+		return false, ErrLocked
 	}
 	pass, err := m.prompts.NewPassphrase(ctx, labelChange)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if pass == nil {
-		return errors.New("passphrase unchanged")
+		return false, errors.New("passphrase unchanged")
 	}
 	defer clear(pass)
 	if err := m.vault.ChangePassphrase(pass); err != nil {
-		return err
+		return false, err
 	}
 	m.remember(pass)
+	return false, nil
+}
+
+// ForgetPassphrase deletes the passphrase from the system keyring, whether
+// or not UseKeychain is on now. Saved sessions are kept; the passphrase is
+// asked for again next time. removed is false when no entry existed.
+func (m *Manager) ForgetPassphrase() (removed bool, err error) {
+	k, err := m.systemKeyring()
+	if err != nil {
+		return false, err
+	}
+	_, found, err := k.Get()
+	if err != nil || !found {
+		return false, err
+	}
+	return true, k.Delete()
+}
+
+// removeIfEmpty deletes the sessions file once no session is left, and with
+// it the keyring passphrase, which then protects nothing. The next saved
+// session asks for a new passphrase. A keyring failure is only reported.
+func (m *Manager) removeIfEmpty() error {
+	entries, err := m.vault.List()
+	if err != nil || len(entries) > 0 {
+		return err
+	}
+	m.Close()
+	if err := m.store.Remove(); err != nil {
+		return err
+	}
+	if _, err := m.ForgetPassphrase(); err != nil && !errors.Is(err, sessionstore.ErrNoKeyring) {
+		fmt.Fprintf(m.notices, "Could not remove the passphrase from the keyring: %v\n", err)
+	}
 	return nil
 }

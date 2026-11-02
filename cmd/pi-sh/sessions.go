@@ -14,7 +14,8 @@ import (
 type sessionManager interface {
 	List(ctx context.Context, check bool) ([]savedlogin.Status, error)
 	Logout(ctx context.Context, account string) (bool, error)
-	ChangePassphrase(ctx context.Context) error
+	ChangePassphrase(ctx context.Context) (bool, error)
+	ForgetPassphrase() (bool, error)
 	Close()
 }
 
@@ -22,8 +23,9 @@ var openSessions = func(opts options, notices io.Writer) sessionManager {
 	return savedlogin.Open(opts.policy.UseKeychain, notices)
 }
 
-// manageSessions runs --sessions, --logout or --passphrase. These pi-sh
-// extensions only touch sessions saved by the pi-sh CLIs.
+// manageSessions runs --sessions, --logout, --passphrase or
+// --forget-passphrase. These pi-sh extensions only touch sessions saved by
+// the pi-sh CLIs.
 func manageSessions(ctx context.Context, opts options, stdout, notices io.Writer) error {
 	m := openSessions(opts, notices)
 	defer m.Close()
@@ -61,10 +63,26 @@ func manageSessions(ctx context.Context, opts options, stdout, notices io.Writer
 		}
 		return err
 	case "passphrase":
-		if err := m.ChangePassphrase(ctx); err != nil {
+		created, err := m.ChangePassphrase(ctx)
+		switch {
+		case err != nil:
 			return err
+		case created:
+			fmt.Fprintln(stdout, "Passphrase set. Sessions you sign in to from now on will be saved with it.")
+		default:
+			fmt.Fprintln(stdout, "Passphrase changed for all saved sessions.")
 		}
-		fmt.Fprintln(stdout, "Passphrase changed for all saved sessions.")
+		return nil
+	case "forget-passphrase":
+		removed, err := m.ForgetPassphrase()
+		switch {
+		case err != nil:
+			return err
+		case removed:
+			fmt.Fprintln(stdout, "Removed the saved-sessions passphrase from the system keyring. Saved sessions are kept.")
+		default:
+			fmt.Fprintln(stdout, "The system keyring holds no pi-sh passphrase.")
+		}
 		return nil
 	}
 	return fmt.Errorf("unknown session command --%s", opts.manage)

@@ -106,7 +106,9 @@ func newEnv(t *testing.T) *env {
 
 func (e *env) manager(s *script) *Manager {
 	m := &Manager{store: e.store, prompts: s.prompts(), notices: io.Discard, now: time.Now,
-		newClient: func() Session { return &fakeSession{srv: e.srv} }}
+		newClient: func() Session { return &fakeSession{srv: e.srv} },
+		// Tests never reach the real keyring.
+		systemKeyring: func() (sessionstore.Keyring, error) { return nil, sessionstore.ErrNoKeyring }}
 	e.t.Cleanup(m.Close)
 	return m
 }
@@ -227,14 +229,72 @@ func TestListLogoutAndChangePassphrase(t *testing.T) {
 	if _, err := m.Logout(ctx, "b@example.com"); err == nil {
 		t.Fatal("logout of a missing session succeeded")
 	}
-	if err := e.manager(&script{t: t, answers: []string{"secret", "renewed"}}).ChangePassphrase(ctx); err != nil {
+	if exists, _ := e.store.Exists(); exists {
+		t.Fatal("sessions file kept after the last logout")
+	}
+}
+
+func TestChangePassphraseAndFirstSetup(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	created, err := e.manager(&script{t: t, answers: []string{"first"}}).ChangePassphrase(ctx)
+	if err != nil || !created {
+		t.Fatalf("first setup: %v %v", created, err)
+	}
+	// A login after the setup is saved under that passphrase, unasked.
+	m := e.manager(&script{t: t, answers: []string{"first"}})
+	if c, _, err := m.Resume(ctx, "me@example.com"); c != nil || err != nil {
+		t.Fatalf("resume from empty store: %v %v", c, err)
+	}
+	if err := m.Save(ctx, e.login("me@example.com", "t1")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.manager(&script{t: t, answers: []string{"renewed"}}).List(ctx, false); err != nil {
-		t.Fatal(err)
+	created, err = e.manager(&script{t: t, answers: []string{"first", "renewed"}}).ChangePassphrase(ctx)
+	if err != nil || created {
+		t.Fatalf("change: %v %v", created, err)
+	}
+	if list, err := e.manager(&script{t: t, answers: []string{"renewed"}}).List(ctx, false); err != nil || len(list) != 1 {
+		t.Fatalf("after change: %+v %v", list, err)
 	}
 	if _, err := e.manager(&script{t: t, answers: []string{""}}).List(ctx, false); !errors.Is(err, ErrLocked) {
 		t.Fatalf("skipped unlock: %v", err)
+	}
+	if _, err := e.manager(&script{t: t, answers: []string{""}}).ChangePassphrase(ctx); err == nil {
+		t.Fatal("skipped unlock changed the passphrase")
+	}
+}
+
+func TestForgetPassphraseAndLastLogoutCleanup(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	k := &fakeKeyring{}
+	withKeyring := func(m *Manager) *Manager {
+		m.keyring = k
+		m.systemKeyring = func() (sessionstore.Keyring, error) { return k, nil }
+		return m
+	}
+	if err := withKeyring(e.manager(&script{t: t, answers: []string{"secret"}})).Save(ctx, e.login("me@example.com", "t1")); err != nil {
+		t.Fatal(err)
+	}
+	// Forgetting works with UseKeychain off and keeps the sessions.
+	m := e.manager(&script{t: t})
+	m.systemKeyring = func() (sessionstore.Keyring, error) { return k, nil }
+	if removed, err := m.ForgetPassphrase(); !removed || err != nil || k.pass != nil {
+		t.Fatalf("forget: %v %v %q", removed, err, k.pass)
+	}
+	if removed, err := m.ForgetPassphrase(); removed || err != nil {
+		t.Fatalf("forget again: %v %v", removed, err)
+	}
+	if exists, _ := e.store.Exists(); !exists {
+		t.Fatal("forgetting the passphrase removed the sessions")
+	}
+	// The last logout removes the file and the keyring passphrase.
+	m = withKeyring(e.manager(&script{t: t, answers: []string{"secret"}}))
+	if _, err := m.Logout(ctx, "me@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if exists, _ := e.store.Exists(); exists || k.pass != nil {
+		t.Fatalf("after last logout: file=%v keyring=%q", exists, k.pass)
 	}
 }
 

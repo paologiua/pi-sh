@@ -5,7 +5,7 @@ import "pi-sh/internal/connectcompat"
 const clientHelp = `usage: pi-sh [--direct-login|--browser] [options] [email::]device [command ...]
        pi-sh [options] email [command ...]   (choose the device after sign-in)
        pi-sh -G [-F file|none] [-o option] [device]
-       pi-sh --sessions | --logout email | --passphrase
+       pi-sh --sessions | --logout email | --passphrase | --forget-passphrase
        pi-sh -V | --version | -Q query | --help
 
 Unofficial SSH-like client over Raspberry Pi Connect (not the SSH protocol).
@@ -24,7 +24,8 @@ Connection:
 Saved sessions (direct login):
   --sessions           List saved sessions and check whether each is signed in
   --logout email       Sign the saved session out of Connect and delete it
-  --passphrase         Change the passphrase protecting all saved sessions
+  --passphrase         Set (first time) or change the saved-sessions passphrase
+  --forget-passphrase  Remove that passphrase from the system keyring
 
 Session and terminal:
   --experimental-command  Execute command with binary stdin and separate streams

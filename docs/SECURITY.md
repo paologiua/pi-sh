@@ -263,14 +263,20 @@ credential, never the password or one-time code) can be saved, OpenSSH-like:
   arguments, environment or files. Three wrong answers or Enter skip saved
   sessions for that process, as ssh moves on from a key.
 - `UseKeychain yes` (off by default, Apple ssh keyword) keeps the passphrase,
-  not the sessions, in the macOS Keychain (`security`) or Linux Secret Service
-  (`secret-tool`). The secret is written on the tool's stdin, never in argv.
+  not the sessions, in the macOS Keychain (`security`, generic password
+  service `pi-sh`, account `sessions`) or Linux Secret Service (`secret-tool`,
+  attributes `service pi-sh account sessions`). The secret is written on the
+  tool's stdin, never in argv. `--forget-passphrase` deletes that entry even
+  with UseKeychain off and keeps the sessions.
+- `--passphrase` sets the passphrase before any session exists (an empty
+  store) or re-encrypts every session under a new one.
 - A restored session is used only after the Connect devices page, fetched
   without following redirects, shows the signed-in sign-out form; otherwise it
   is deleted as expired.
 - `--logout email` submits Connect's own sign-out form (POST `/session` with
   `_method=delete` and that form's CSRF token, observed 2026-11-02) and deletes
-  the local copy. Whether Connect invalidates other copies of the cookies, and
+  the local copy. After the last session is removed, the file and the keyring
+  passphrase are deleted too; the next saved session asks for a new one. Whether Connect invalidates other copies of the cookies, and
   whether the Raspberry Pi ID session ends too, is not verified.
 - While a process runs, the decrypted session and derived key are in memory;
   zeroing is best effort. Anyone with the file and the passphrase can use the

@@ -17,6 +17,8 @@ type fakeManager struct {
 	err       error
 	logouts   []string
 	changed   int
+	created   bool
+	removed   bool
 }
 
 func (f *fakeManager) List(context.Context, bool) ([]savedlogin.Status, error) { return f.list, f.err }
@@ -24,8 +26,12 @@ func (f *fakeManager) Logout(_ context.Context, account string) (bool, error) {
 	f.logouts = append(f.logouts, account)
 	return f.signedOut, f.err
 }
-func (f *fakeManager) ChangePassphrase(context.Context) error { f.changed++; return f.err }
-func (f *fakeManager) Close()                                 {}
+func (f *fakeManager) ChangePassphrase(context.Context) (bool, error) {
+	f.changed++
+	return f.created, f.err
+}
+func (f *fakeManager) ForgetPassphrase() (bool, error) { return f.removed, f.err }
+func (f *fakeManager) Close()                          {}
 
 func runManage(t *testing.T, f *fakeManager, args ...string) (string, error) {
 	t.Helper()
@@ -66,6 +72,15 @@ func TestSessionCommands(t *testing.T) {
 	if out, err := runManage(t, f, "-oUseKeychain=yes", "--passphrase"); err != nil || f.changed != 1 || !strings.Contains(out, "Passphrase changed") {
 		t.Fatalf("--passphrase: %q %v", out, err)
 	}
+	if out, err := runManage(t, &fakeManager{created: true}, "--passphrase"); err != nil || !strings.Contains(out, "Passphrase set") {
+		t.Fatalf("first --passphrase: %q %v", out, err)
+	}
+	if out, err := runManage(t, &fakeManager{removed: true}, "--forget-passphrase"); err != nil || !strings.Contains(out, "Removed the saved-sessions passphrase") {
+		t.Fatalf("--forget-passphrase: %q %v", out, err)
+	}
+	if out, err := runManage(t, &fakeManager{}, "--forget-passphrase"); err != nil || !strings.Contains(out, "holds no pi-sh passphrase") {
+		t.Fatalf("--forget-passphrase without entry: %q %v", out, err)
+	}
 }
 
 func TestSessionCommandOptions(t *testing.T) {
@@ -74,7 +89,7 @@ func TestSessionCommandOptions(t *testing.T) {
 		t.Fatalf("%+v %v", o.policy, err)
 	}
 	for _, args := range [][]string{
-		{"--logout"}, {"--logout", "pi@raspberrypi"}, {"--sessions", "device"}, {"--sessions", "--passphrase"},
+		{"--logout"}, {"--logout", "pi@raspberrypi"}, {"--sessions", "device"}, {"--sessions", "--passphrase"}, {"--forget-passphrase", "device"},
 		{"--browser", "--sessions"}, {"-G", "--sessions"}, {"-oUseKeychain=maybe", "--sessions"},
 	} {
 		if _, err := parseOptions(args); err == nil {
