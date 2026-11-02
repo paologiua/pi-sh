@@ -88,9 +88,11 @@ curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | b
 ```
 
 v0.1.0-alpha.3 is the selected project version and installer default; it adds
-the OpenSSH 10.3 directory-mode rule for recursive uploads. Its release is
-created by release.yml from the v0.1.0-alpha.3 tag.
-v0.1.0-alpha.1 and v0.1.0-alpha.2 are published as GitHub prereleases. alpha.2
+the OpenSSH 10.3 directory-mode rule for recursive uploads. release.yml
+published it from the pushed tag on 2 November 2026; the installer from main
+then installed it on macOS/arm64 and the clients reported
+`v0.1.0-alpha.3+g62ee3eeea28b`.
+v0.1.0-alpha.1, v0.1.0-alpha.2 and v0.1.0-alpha.3 are published as GitHub prereleases. alpha.2
 was built and published by release.yml on 2 November 2026; the installer from
 main then installed it on macOS/arm64 and the clients reported
 `v0.1.0-alpha.2+g1ebf24bacdfe`.
