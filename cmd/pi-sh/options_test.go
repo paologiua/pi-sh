@@ -287,3 +287,25 @@ func TestEscapeDumpOpenSSHDifferential(t *testing.T) {
 		}
 	}
 }
+
+func TestBareAccountChoosesDevice(t *testing.T) {
+	o, err := parseOptions([]string{"me@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.chooseDevice || o.destination() != "" || o.policy.Account != "me@example.com" {
+		t.Fatalf("bare account: choose=%v destination=%q account=%q", o.chooseDevice, o.destination(), o.policy.Account)
+	}
+	o, err = parseOptions([]string{"-l", "first@example.com", "me@example.com"})
+	if err != nil || o.policy.Account != "first@example.com" {
+		t.Fatalf("-l before the destination must win, as in ssh: %q %v", o.policy.Account, err)
+	}
+	for _, args := range [][]string{
+		{"pi@raspberrypi"},
+		{"-oHostName=other", "me@example.com"}, {"-F", "none", "-oRemoteCommand=true", "me@example.com"},
+	} {
+		if _, err := parseOptions(args); err == nil {
+			t.Errorf("accepted %q", args)
+		}
+	}
+}

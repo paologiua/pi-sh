@@ -3,6 +3,7 @@ package main
 import "pi-sh/internal/connectcompat"
 
 const clientHelp = `usage: pi-sh [--direct-login|--browser] [options] [email::]device [command ...]
+       pi-sh [options] email [command ...]   (choose the device after sign-in)
        pi-sh -G [-F file|none] [-o option] [device]
        pi-sh -V | --version | -Q query | --help
 

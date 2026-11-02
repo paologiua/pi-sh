@@ -41,6 +41,20 @@ func TestDirectSignalingOwnWebSession(t *testing.T) {
 	}
 }
 
+func TestDevicesListsAuthorizedDevicesSorted(t *testing.T) {
+	if _, err := New().Devices(context.Background()); err == nil {
+		t.Fatal("unauthenticated device listing allowed")
+	}
+	devices, err := signedIn(t, "two-devices").Devices(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Device{{"00000000-0000-0000-0000-000000000002", "another"}, {"00000000-0000-0000-0000-000000000001", "fixture"}}
+	if len(devices) != 2 || devices[0] != want[0] || devices[1] != want[1] {
+		t.Fatalf("devices = %+v", devices)
+	}
+}
+
 func TestDirectIdentityAndLocationBoundaries(t *testing.T) {
 	if _, err := New().Prepare(context.Background(), "fixture"); err == nil {
 		t.Fatal("unauthenticated discovery allowed")

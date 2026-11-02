@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,87 @@ func (c *Client) PrepareWithContext(lifetime, ctx context.Context, destination s
 			cancel()
 		}
 	}()
+	devices, err := s.devices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var matches []Device
+	for _, d := range devices {
+		if destination == "" || destination == d.ID || destination == d.Name {
+			matches = append(matches, d)
+		}
+	}
+	if len(matches) != 1 {
+		return nil, errors.New("no unique authorized device matches the destination")
+	}
+	if s.csrf == "" || len(s.csrf) > 4096 {
+		return nil, errors.New("Connect page has no usable CSRF control")
+	}
+	s.Device = matches[0]
+	s.prefix = "/devices/" + s.Device.ID
+	_, b, err := s.request(ctx, "GET", c.root+s.prefix+"/remote-shell-session", nil, "text/html", "")
+	if err != nil {
+		return nil, err
+	}
+	n, err := html.Parse(bytes.NewReader(b))
+	if err != nil {
+		return nil, ErrFlow
+	}
+	controllers := 0
+	var device Device
+	walk(n, func(n *html.Node) {
+		if n.Type != html.ElementNode {
+			return
+		}
+		for _, controller := range strings.Fields(attr(n, "data-controller")) {
+			if controller == "shell" {
+				controllers++
+				_ = json.Unmarshal([]byte(attr(n, "data-shell-device-value")), &device)
+			}
+		}
+	})
+	if controllers != 1 || device.ID != s.Device.ID || (destination != "" && destination != device.ID && destination != device.Name) {
+		return nil, errors.New("Connect shell authorization or device identity was not confirmed; sign in again")
+	}
+	_, b, err = s.request(ctx, "GET", c.root+s.prefix+"/ice-configuration", nil, "application/json", "")
+	if err != nil {
+		return nil, err
+	}
+	if json.Unmarshal(b, &s.ICE) != nil {
+		return nil, errors.New("invalid Connect ICE configuration")
+	}
+	ready = true
+	return s, nil
+}
+
+// Devices lists the devices the signed-in account may open, sorted by name.
+func (c *Client) Devices(ctx context.Context) ([]Device, error) {
+	if c.stage != Authenticated {
+		return nil, errors.New("direct login must finish before device discovery")
+	}
+	owned, cancel := context.WithCancel(ctx)
+	defer cancel()
+	s := &Connection{client: c, ctx: owned, cancel: cancel}
+	found, err := s.devices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list := make([]Device, 0, len(found))
+	for _, d := range found {
+		list = append(list, d)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].Name != list[j].Name {
+			return list[i].Name < list[j].Name
+		}
+		return list[i].ID < list[j].ID
+	})
+	return list, nil
+}
+
+// devices reads the Connect device list and the page's CSRF control.
+func (s *Connection) devices(ctx context.Context) (map[string]Device, error) {
+	c := s.client
 	_, b, err := s.request(ctx, "GET", c.root+"/devices", nil, "text/html", "")
 	if err != nil {
 		return nil, err
@@ -97,53 +179,7 @@ func (c *Client) PrepareWithContext(lifetime, ctx context.Context, destination s
 			devices[id] = Device{ID: id, Name: strings.TrimSpace(nodeText(n))}
 		}
 	})
-	var matches []Device
-	for _, d := range devices {
-		if destination == "" || destination == d.ID || destination == d.Name {
-			matches = append(matches, d)
-		}
-	}
-	if len(matches) != 1 {
-		return nil, errors.New("no unique authorized device matches the destination")
-	}
-	if s.csrf == "" || len(s.csrf) > 4096 {
-		return nil, errors.New("Connect page has no usable CSRF control")
-	}
-	s.Device = matches[0]
-	s.prefix = "/devices/" + s.Device.ID
-	_, b, err = s.request(ctx, "GET", c.root+s.prefix+"/remote-shell-session", nil, "text/html", "")
-	if err != nil {
-		return nil, err
-	}
-	n, err = html.Parse(bytes.NewReader(b))
-	if err != nil {
-		return nil, ErrFlow
-	}
-	controllers := 0
-	var device Device
-	walk(n, func(n *html.Node) {
-		if n.Type != html.ElementNode {
-			return
-		}
-		for _, controller := range strings.Fields(attr(n, "data-controller")) {
-			if controller == "shell" {
-				controllers++
-				_ = json.Unmarshal([]byte(attr(n, "data-shell-device-value")), &device)
-			}
-		}
-	})
-	if controllers != 1 || device.ID != s.Device.ID || (destination != "" && destination != device.ID && destination != device.Name) {
-		return nil, errors.New("Connect shell authorization or device identity was not confirmed; sign in again")
-	}
-	_, b, err = s.request(ctx, "GET", c.root+s.prefix+"/ice-configuration", nil, "application/json", "")
-	if err != nil {
-		return nil, err
-	}
-	if json.Unmarshal(b, &s.ICE) != nil {
-		return nil, errors.New("invalid Connect ICE configuration")
-	}
-	ready = true
-	return s, nil
+	return devices, nil
 }
 
 func (s *Connection) request(ctx context.Context, method, target string, body []byte, accept, csrf string) (*reply, []byte, error) {

@@ -43,6 +43,9 @@ type options struct {
 	// destinationParsed records that the destination's account/port were
 	// seeded at its command-line position (first obtained, as in ssh.c).
 	destinationParsed bool
+	// chooseDevice records a destination that names only the account
+	// ("pi-sh email"): the device is chosen from a list after sign-in.
+	chooseDevice bool
 	// fwd holds -L/-D/-W and the forwarding directives; features holds the
 	// accepted (off) values of refused features and SessionType, so -G
 	// prints them. Remote (-R) forwardings with a remote socket path are refused.
@@ -260,6 +263,9 @@ func parseOptions(args []string) (options, error) {
 	if err != nil {
 		return o, err
 	}
+	if o.chooseDevice && (o.configFile != "" && o.configFile != "none" || o.hostname != "" || o.remoteCommand != "") {
+		return o, errChooseDevice
+	}
 	if o.configFile != "" && o.configFile != "none" {
 		if len(o.args) == 0 {
 			return o, errors.New("explicit configuration file requires a destination")
@@ -402,6 +408,10 @@ func (o *options) finishForwarding(defaultAccount string) error {
 	return o.fwd.Expand(tokens)
 }
 
+// errChooseDevice: configuration is matched against a device name, which a
+// bare-account destination only picks after sign-in.
+var errChooseDevice = errors.New("choosing the device after sign-in (pi-sh email) cannot be combined with -F, HostName or RemoteCommand; name the device as email::device")
+
 // errRemoteUnixListen refuses -R with a remote socket path: binding it would
 // create a file on the device (docs/FORWARDING.md).
 var errRemoteUnixListen = errors.New("remote Unix-domain socket forwarding (-R path:…) is not supported: it would create a socket file on the device; see docs/FORWARDING.md")
@@ -440,6 +450,18 @@ func (o *options) applyRemoteCommand(defaultAccount string) error {
 // even if -l or -o User was given earlier.
 func (o *options) parseDestination(seen map[string]bool) error {
 	o.destinationParsed = true
+	if !strings.HasPrefix(o.args[0], "ssh://") && account.Validate(o.args[0]) == nil {
+		// pi-sh extension: a bare Raspberry Pi ID email selects the account
+		// and leaves the device to be chosen after sign-in. A Unix-style
+		// user@host (no dotted domain) is still refused below.
+		if !seen["user"] {
+			o.connection["user"] = o.args[0]
+			seen["user"] = true
+		}
+		o.chooseDevice = true
+		o.args[0] = ""
+		return nil
+	}
 	target, err := sshdest.SSH(o.args[0])
 	if err != nil {
 		return err

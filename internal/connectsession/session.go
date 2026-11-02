@@ -156,7 +156,10 @@ func (s *directSource) Configuration(ctx context.Context) (browserauth.Configura
 	defer cancel()
 	s.log.Debug(MsgDiscovery)
 	started := time.Now()
-	connection, err := s.client.PrepareWithContext(s.lifetime, preparing, s.destination)
+	s.mu.Lock()
+	destination := s.destination
+	s.mu.Unlock()
+	connection, err := s.client.PrepareWithContext(s.lifetime, preparing, destination)
 	if err != nil {
 		return browserauth.Configuration{}, err
 	}
@@ -217,6 +220,31 @@ func (s *directSource) Close() error {
 	for _, c := range conns {
 		_ = c.Close()
 	}
+	return nil
+}
+
+// Devices lists the signed-in account's devices. Only direct login can list
+// them; the browser companion is bound to the device page it runs on.
+func Devices(ctx context.Context, source Source) ([]webauth.Device, error) {
+	s, ok := source.(*directSource)
+	if !ok {
+		return nil, errors.New("device selection requires direct login")
+	}
+	listing, cancel := context.WithTimeout(ctx, prepareLimit)
+	defer cancel()
+	return s.client.Devices(listing)
+}
+
+// Select fixes the device (a name or ID) that later establishment attempts
+// open. It must precede Establish.
+func Select(source Source, device string) error {
+	s, ok := source.(*directSource)
+	if !ok {
+		return errors.New("device selection requires direct login")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.destination = device
 	return nil
 }
 

@@ -118,6 +118,14 @@ Choose the account explicitly to skip the email prompt:
 ./bin/pi-sh -l me@example.com raspberrypi
 ```
 
+Name only the account to pick the device after sign-in. A single device is used
+directly; with several, pi-sh shows a numbered list on the terminal (without a
+terminal it prints the list and exits 255 without connecting):
+
+```sh
+./bin/pi-sh me@example.com
+```
+
 The account is a Raspberry Pi ID email. A Unix-style `pi@raspberrypi` cannot select
 a remote Unix user: Connect uses its agent account. A non-secret account default
 can be supplied with `PI_SH_ACCOUNT` or a one-line `~/.config/pi-sh/account` file.

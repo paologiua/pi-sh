@@ -77,6 +77,9 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 			http.Redirect(w, r, "/devices", http.StatusSeeOther)
 		case "/devices":
 			fmt.Fprint(w, `<meta name="csrf-token" content="synthetic-session-csrf"><a href="/devices/00000000-0000-0000-0000-000000000001">fixture</a>`)
+			if mfa == "two-devices" {
+				fmt.Fprint(w, `<a href="/devices/00000000-0000-0000-0000-000000000002"> another </a><a href="/devices/00000000-0000-0000-0000-000000000001">fixture</a>`)
+			}
 		case "/devices/00000000-0000-0000-0000-000000000001/remote-shell-session":
 			id := "00000000-0000-0000-0000-000000000001"
 			if mfa == "wrong-device" {

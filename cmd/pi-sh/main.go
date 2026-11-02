@@ -27,7 +27,7 @@ func app() int {
 	var fromConfig configError
 	if err != nil && !errors.As(err, &fromConfig) {
 		fmt.Fprintln(os.Stderr, "pi-sh:", err)
-		fmt.Fprintln(os.Stderr, "usage: pi-sh [--browser|--direct-login] [options] [-l email] [email::]device-or-alias\n       pi-sh [--browser|--direct-login] --experimental-command [options] [email::]device-or-alias command [arguments...]\n       pi-sh -G [-F path|none] [-o option] [-l email] [[email::]device-or-alias]\n       pi-sh -V\n       pi-sh -Q query")
+		fmt.Fprintln(os.Stderr, "usage: pi-sh [--browser|--direct-login] [options] [-l email] [email::]device-or-alias\n       pi-sh [options] email\n       pi-sh [--browser|--direct-login] --experimental-command [options] [email::]device-or-alias command [arguments...]\n       pi-sh -G [-F path|none] [-o option] [-l email] [[email::]device-or-alias]\n       pi-sh -V\n       pi-sh -Q query")
 		return 255
 	}
 	if err == nil && opts.inspection != "" {
@@ -99,6 +99,13 @@ func app() int {
 		log.Debug(msgAuthBrowser)
 	}
 	source, err := authentication(ctx, destination, opts.direct, opts.policy)
+	if err == nil && opts.chooseDevice {
+		if err = chooseDevice(ctx, source, os.Stderr); err != nil {
+			source.Close()
+			log.Failure(diag.Fatal, err)
+			return 255
+		}
+	}
 	if err == nil && opts.noSession() {
 		defer source.Close()
 		var stdin io.Reader = os.Stdin

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -41,7 +42,13 @@ func AuthenticateAs(ctx context.Context, c Authenticator, account string) error 
 	return authenticate(ctx, c, in, out, account)
 }
 
-func authenticate(ctx context.Context, c Authenticator, in, out *os.File, account string) (resultErr error) {
+func authenticate(ctx context.Context, c Authenticator, in, out *os.File, account string) error {
+	return onTerminal(ctx, in, out, func(guard *terminalGuard) error { return run(ctx, c, in, out, guard, account) })
+}
+
+// onTerminal runs f with in's state saved, restores it afterwards and returns
+// on cancellation even while f is blocked in a terminal read.
+func onTerminal(ctx context.Context, in, out *os.File, f func(*terminalGuard) error) (resultErr error) {
 	fd := int(in.Fd())
 	state, err := term.GetState(fd)
 	if err != nil {
@@ -54,7 +61,7 @@ func authenticate(ctx context.Context, c Authenticator, in, out *os.File, accoun
 		}
 	}()
 	result := make(chan error, 1)
-	go func() { result <- run(ctx, c, in, out, guard, account) }()
+	go func() { result <- f(guard) }()
 	select {
 	case err := <-result:
 		if ctx.Err() != nil {
@@ -64,6 +71,66 @@ func authenticate(ctx context.Context, c Authenticator, in, out *os.File, accoun
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// Choose shows items numbered from 1 on the controlling terminal and returns
+// the index of the one the person selects. An empty answer cancels.
+func Choose(ctx context.Context, heading string, items []string) (int, error) {
+	in, out, err := openTerminal()
+	if err != nil {
+		return 0, errors.New("choosing requires a controlling terminal")
+	}
+	defer in.Close()
+	if out != in {
+		defer out.Close()
+	}
+	return choose(ctx, in, out, heading, items)
+}
+
+func choose(ctx context.Context, in, out *os.File, heading string, items []string) (choice int, err error) {
+	err = onTerminal(ctx, in, out, func(*terminalGuard) error {
+		fmt.Fprintln(out, heading)
+		for i, item := range items {
+			fmt.Fprintf(out, "%3d) %s\n", i+1, item)
+		}
+		for {
+			fmt.Fprintf(out, "Select 1-%d (Enter to cancel): ", len(items))
+			line, err := readLine(in, 32)
+			if err != nil {
+				return errors.New("could not read selection")
+			}
+			line = strings.TrimSpace(line)
+			if line == "" {
+				return context.Canceled
+			}
+			if n, err := strconv.Atoi(line); err == nil && n >= 1 && n <= len(items) {
+				choice = n - 1
+				return nil
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+		}
+	})
+	return choice, err
+}
+
+// readLine reads one visible line, without its terminator, up to limit bytes.
+func readLine(in *os.File, limit int) (string, error) {
+	var line []byte
+	for len(line) < limit {
+		var b [1]byte
+		if _, err := in.Read(b[:]); err != nil {
+			return "", err
+		}
+		if b[0] == '\n' {
+			return string(line), nil
+		}
+		if b[0] != '\r' {
+			line = append(line, b[0])
+		}
+	}
+	return "", errors.New("input line exceeds local limit")
 }
 
 // A cancelled blocking terminal read may outlive this call until the dedicated

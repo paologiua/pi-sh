@@ -171,3 +171,49 @@ func TestCredentialPromptsAndRestoration(t *testing.T) {
 		})
 	}
 }
+
+func TestChooseRetriesUntilValidSelection(t *testing.T) {
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Skip("pty unavailable:", err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() {
+		var b [256]byte
+		for {
+			if _, err := master.Read(b[:]); err != nil {
+				return
+			}
+		}
+	}()
+	type result struct {
+		choice int
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := choose(ctx, slave, slave, "Devices:", []string{"alpha", "beta"})
+		done <- result{n, err}
+	}()
+	if _, err := master.Write([]byte("0\nx\n2\n")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case r := <-done:
+		if r.err != nil || r.choice != 1 {
+			t.Fatalf("choose = %d, %v", r.choice, r.err)
+		}
+	case <-ctx.Done():
+		t.Fatal("choose did not return")
+	}
+	go func() { _, err := choose(ctx, slave, slave, "Devices:", []string{"alpha"}); done <- result{0, err} }()
+	if _, err := master.Write([]byte("\n")); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-done; !errors.Is(r.err, context.Canceled) {
+		t.Fatalf("empty answer did not cancel: %v", r.err)
+	}
+}
