@@ -49,13 +49,12 @@ jobs:
           ! gh release view "$TAG" >/dev/null 2>&1 || { echo "::error::Release $TAG already exists"; exit 1; }
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Test
+      # The Go test suite runs in check.yml and does not gate a release.
+      - name: Check the installer and vet
         run: |
           bash -n install.sh scripts/build.sh scripts/test.sh scripts/test-install.sh
           bash scripts/test-install.sh
           go vet ./...
-          go test ./...
-          go test -C third_party/sftp ./...
       - name: Build release archives
         run: ./scripts/build.sh all
       - name: Check the built version

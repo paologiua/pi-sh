@@ -133,8 +133,9 @@ No script publishes, uploads, creates a GitHub release or changes the Pi.
 3. Commit, then `git tag -a <tag> -m "pi-sh <tag>" && git push origin main <tag>`.
 
 The workflow refuses a tag that does not match the version, installer default or
-notes file, or whose release already exists. It runs the installer, vet and Go
-tests, builds with `scripts/build.sh all`, checks that the built clients report
+notes file, or whose release already exists. It runs the installer checks and
+`go vet` (the Go test suite runs in check.yml and does not gate releases), builds
+with `scripts/build.sh all`, checks that the built clients report
 the tag without `dirty` and that `SHA256SUMS` matches, then creates the release
 with the seven archives and `SHA256SUMS`. Tags with a suffix (`-alpha.N`, `-rc.N`)
 become prereleases. It uses the workflow's own token; no personal token is stored.
