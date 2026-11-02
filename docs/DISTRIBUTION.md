@@ -59,7 +59,7 @@ routine test command.
 
 Download mode requires a real GitHub repository and published release with
 `pi-sh_OS_ARCH.tar.gz` and `SHA256SUMS` assets generated together by build.sh.
-The default is the selected alpha, v0.1.0-alpha.2. Pass --version with another
+The default is the selected alpha, v0.1.0-alpha.3. Pass --version with another
 tag to select a release. Explicit --version latest resolves GitHub's latest stable
 release once before fetching both files; it does not select prereleases.
 The installer checks the archive's SHA-256 before extracting the three clients, uses no sudo and defaults to ~/.local/bin.
@@ -84,10 +84,12 @@ The repository is public; these commands need the selected release's assets on G
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
 # Pin a release:
-curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.2
+curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.3
 ```
 
-v0.1.0-alpha.2 is the selected project version and installer default.
+v0.1.0-alpha.3 is the selected project version and installer default; it adds
+the OpenSSH 10.3 directory-mode rule for recursive uploads. Its release is
+created by release.yml from the v0.1.0-alpha.3 tag.
 v0.1.0-alpha.1 and v0.1.0-alpha.2 are published as GitHub prereleases. alpha.2
 was built and published by release.yml on 2 November 2026; the installer from
 main then installed it on macOS/arm64 and the clients reported

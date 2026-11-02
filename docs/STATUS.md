@@ -1,5 +1,10 @@
 # Development status — 2026-10-22
 
+Update, 2 November 2026 — v0.1.0-alpha.3: the suite version and installer
+default move to v0.1.0-alpha.3. It carries the recursive-upload fix: like
+OpenSSH 10.3, pi-cp -r and pi-sftp put -r keep an existing destination
+directory's mode unless -p is given. Not yet re-run against the Pi.
+
 Update, 2 November 2026 — v0.1.0-alpha.2: the suite version moves to
 v0.1.0-alpha.2 for the direct-login default, device choice after sign-in and
 encrypted saved sessions. The installer defaults to this tag and, on iSH,

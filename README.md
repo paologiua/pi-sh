@@ -7,7 +7,7 @@ agent and infrastructure from a terminal. It aims for practical OpenSSH command
 and interface compatibility over Connect's HTTPS/WebRTC transport.
 
 It is independent of, and not endorsed by, Raspberry Pi or OpenSSH. It does not
-implement the SSH wire protocol. **Development version: v0.1.0-alpha.2. Compatibility and runtime verification
+implement the SSH wire protocol. **Development version: v0.1.0-alpha.3. Compatibility and runtime verification
 are incomplete; releases are published as GitHub prereleases.**
 
 | Client | Purpose | Familiar interface |
@@ -53,7 +53,7 @@ shell; `~/.local/bin` if not writable) as small launchers that set
 Earlier pi-sh copies in `~/.local/bin` or `~/bin` are removed (`--keep-old` keeps them).
 Windows users extract the `.exe` files from the Windows archive.
 
-The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.2`; no `--repo`
+The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.3`; no `--repo`
 is needed for this project. Use `--repo owner/name` to select a fork. The installer
 does not request or save GitHub credentials.
 
@@ -249,7 +249,7 @@ pi-sh -V
 
 Version output is one line on stderr and includes the client name, project version,
 Go version and OS/architecture. It exits successfully without login or network
-access. The selected version is `v0.1.0-alpha.2` for all three clients. Git builds
+access. The selected version is `v0.1.0-alpha.3` for all three clients. Git builds
 append safe source metadata, for example `+g77699a479687.dirty`; `dirty` means
 uncommitted source changes were included. This is build identification, not a
 claim that a GitHub release has been published. The `version` command inside the
