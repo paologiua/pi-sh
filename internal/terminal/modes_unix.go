@@ -63,12 +63,20 @@ func CaptureModes(file *os.File) (*ttymode.Settings, error) {
 		}
 		s.Characters[name] = value
 	}
-	// OpenSSH sends CS7/CS8 as bit-presence flags, not a CSIZE selector. Since
-	// their masks overlap, any nonzero conventional size ultimately sets CS8.
-	s.CharacterSize = 5
-	if t.Cflag&unix.CS8 != 0 {
-		s.CharacterSize = 8
-	}
+	s.CharacterSize = characterSize(uint64(t.Cflag))
 	capturePlatformModes(t, s)
 	return s, nil
+}
+
+// characterSize selects CS8 or retains the carrier's size. OpenSSH sends CS7/CS8
+// as bit-presence flags whose masks overlap, so any nonzero size sets CS8. A zero
+// CSIZE field (CS5; iSH reports c_cflag 0) is not sent: Linux PTYs always force
+// CS8, so GNU stty on the Pi's carrier would report "cs5" as a failed request
+// and the adapter would end before the shell started. sshd reaches CS8 the same
+// way, because the PTY driver overrides what tcsetattr asked for.
+func characterSize(cflag uint64) int {
+	if cflag&uint64(unix.CSIZE) == 0 {
+		return 0
+	}
+	return 8
 }

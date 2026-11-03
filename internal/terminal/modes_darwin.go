@@ -15,5 +15,12 @@ func capturePlatformModes(t *unix.Termios, s *ttymode.Settings) {
 		}
 		return ttymode.LinuxBaud(uint32(value))
 	}
-	s.Baud = &ttymode.Baud{Input: normalize(t.Ispeed), Output: normalize(t.Ospeed)}
+	if t.Ospeed == 0 {
+		return // B0 is a hang-up request, not a rate: retain the carrier's rate.
+	}
+	input := t.Ispeed
+	if input == 0 {
+		input = t.Ospeed // termios: input speed 0 follows the output speed
+	}
+	s.Baud = &ttymode.Baud{Input: normalize(input), Output: normalize(t.Ospeed)}
 }

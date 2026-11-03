@@ -107,6 +107,11 @@ func (s *Settings) SttyArgs() ([]string, error) {
 		}
 		args = append(args, name, text)
 	}
+	// Speed 0 (B0) asks a terminal to hang up; capture omits it, and it is
+	// never sent to the carrier's stty.
+	if s.Baud != nil && (s.Baud.Input == 0 || s.Baud.Output == 0) {
+		return nil, errors.New("unsupported terminal baud rate")
+	}
 	if s.Baud != nil {
 		if LinuxBaud(s.Baud.Input) != s.Baud.Input || LinuxBaud(s.Baud.Output) != s.Baud.Output {
 			return nil, errors.New("unsupported terminal baud rate")

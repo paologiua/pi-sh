@@ -27,6 +27,11 @@ func capturePlatformModes(t *unix.Termios, s *ttymode.Settings) {
 		return 9600
 	}
 	output := uint32(t.Cflag) & unix.CBAUD
+	if output == unix.B0 {
+		// B0 is a hang-up request, not a rate; iSH reports it with c_cflag 0.
+		// Retain the carrier's rate rather than ask its stty for speed 0.
+		return
+	}
 	input := (uint32(t.Cflag) & unix.CIBAUD) >> 16
 	if input == 0 {
 		input = output

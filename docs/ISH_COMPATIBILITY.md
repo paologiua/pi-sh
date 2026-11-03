@@ -76,6 +76,21 @@ the error now names the cause (no trusted root: `apk add --upgrade
 ca-certificates`; expired/not yet valid: check the clock; name mismatch), and
 the installer warns on Linux/iSH when none of Go's CA locations exist.
 
+## Owner-run iSH observation, 3 November 2026: interactive shell
+
+After `apk add --upgrade ca-certificates`, direct login, session saving and
+device selection worked on iSH, so the TLS failure above was the CA bundle.
+The interactive login shell then ended with `experimental command ended
+without a verified adapter status` and `remote broker cleanup was not
+confirmed`: the remote TTY adapter exited before reporting readiness. The
+likely cause is local mode capture: iSH's terminal reports c_cflag 0, which
+pi-sh translated to `stty cs5 ospeed 0 ispeed 0` for the Pi's carrier. Linux
+PTYs always force CS8, so GNU stty reports the request as failed and the
+adapter exits (status 125). Capture now sends no size for a zero CSIZE field
+and no rate for B0 (a hang-up request), retaining the carrier's CS8 and rate;
+sshd reaches the same CS8 because the PTY driver overrides tcsetattr. Unit
+tests cover the capture; the fix is not yet confirmed on iSH.
+
 ## Owner-run iSH observations, 23 October 2026
 
 The owner tested Linux/386 softfloat, CGO-disabled Go 1.27.3 binary

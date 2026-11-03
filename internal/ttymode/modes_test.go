@@ -12,6 +12,7 @@ func TestModeVocabularyRejectsInjectionAndInvalidValues(t *testing.T) {
 		{Characters: map[string]uint32{"eof": 256}},
 		{CharacterSize: 9}, {CharacterSize: -1},
 		{Baud: &Baud{Input: 9601, Output: 9600}},
+		{Baud: &Baud{Input: 0, Output: 0}}, {Baud: &Baud{Input: 9600, Output: 0}},
 	} {
 		if _, err := s.SttyArgs(); err == nil {
 			t.Fatal("invalid mode accepted")
