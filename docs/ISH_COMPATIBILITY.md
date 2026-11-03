@@ -97,6 +97,19 @@ the Pi (saved session, relay mode). The fix ships in v0.1.0-alpha.4, which has
 not itself been run on iSH yet. Sustained interactive use, terminal controls,
 resizing, suspension and transfers remain unverified.
 
+## Owner-run iSH observation, 3 November 2026: one runtime crash
+
+With v0.1.0-alpha.4 (`+gf27b88264204`, linux/386) installed by the iSH
+installer, one run died during relay candidate gathering, before any shell
+or terminal setup, with the Go runtime check `fatal error: receive on synctest
+channel from outside bubble` in pion/ice v4.4.7 `taskloop.(*Loop).Run`. No
+synctest bubble exists outside tests, so this indicates corrupted memory.
+The next two or three runs, without any GODEBUG change, worked. The cause is
+not established; a hypothesis is iSH's x86 emulation interacting with Go's
+signal-based asynchronous preemption (`GODEBUG=asyncpreemptoff=1` is the
+usual diagnostic). The launchers do not set it, because the crash has not been
+reproduced and the flag has not been shown to help. Frequency is unknown.
+
 ## Owner-run iSH observations, 23 October 2026
 
 The owner tested Linux/386 softfloat, CGO-disabled Go 1.27.3 binary
