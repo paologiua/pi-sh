@@ -150,4 +150,16 @@ if bash install.sh --from-dir "$stage/releases" --bin-dir "$stage/should-not-exi
 [[ ! -e $stage/should-not-exist ]] || exit 1
 if bash install.sh --repo invalid --bin-dir "$stage/invalid" > "$stage/error" 2>&1; then echo 'Invalid repository accepted' >&2; exit 1; fi
 [[ ! -e $stage/invalid ]] || exit 1
+# Missing system CA certificates are reported (sign-in would fail TLS verification).
+mkdir -p "$stage/ca-empty" "$stage/ca-file/etc/ssl" "$stage/ca-dir/etc/ssl/certs"
+printf 'x\n' > "$stage/ca-file/etc/ssl/cert.pem"
+printf 'x\n' > "$stage/ca-dir/etc/ssl/certs/root.pem"
+PI_SH_INSTALL_CA_ROOT="$stage/ca-empty" bash install.sh --from-dir "$stage/envrelease" --bin-dir "$stage/ca-bin" > /dev/null 2> "$stage/error"
+grep -q 'no system CA certificates found' "$stage/error" || exit 1
+for root in ca-file ca-dir; do
+  PI_SH_INSTALL_CA_ROOT="$stage/$root" bash install.sh --from-dir "$stage/envrelease" --bin-dir "$stage/ca-bin" > /dev/null 2> "$stage/error"
+  ! grep -q 'CA certificates' "$stage/error" || exit 1
+done
+SSL_CERT_FILE=/custom.pem PI_SH_INSTALL_CA_ROOT="$stage/ca-empty" bash install.sh --from-dir "$stage/envrelease" --bin-dir "$stage/ca-bin" > /dev/null 2> "$stage/error"
+! grep -q 'CA certificates' "$stage/error" || exit 1
 echo 'Installer checks passed (local fixtures; no published release exercised).'

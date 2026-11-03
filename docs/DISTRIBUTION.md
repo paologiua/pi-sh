@@ -78,6 +78,9 @@ BusyBox wget has no equivalent, so redirect targets are not restricted there
 wget, `--version latest` reads tag_name from the GitHub releases/latest API, which,
 like curl's redirect, selects only stable releases. Both paths are tested with
 local stand-ins; real BusyBox wget has not been run against a release.
+On Linux and iSH the installer warns when none of the system CA locations Go
+reads exist (and SSL_CERT_FILE/SSL_CERT_DIR are unset), since sign-in would then
+fail TLS verification; on Alpine/iSH the fix is `apk add ca-certificates`.
 
 The repository is public; these commands need the selected release's assets on GitHub:
 

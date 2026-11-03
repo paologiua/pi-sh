@@ -63,6 +63,19 @@ Pi. Additional tests require authenticated TURN, reject a missing relay candidat
 and check explicit environment selection. Local transport/session race tests pass;
 these tests are evidence for the workaround design, not iSH runtime support.
 
+## Owner-run iSH observation, 3 November 2026: TLS roots
+
+With v0.1.0-alpha.3 installed by the iSH installer, direct login reached the
+password and one-time-code prompts, then failed with `web login HTTPS request
+failed (TLS certificate verification)`. Go verifies HTTPS against the system CA
+bundle (/etc/ssl/certs/ca-certificates.crt, /etc/ssl/cert.pem and similar, or
+SSL_CERT_FILE/SSL_CERT_DIR); the most likely cause is a missing or outdated
+bundle in the iSH Alpine image, which BusyBox wget does not need to download
+the release. Not yet confirmed on the device. Verification is not relaxed:
+the error now names the cause (no trusted root: `apk add --upgrade
+ca-certificates`; expired/not yet valid: check the clock; name mismatch), and
+the installer warns on Linux/iSH when none of Go's CA locations exist.
+
 ## Owner-run iSH observations, 23 October 2026
 
 The owner tested Linux/386 softfloat, CGO-disabled Go 1.27.3 binary

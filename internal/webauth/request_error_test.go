@@ -26,7 +26,11 @@ func TestRequestFailureCategoriesRedactUnderlyingDetails(t *testing.T) {
 	}{
 		{"dns", &net.DNSError{Err: secret, Name: secret}, "DNS"},
 		{"timeout", context.DeadlineExceeded, "timeout"},
-		{"certificate", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, "TLS certificate verification"},
+		{"certificate", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, "TLS certificate verification: no trusted root certificate; install or update the system CA certificates (Alpine/iSH: apk add --upgrade ca-certificates) or set SSL_CERT_FILE"},
+		{"roots", &tls.CertificateVerificationError{Err: x509.SystemRootsError{Err: errors.New(secret)}}, "TLS certificate verification: no trusted root certificate; install or update the system CA certificates (Alpine/iSH: apk add --upgrade ca-certificates) or set SSL_CERT_FILE"},
+		{"clock", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired, Detail: secret}}, "TLS certificate verification: certificate expired or not yet valid; check the system date and time"},
+		{"hostname", &tls.CertificateVerificationError{Err: x509.HostnameError{Certificate: &x509.Certificate{}, Host: secret}}, "TLS certificate verification: certificate does not match the server name"},
+		{"other certificate", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.NotAuthorizedToSign, Detail: secret}}, "TLS certificate verification"},
 		{"connection", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New(secret)}, "connection"},
 		{"other", errors.New(secret), "transport"},
 	} {

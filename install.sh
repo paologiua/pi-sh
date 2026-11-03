@@ -152,6 +152,25 @@ if [[ $ish == 1 && $keep_old == 0 && -n ${HOME:-} ]]; then
     [[ ! -d $old_lib || $old_lib == "$lib_dir" ]] || rmdir "$old_lib" 2>/dev/null || true
   done
 fi
+# Go verifies HTTPS against these system locations (or SSL_CERT_FILE/SSL_CERT_DIR);
+# iSH's Alpine image may lack them, which makes every sign-in fail.
+if [[ ( $os == linux || -n ${PI_SH_INSTALL_CA_ROOT:-} ) && -z ${SSL_CERT_FILE:-} && -z ${SSL_CERT_DIR:-} ]]; then
+  ca_root=${PI_SH_INSTALL_CA_ROOT:-}
+  ca_found=0
+  for ca in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/ca-bundle.pem \
+    /etc/pki/tls/cacert.pem /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ssl/cert.pem; do
+    if [[ -s $ca_root$ca ]]; then ca_found=1; break; fi
+  done
+  if [[ $ca_found == 0 ]]; then
+    for ca in "$ca_root/etc/ssl/certs" "$ca_root/etc/pki/tls/certs"; do
+      if [[ -d $ca ]] && ls "$ca" 2>/dev/null | grep -q -e '\.pem$' -e '\.crt$'; then ca_found=1; break; fi
+    done
+  fi
+  if [[ $ca_found == 0 ]]; then
+    if command -v apk >/dev/null; then hint='apk add ca-certificates'; else hint="install your distribution's ca-certificates package"; fi
+    echo "Warning: no system CA certificates found, so sign-in will fail TLS verification; $hint." >&2
+  fi
+fi
 case ":${PATH:-}:" in
   *":$bin_dir:"*)
     found=$(command -v pi-sh || true)
