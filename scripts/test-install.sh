@@ -42,7 +42,7 @@ if [[ $resolve == 1 ]]; then
   [[ $url == https://github.com/paologiua/pi-sh/releases/latest ]] || exit 1
   printf 'https://github.com/paologiua/pi-sh/releases/tag/v0.1.0'
 else
-  [[ $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0-alpha.3/* || $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0/* ]] || exit 1
+  [[ $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0-alpha.4/* || $url == https://github.com/paologiua/pi-sh/releases/download/v0.1.0/* ]] || exit 1
   cp "$PI_SH_INSTALL_FIXTURES/${url##*/}" "$output"
 fi
 CURL
@@ -78,7 +78,7 @@ done
 case $url in
   https://api.github.com/repos/paologiua/pi-sh/releases/latest)
     printf '{\n  "url": "x",\n  "tag_name": "v0.1.0",\n  "name": "x"\n}\n' > "$output" ;;
-  https://github.com/paologiua/pi-sh/releases/download/v0.1.0-alpha.3/*|https://github.com/paologiua/pi-sh/releases/download/v0.1.0/*)
+  https://github.com/paologiua/pi-sh/releases/download/v0.1.0-alpha.4/*|https://github.com/paologiua/pi-sh/releases/download/v0.1.0/*)
     cp "$PI_SH_INSTALL_FIXTURES/${url##*/}" "$output" ;;
   *) exit 7 ;;
 esac

@@ -7,7 +7,7 @@ agent and infrastructure from a terminal. It aims for practical OpenSSH command
 and interface compatibility over Connect's HTTPS/WebRTC transport.
 
 It is independent of, and not endorsed by, Raspberry Pi or OpenSSH. It does not
-implement the SSH wire protocol. **Development version: v0.1.0-alpha.3. Compatibility and runtime verification
+implement the SSH wire protocol. **Development version: v0.1.0-alpha.4. Compatibility and runtime verification
 are incomplete; releases are published as GitHub prereleases.**
 
 | Client | Purpose | Familiar interface |
@@ -51,9 +51,11 @@ shell; `~/.local/bin` if not writable) as small launchers that set
 `GOMAXPROCS=1` and `PI_SH_ISH_RELAY=1` unless already exported, so plain
 `pi-sh`, `pi-cp` and `pi-sftp` work; the binaries live in `/usr/local/libexec/pi-sh`.
 Earlier pi-sh copies in `~/.local/bin` or `~/bin` are removed (`--keep-old` keeps them).
+iSH's Alpine image may lack CA certificates, which makes sign-in fail TLS
+verification; the installer warns, and `apk add ca-certificates` fixes it.
 Windows users extract the `.exe` files from the Windows archive.
 
-The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.3`; no `--repo`
+The installer defaults to `paologiua/pi-sh` and `v0.1.0-alpha.4`; no `--repo`
 is needed for this project. Use `--repo owner/name` to select a fork. The installer
 does not request or save GitHub credentials.
 
@@ -249,7 +251,7 @@ pi-sh -V
 
 Version output is one line on stderr and includes the client name, project version,
 Go version and OS/architecture. It exits successfully without login or network
-access. The selected version is `v0.1.0-alpha.3` for all three clients. Git builds
+access. The selected version is `v0.1.0-alpha.4` for all three clients. Git builds
 append safe source metadata, for example `+g77699a479687.dirty`; `dirty` means
 uncommitted source changes were included. This is build identification, not a
 claim that a GitHub release has been published. The `version` command inside the
@@ -269,7 +271,10 @@ comparisons against OpenSSH; this does not establish universal visual parity.
 - macOS-to-Pi shells, commands, selected transfers and forwarding have recorded
   real-device evidence. New console/tuning paths still need native checks.
 - One physical iSH non-TTY command passed with `GOMAXPROCS=1 PI_SH_ISH_RELAY=1`.
-  Interactive sessions, transfers and broader iSH behavior remain unverified.
+  On 3 November 2026 direct login, a saved session and an interactive login
+  shell prompt were reached on iSH (alpha.3 with `stty cs8 38400` as a
+  workaround that alpha.4 makes unnecessary). Sustained interactive use,
+  transfers and broader iSH behavior remain unverified.
 - Native Linux/Windows runtime coverage is incomplete. Cross-build success
   establishes compilation only.
 - Saved login, automatic reauthentication, ICE renewal and reconnect are absent.

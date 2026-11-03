@@ -3,7 +3,7 @@
 All three clients support `-V` and `--version`, print one line on stderr and
 exit 0 without login, configuration reads or network access. pi-sh also retains
 its capability queries. The line includes the client name, project version
-(v0.1.0-alpha.3, plus safe Git revision/dirty metadata when available), Go build version, GOOS/GOARCH target and
+(v0.1.0-alpha.4, plus safe Git revision/dirty metadata when available), Go build version, GOOS/GOARCH target and
 the unofficial marker. This does not claim a released version or physical iSH runtime
 support. Only a validated Git revision and dirty bit are read from build settings; VCS
 paths, other build settings and environment values are not printed.
@@ -78,7 +78,7 @@ validation and remaining native/runtime gates are listed in TESTING.md.
 
 ## Suite version flags — 31 October 2026
 
-Shared internal/buildinfo formatting gives all three clients v0.1.0-alpha.3 and
+Shared internal/buildinfo formatting gives all three clients v0.1.0-alpha.4 and
 keeps the pi-sh version token shared with Match version. TestOfflineVersionDoesNotLoadConfigOrAuthenticate covers all
 three clients, including missing configuration paths, conflicting auth flags and
 quiet output. Buildinfo tests cover client identity, invalid build tokens and

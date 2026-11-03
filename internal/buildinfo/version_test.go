@@ -57,11 +57,11 @@ func TestSelectedAlphaVersionAndSafeProvenance(t *testing.T) {
 		info *debug.BuildInfo
 		want string
 	}{
-		{nil, "v0.1.0-alpha.3"},
-		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "ABCDEF0123456789abcdef0123456789abcdef01"}}}, "v0.1.0-alpha.3+gabcdef012345"},
-		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abcdef0123456789abcdef0123456789abcdef01"}, {Key: "vcs.modified", Value: "true"}}}, "v0.1.0-alpha.3+gabcdef012345.dirty"},
-		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.modified", Value: "true"}}}, "v0.1.0-alpha.3+dirty"},
-		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "PRIVATE-SENTINEL"}, {Key: "vcs.modified", Value: "PRIVATE-SENTINEL"}, {Key: "-ldflags", Value: "PRIVATE-SENTINEL"}}}, "v0.1.0-alpha.3"},
+		{nil, "v0.1.0-alpha.4"},
+		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "ABCDEF0123456789abcdef0123456789abcdef01"}}}, "v0.1.0-alpha.4+gabcdef012345"},
+		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abcdef0123456789abcdef0123456789abcdef01"}, {Key: "vcs.modified", Value: "true"}}}, "v0.1.0-alpha.4+gabcdef012345.dirty"},
+		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.modified", Value: "true"}}}, "v0.1.0-alpha.4+dirty"},
+		{&debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "PRIVATE-SENTINEL"}, {Key: "vcs.modified", Value: "PRIVATE-SENTINEL"}, {Key: "-ldflags", Value: "PRIVATE-SENTINEL"}}}, "v0.1.0-alpha.4"},
 	} {
 		if got := versionFromInfo(tc.info); got != tc.want {
 			t.Fatalf("version %q, want %q", got, tc.want)

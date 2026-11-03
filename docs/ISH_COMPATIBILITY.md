@@ -89,7 +89,13 @@ PTYs always force CS8, so GNU stty reports the request as failed and the
 adapter exits (status 125). Capture now sends no size for a zero CSIZE field
 and no rate for B0 (a hang-up request), retaining the carrier's CS8 and rate;
 sshd reaches the same CS8 because the PTY driver overrides tcsetattr. Unit
-tests cover the capture; the fix is not yet confirmed on iSH.
+tests cover the capture.
+
+Confirmed by the owner the same day: iSH's `stty -a` showed `speed 0 baud`;
+after `stty cs8 38400` on iSH, alpha.3 reached the interactive shell prompt on
+the Pi (saved session, relay mode). The fix ships in v0.1.0-alpha.4, which has
+not itself been run on iSH yet. Sustained interactive use, terminal controls,
+resizing, suspension and transfers remain unverified.
 
 ## Owner-run iSH observations, 23 October 2026
 

@@ -1,5 +1,12 @@
 # Development status — 2026-10-22
 
+Update, 3 November 2026 — v0.1.0-alpha.4: on physical iSH, direct login and
+saved sessions worked once ca-certificates was installed; the login shell then
+ended because iSH's terminal reports CS5 and speed 0, which the Pi's Linux PTY
+cannot apply. After `stty cs8 38400` on iSH the owner reached the interactive
+shell prompt. alpha.4 no longer sends those modes, and TLS verification errors
+name their cause; the alpha.4 binary itself is not yet run on iSH.
+
 Update, 2 November 2026 — v0.1.0-alpha.3: the suite version and installer
 default move to v0.1.0-alpha.3. It carries the recursive-upload fix: like
 OpenSSH 10.3, pi-cp -r and pi-sftp put -r keep an existing destination
