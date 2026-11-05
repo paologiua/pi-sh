@@ -24,7 +24,7 @@ func Token(value string) string {
 }
 
 // Release is the suite's selected version. All three clients share it.
-const Release = "v0.1.0-alpha.4"
+const Release = "v0.1.0-alpha.5"
 
 // Version identifies the selected release and, when available, the exact source
 // build. Only a validated Git revision and the dirty bit enter build metadata.

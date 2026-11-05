@@ -59,7 +59,7 @@ routine test command.
 
 Download mode requires a real GitHub repository and published release with
 `pi-sh_OS_ARCH.tar.gz` and `SHA256SUMS` assets generated together by build.sh.
-The default is the selected alpha, v0.1.0-alpha.4. Pass --version with another
+The default is the selected alpha, v0.1.0-alpha.5. Pass --version with another
 tag to select a release. Explicit --version latest resolves GitHub's latest stable
 release once before fetching both files; it does not select prereleases.
 The installer checks the archive's SHA-256 before extracting the three clients, uses no sudo and defaults to ~/.local/bin.
@@ -87,11 +87,14 @@ The repository is public; these commands need the selected release's assets on G
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash
 # Pin a release:
-curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.4
+curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | bash -s -- --repo paologiua/pi-sh --version v0.1.0-alpha.5
 ```
 
-v0.1.0-alpha.4 is the selected project version and installer default; it fixes
-the iSH interactive shell (no CS5/B0 terminal modes sent to the carrier) and names
+v0.1.0-alpha.5 is the selected project version and installer default; it renews
+Connect's recent sign-in for the remote shell automatically through Raspberry
+Pi ID. Its release is created by release.yml from the v0.1.0-alpha.5 tag.
+v0.1.0-alpha.4 fixed
+the iSH interactive shell (no CS5/B0 terminal modes sent to the carrier) and named
 the cause of TLS verification failures. release.yml published it
 from the pushed tag on 3 November 2026; the installer from main then installed it
 on macOS/arm64 and the clients reported `v0.1.0-alpha.4+gf27b88264204`.

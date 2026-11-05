@@ -1,5 +1,9 @@
 # Development status — 2026-10-22
 
+Update, 5 November 2026 — v0.1.0-alpha.5: the suite version and installer
+default move to v0.1.0-alpha.5 for the automatic renewal of Connect's recent
+sign-in described below. Not yet run on iSH.
+
 Update, 5 November 2026 — recent sign-in for the remote shell: a saved session
 two days old still opened Devices (so `--sessions` reported it active), but the
 shell page answered HTTP 200 with Connect's "Reauthenticating with Raspberry Pi
