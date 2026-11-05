@@ -132,6 +132,11 @@ runs ask only for it. Passwords and one-time codes are never saved:
 ./bin/pi-sh -o UseKeychain=yes raspberrypi   # keep the passphrase in the keyring
 ```
 
+`--sessions` reports a session as `active` while Connect still accepts it.
+Opening the remote shell may also need a recent sign-in: pi-sh then renews it
+through Raspberry Pi ID by itself, with no prompt while that sign-in lasts, and
+otherwise asks for the password and one-time code again.
+
 `UseKeychain yes` (also in a configuration file) stores only the passphrase in
 the macOS Keychain or Linux Secret Service, as Apple's ssh does.
 
@@ -277,7 +282,9 @@ comparisons against OpenSSH; this does not establish universal visual parity.
   transfers and broader iSH behavior remain unverified.
 - Native Linux/Windows runtime coverage is incomplete. Cross-build success
   establishes compilation only.
-- Saved login, automatic reauthentication, ICE renewal and reconnect are absent.
+- Saved login and automatic renewal of Connect's recent sign-in for the shell
+  exist; Raspberry Pi ID session lifetime is unobserved, so a password and code
+  may still be asked. ICE renewal and reconnect are absent.
 - Cancellation/descendant cleanup, network loss, special metadata, filesystem
   races and large/sparse-file behavior have remaining limits.
 - The historical local WebRTC verification result `RESULT fail=1` remains

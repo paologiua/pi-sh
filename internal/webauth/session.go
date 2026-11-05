@@ -85,7 +85,8 @@ func (c *Client) PrepareWithContext(lifetime, ctx context.Context, destination s
 	}
 	s.Device = matches[0]
 	s.prefix = "/devices/" + s.Device.ID
-	_, b, err := s.request(ctx, "GET", c.root+s.prefix+"/remote-shell-session", nil, "text/html", "")
+	shellPage, _ := url.Parse(c.root + s.prefix + "/remote-shell-session")
+	_, b, err := s.request(ctx, "GET", shellPage.String(), nil, "text/html", "")
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +108,8 @@ func (c *Client) PrepareWithContext(lifetime, ctx context.Context, destination s
 		}
 	})
 	if controllers != 1 || device.ID != s.Device.ID || (destination != "" && destination != device.ID && destination != device.Name) {
-		return nil, errors.New("Connect shell authorization or device identity was not confirmed; sign in again")
+		matched := device.ID == s.Device.ID && (destination == "" || destination == device.ID || destination == device.Name)
+		return nil, c.describeShellPage(shellPage, b, controllers, matched)
 	}
 	_, b, err = s.request(ctx, "GET", c.root+s.prefix+"/ice-configuration", nil, "application/json", "")
 	if err != nil {

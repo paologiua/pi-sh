@@ -1,5 +1,23 @@
 # Development status — 2026-10-22
 
+Update, 5 November 2026 — recent sign-in for the remote shell: a saved session
+two days old still opened Devices (so `--sessions` reported it active), but the
+shell page answered HTTP 200 with Connect's "Reauthenticating with Raspberry Pi
+ID" page: one POST /auth/raspberry_pi form with authenticity_token, origin (the
+shell page path) and a Continue button, and no `prompt` field. This was
+observed with the new `-vvv` page description (no token values). pi-sh now
+submits that form once, as the browser's Continue does, and follows redirects
+only between Connect and Raspberry Pi ID. Back on Connect it saves the renewed
+session and repeats the attempt; if Raspberry Pi ID asks for the password, the
+usual password/TOTP prompts follow; any other page (such as an account chooser)
+is described at `-vvv` and nothing is submitted to it. Synthetic tests cover the
+three outcomes. Owner on macOS, 2026-11-05, with the same saved session: the
+form led straight back to Connect with no prompt (the Raspberry Pi ID session
+was still valid), the renewed session was saved, and the repeated attempt
+opened the interactive login shell. The password branch and the
+unrecognized-page branch remain synthetic-only. `--sessions` still checks
+Devices only.
+
 Update, 3 November 2026 — v0.1.0-alpha.4: on physical iSH, direct login and
 saved sessions worked once ca-certificates was installed; the login shell then
 ended because iSH's terminal reports CS5 and speed 0, which the Pi's Linux PTY

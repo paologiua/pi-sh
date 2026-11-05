@@ -213,6 +213,16 @@ func (l *Logger) Failure(level Level, err error) {
 	l.write(level, Sanitize(l.prefix(level)+err.Error()))
 }
 
+// Text logs a constant message followed by locally assembled descriptive
+// text, such as the structure of a refused page. The text never carries
+// payloads or credentials by construction and is still fully sanitized.
+func (l *Logger) Text(level Level, m Message, text string) {
+	if !l.Enabled(level) {
+		return
+	}
+	l.write(level, clean(l.prefix(level)+sanitizeMessage(string(m))+" "+Sanitize(text)))
+}
+
 func (l *Logger) prefix(level Level) string {
 	switch level {
 	case Debug1:

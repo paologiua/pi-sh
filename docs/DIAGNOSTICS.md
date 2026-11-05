@@ -63,6 +63,7 @@ severities follow OpenSSH: FATAL→CRIT, ERROR→ERR, INFO/VERBOSE→INFO, DEBUG
 | DEBUG1 | auth | mode selected (browser/direct); `interactive direct login started` / `completed`; `account preselected; email prompt skipped` (the email is never logged); `default account not used by the browser companion`; `loopback companion bridge listening` (no port/URL) |
 | DEBUG1 | auth stage | `authentication: login stage stage=password_required|one_time_code_required|connect_devices_page_observed` |
 | DEBUG1 | discovery | `resolving destination device`; `destination device prepared elapsed=… ice_servers=N` (no name/ID) |
+| DEBUG3 | discovery | `discovery: refused …` when the Connect remote-shell page has no matching shell controller (direct login): page path (the device ID is redacted), shell-controller count, device match, title, headings, and per form the method, host/path, query **keys**, field names and types, short non-secret hidden values (for example `prompt`), lengths in place of token-like values, and the button text. Added 2026-11-04 to observe the recent-sign-in page. Pages reached while renewing that sign-in that pi-sh does not recognise are described the same way (`discovery: refused id page …`); values of fields named like accounts, users, emails or tokens are never printed; lines go through `Logger.Text`, so emails, URLs and tokens are still removed |
 | DEBUG1/2 | signaling | `requesting session configuration`; DEBUG2 `session configuration received ice_servers=N`; `sending local offer`; `remote answer received` |
 | DEBUG1 | transport | `creating WebRTC peer and shell data channel`; `shell data channel open elapsed=…` |
 | DEBUG2 | transport | `peer connection state state=new|connecting|connected|…` |
@@ -92,6 +93,7 @@ severities follow OpenSSH: FATAL→CRIT, ERROR→ERR, INFO/VERBOSE→INFO, DEBUG
   csrf, ufrag, ice-pwd, key…), Bearer/Basic values, JWTs, long opaque tokens and
   email addresses, then replaces control/format characters and invalid UTF-8 with
   `?` and bounds the line to 1024 bytes.
+- `Logger.Text` appends locally assembled descriptive text (the refused shell page structure) after a constant message and runs `Sanitize` over it; `TestTextSanitizesDescriptions` covers it.
 - No logger API accepts remote terminal or stdio bytes. Pion's own logger stays
   disabled; only state enum names are observed.
 - Tests: `internal/diag` (levels, ordering, filtering, redaction corpus, file

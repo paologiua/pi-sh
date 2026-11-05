@@ -16,6 +16,9 @@ import (
 func fixture(t *testing.T, mfa string) (*Client, *int) {
 	t.Helper()
 	passwords, signOuts := new(int), new(int)
+	// Reauthentication fixtures ("reauth-*"): the shell page first answers
+	// with Connect's "Reauthenticating with Raspberry Pi ID" form.
+	var reauthStarted, reauthed, chooserPosted bool
 	var connect, identity *httptest.Server
 	identity = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -50,6 +53,19 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 				return
 			}
 			http.Redirect(w, r, connect.URL+"/callback?code=synthetic-code", http.StatusSeeOther)
+		case "/authorize":
+			// Where Connect's reauthentication form leads on Raspberry Pi ID.
+			switch mfa {
+			case "reauth-silent":
+				http.Redirect(w, r, connect.URL+"/callback?code=synthetic-code", http.StatusSeeOther)
+			case "reauth-password":
+				http.Redirect(w, r, "/sign-in", http.StatusSeeOther)
+			default:
+				fmt.Fprint(w, `<title>Raspberry Pi ID</title><form action="/choose" method="post"><input type="hidden" name="authenticity_token" value="synthetic-chooser-csrf"><input type="hidden" name="account" value="fixture-account"><button>Sign in as Fixture fixture@example.invalid</button></form>`)
+			}
+		case "/choose":
+			chooserPosted = true
+			http.Redirect(w, r, connect.URL+"/callback?code=synthetic-code", http.StatusSeeOther)
 		case "/session/verify":
 			if r.FormValue("otp") != "123456" || r.FormValue("authenticity_token") != "synthetic-code-csrf" || r.FormValue("password") != "" {
 				t.Error("derived code form mismatch or password replay")
@@ -65,6 +81,14 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 		case "/":
 			fmt.Fprint(w, `<form action="/auth/raspberry_pi" method="post"><input type="hidden" name="authenticity_token" value="synthetic-connect-csrf"><button>Sign in with Raspberry&nbsp;Pi&nbsp;ID</button></form>`)
 		case "/auth/raspberry_pi":
+			if back := r.FormValue("origin"); back != "" {
+				if r.Method != "POST" || r.FormValue("authenticity_token") != "synthetic-reauth-csrf" || back != "/devices/00000000-0000-0000-0000-000000000001/remote-shell-session" || r.Header.Get("Origin") != connect.URL {
+					t.Error("reauthentication form mismatch")
+				}
+				reauthStarted = true
+				http.Redirect(w, r, identity.URL+"/authorize", http.StatusSeeOther)
+				return
+			}
 			if r.Method != "POST" || r.FormValue("authenticity_token") != "synthetic-connect-csrf" {
 				t.Error("Connect CSRF mismatch")
 			}
@@ -75,6 +99,11 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 				t.Error("password reached Connect callback")
 			}
 			http.SetCookie(w, &http.Cookie{Name: "connect_session", Value: "synthetic-session", Path: "/", MaxAge: 3600, Secure: true, HttpOnly: true})
+			if reauthStarted {
+				reauthed = true
+				http.Redirect(w, r, "/devices/00000000-0000-0000-0000-000000000001/remote-shell-session", http.StatusSeeOther)
+				return
+			}
 			http.Redirect(w, r, "/devices", http.StatusSeeOther)
 		case "/session":
 			// Connect's sign-out form, as observed: POST /session, _method=delete.
@@ -95,6 +124,12 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 			}
 		case "/devices/00000000-0000-0000-0000-000000000001/remote-shell-session":
 			id := "00000000-0000-0000-0000-000000000001"
+			if strings.HasPrefix(mfa, "reauth") && !reauthed {
+				// Shape observed 2026-11-04: HTTP 200, one form to
+				// /auth/raspberry_pi with authenticity_token and origin.
+				fmt.Fprintf(w, `<title>Reauthenticating with Raspberry Pi ID – Raspberry Pi Connect</title><h1>Reauthenticating with Raspberry Pi ID</h1><form action="/auth/raspberry_pi" method="post"><input type="hidden" name="authenticity_token" value="synthetic-reauth-csrf"><input type="hidden" name="origin" value="%s"><button type="submit">Continue</button></form>`, r.URL.Path)
+				return
+			}
 			if mfa == "wrong-device" {
 				id = "00000000-0000-0000-0000-000000000002"
 			}
@@ -130,6 +165,11 @@ func fixture(t *testing.T, mfa string) (*Client, *int) {
 			http.NotFound(w, r)
 		}
 	}))
+	t.Cleanup(func() {
+		if chooserPosted {
+			t.Error("an unrecognized Raspberry Pi ID form was submitted")
+		}
+	})
 	t.Cleanup(identity.Close)
 	t.Cleanup(connect.Close)
 	pool := x509.NewCertPool()

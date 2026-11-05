@@ -34,6 +34,9 @@ const (
 	MsgDefaultAccountUnused diag.Message = "authentication: default account not used by the browser companion"
 	MsgDiscovery            diag.Message = "discovery: resolving destination device"
 	MsgDiscoveryDone        diag.Message = "discovery: destination device prepared"
+	MsgShellPage            diag.Message = "discovery: refused"
+	MsgRenewing             diag.Message = "Connect asked for a recent sign-in; renewing it with Raspberry Pi ID"
+	MsgRenewed              diag.Message = "authentication: Connect sign-in renewed"
 	MsgAuthenticated        diag.Message = "Authenticated to Raspberry Pi Connect"
 	MsgSignedIn             diag.Message = "signed in directly"
 	MsgSaveFailed           diag.Message = "authentication: the session could not be saved for later"
@@ -127,7 +130,9 @@ type directSource struct {
 	used        bool
 	live        []signaling
 	// closed runs once after the connections close (saving the session).
-	closed    func()
+	closed func()
+	// renewed saves the session right after a successful reauthentication.
+	renewed   func()
 	closeOnce sync.Once
 }
 
@@ -166,6 +171,7 @@ func (s *directSource) Configuration(ctx context.Context) (browserauth.Configura
 	s.mu.Unlock()
 	connection, err := s.client.PrepareWithContext(s.lifetime, preparing, destination)
 	if err != nil {
+		s.describe(err)
 		return browserauth.Configuration{}, err
 	}
 	s.log.Debug(MsgDiscoveryDone, diag.Elapsed("elapsed", time.Since(started)), diag.Count("ice_servers", len(connection.ICE.ICEServers)))
@@ -173,6 +179,54 @@ func (s *directSource) Configuration(ctx context.Context) (browserauth.Configura
 	var c browserauth.Configuration
 	c.Device.ID, c.Device.Name, c.ICE = connection.Device.ID, connection.Device.Name, connection.ICE
 	return c, nil
+}
+
+// describe logs, at DEBUG3, the structure of a page webauth refused.
+func (s *directSource) describe(err error) {
+	var page interface{ Lines() []string }
+	if errors.As(err, &page) {
+		for _, line := range page.Lines() {
+			s.log.Text(diag.Debug3, MsgShellPage, line)
+		}
+	}
+}
+
+// alreadyPrompted continues an ordinary prompt sequence whose first step,
+// reaching the password form, already happened in Reauthenticate.
+type alreadyPrompted struct{ loginprompt.Authenticator }
+
+func (alreadyPrompted) Begin(context.Context) (webauth.Stage, error) {
+	return webauth.PasswordRequired, nil
+}
+
+// renew answers Connect's "Reauthenticating with Raspberry Pi ID" page the
+// way the browser's Continue does. A still-valid Raspberry Pi ID session
+// renews the Connect sign-in with no prompt; if Raspberry Pi ID asks for the
+// password, the usual password and one-time-code prompts follow for the
+// saved account. Any other page stops it with nothing submitted. Each HTTPS
+// step is bounded by ConnectTimeout; time spent typing is not.
+func (s *directSource) renew(ctx context.Context, refused *webauth.ShellPageError, limit time.Duration) error {
+	s.log.Info(MsgRenewing)
+	steps := boundedLogin{s.client, limit}
+	stage, err := steps.bound(ctx, func(ctx context.Context) (webauth.Stage, error) { return s.client.Reauthenticate(ctx, refused) })
+	if err != nil {
+		s.describe(err)
+		return err
+	}
+	s.log.Debug(MsgLoginStage, diag.State("stage", string(stage)))
+	if stage == webauth.PasswordRequired {
+		loginCtx, stop := context.WithTimeout(ctx, loginLimit)
+		err = loginprompt.AuthenticateAs(loginCtx, loggedLogin{alreadyPrompted{steps}, s.log}, s.client.Account())
+		stop()
+		if err != nil {
+			return err
+		}
+	}
+	s.log.Verbose(MsgRenewed)
+	if s.renewed != nil {
+		s.renewed()
+	}
+	return nil
 }
 
 // adopt makes c (or nothing) the current attempt. The previous attempt is
@@ -370,6 +424,11 @@ func AuthenticateWithPolicy(ctx context.Context, destination string, direct bool
 		}
 		log.Info(MsgSignedIn)
 		source := newDirectSource(client, ctx, destination, log)
+		source.renewed = func() {
+			if saved.Refresh(client) != nil {
+				log.Debug(MsgSaveFailed)
+			}
+		}
 		source.closed = func() {
 			if saved.Refresh(client) != nil {
 				log.Debug(MsgSaveFailed)
@@ -412,10 +471,23 @@ func Establish(ctx, peerLifetime context.Context, source Source, policy connpoli
 	}
 	log := diag.From(ctx)
 	attempts := max(policy.ConnectionAttempts, 1)
+	renewed := false
 	for attempt := 1; ; attempt++ {
 		peer, ch, err := establishOnce(ctx, peerLifetime, source, policy)
 		if err == nil {
 			return peer, ch, nil
+		}
+		// Connect asked for a recent sign-in. Renew it once, outside the
+		// attempt's time bound, then repeat the attempt without counting it.
+		// Nothing was sent to the device yet.
+		var refused *webauth.ShellPageError
+		if direct, ok := source.(*directSource); ok && !renewed && ctx.Err() == nil && errors.As(err, &refused) && refused.Reauthentication {
+			renewed = true
+			if err := direct.renew(ctx, refused, policy.ConnectTimeout()); err != nil {
+				return nil, nil, err
+			}
+			attempt--
+			continue
 		}
 		if attempt >= attempts || ctx.Err() != nil || !retryable(err) {
 			return nil, nil, err

@@ -322,3 +322,25 @@ func TestNoFalsePositiveRedaction(t *testing.T) {
 		}
 	}
 }
+
+// Text carries locally assembled page descriptions (the refused Connect shell
+// page): free text stays readable while emails, URLs and tokens are removed.
+func TestTextSanitizesDescriptions(t *testing.T) {
+	var out bytes.Buffer
+	l, err := Open(Config{Program: "pi-sh", Level: Debug3, Stderr: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Text(Debug3, "discovery: refused", "shell page (/devices/00000000-0000-0000-0000-000000000001/remote-shell-session) shell_controllers=0 forms=1")
+	l.Text(Debug3, "discovery: refused", `shell page form 1 text "Sign in as Fixture fixture@example.invalid" https://id.example.invalid/x?code=1`)
+	l.Text(Debug2, "discovery: refused", "hidden at this level")
+	got := out.String()
+	for _, want := range []string{"debug3: discovery: refused shell page", "shell_controllers=0 forms=1", "Sign in as Fixture [redacted-email]", "[redacted-url]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "fixture@") || strings.Contains(got, "code=1") || strings.Contains(got, "000000000001") || l.Level() < Debug3 {
+		t.Fatalf("description leaked:\n%s", got)
+	}
+}

@@ -46,6 +46,10 @@ type page struct {
 	forms       []form
 	deviceLinks bool
 	loginForm   bool
+	// title and headings (h1/h2) only feed -vvv page descriptions.
+	title    string
+	headings []string
+	size     int
 }
 
 // Client owns an in-memory jar. Export serializes a signed-in session only
@@ -60,6 +64,8 @@ type Client struct {
 	pending                *form
 	stage                  Stage
 	passwordSent, codeSent bool
+	// returnTo is the Connect page a reauthentication returns to.
+	returnTo string
 }
 
 func New() *Client {
@@ -179,7 +185,7 @@ func (c *Client) Begin(ctx context.Context) (Stage, error) {
 }
 
 func (c *Client) classify(p *page) (Stage, error) {
-	if origin(p.at) == c.root && p.at.Path == "/devices" && p.deviceLinks && !p.loginForm {
+	if origin(p.at) == c.root && !p.loginForm && (p.at.Path == "/devices" && p.deviceLinks || c.returnTo != "" && p.at.Path == c.returnTo && c.reauthForm(p) == nil) {
 		c.pending = nil
 		c.stage = Authenticated
 		return c.stage, nil
@@ -310,7 +316,7 @@ func parse(at *url.URL, b []byte) (*page, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &page{at: at}
+	p := &page{at: at, size: len(b)}
 	unsafeBase := false
 	var visit func(*html.Node, *form)
 	visit = func(n *html.Node, f *form) {
@@ -318,6 +324,14 @@ func parse(at *url.URL, b []byte) (*page, error) {
 			if n.Data == "base" {
 				unsafeBase = true
 				return
+			}
+			if n.Data == "title" && p.title == "" {
+				p.title = shorten(nodeText(n))
+			}
+			if (n.Data == "h1" || n.Data == "h2") && len(p.headings) < 4 {
+				if t := shorten(nodeText(n)); t != "" {
+					p.headings = append(p.headings, t)
+				}
 			}
 			if n.Data == "a" {
 				if u, e := at.Parse(attr(n, "href")); e == nil && origin(u) == origin(at) && devicePath.MatchString(u.Path) {
