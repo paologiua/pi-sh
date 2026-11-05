@@ -92,7 +92,9 @@ curl -fsSL https://raw.githubusercontent.com/paologiua/pi-sh/main/install.sh | b
 
 v0.1.0-alpha.5 is the selected project version and installer default; it renews
 Connect's recent sign-in for the remote shell automatically through Raspberry
-Pi ID. Its release is created by release.yml from the v0.1.0-alpha.5 tag.
+Pi ID. release.yml published it from the pushed tag on 5 November 2026; the
+installer from main then installed it on macOS/arm64 and the clients reported
+`v0.1.0-alpha.5+gbbee93c04664`.
 v0.1.0-alpha.4 fixed
 the iSH interactive shell (no CS5/B0 terminal modes sent to the carrier) and named
 the cause of TLS verification failures. release.yml published it
@@ -102,7 +104,7 @@ v0.1.0-alpha.3 added the OpenSSH 10.3 directory-mode rule for recursive uploads.
 published it from the pushed tag on 2 November 2026; the installer from main
 then installed it on macOS/arm64 and the clients reported
 `v0.1.0-alpha.3+g62ee3eeea28b`.
-v0.1.0-alpha.1 to v0.1.0-alpha.4 are published as GitHub prereleases. alpha.2
+v0.1.0-alpha.1 to v0.1.0-alpha.5 are published as GitHub prereleases. alpha.2
 was built and published by release.yml on 2 November 2026; the installer from
 main then installed it on macOS/arm64 and the clients reported
 `v0.1.0-alpha.2+g1ebf24bacdfe`.

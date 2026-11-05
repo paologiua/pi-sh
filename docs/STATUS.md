@@ -2,7 +2,13 @@
 
 Update, 5 November 2026 — v0.1.0-alpha.5: the suite version and installer
 default move to v0.1.0-alpha.5 for the automatic renewal of Connect's recent
-sign-in described below. Not yet run on iSH.
+sign-in described below. release.yml published it; the installer from main
+installed it on macOS/arm64 (`v0.1.0-alpha.5+gbbee93c04664`). Not yet run on
+iSH. check.yml's `go test ./...` jobs on ubuntu-latest and windows-latest fail
+(macOS and all seven cross-builds pass), as they already did on every main run
+since at least 9ec3c12 (3 November); the failing tests were not inspected
+because the logs need an authenticated GitHub client. Local
+`scripts/test.sh local` on macOS passes.
 
 Update, 5 November 2026 — recent sign-in for the remote shell: a saved session
 two days old still opened Devices (so `--sessions` reported it active), but the
